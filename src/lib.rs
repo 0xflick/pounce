@@ -1260,3 +1260,88 @@ impl FromStr for Position {
         Ok(Position { row: r, col: c })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn perft_1() {
+        let mut board = Board::new();
+
+        let (count, _, _, _) = board.perft(1);
+        assert_eq!(20, count);
+    }
+
+    #[test]
+    fn perft_2() {
+        let mut board = Board::new();
+
+        let (count, _, _, _) = board.perft(2);
+        assert_eq!(400, count);
+    }
+
+    #[test]
+    fn perft_3() {
+        let mut board = Board::new();
+
+        let (count, _, _, _) = board.perft(3);
+        assert_eq!(8902, count);
+    }
+
+    #[test]
+    fn perft_4() {
+        let mut board = Board::new();
+
+        let (count, _, _, _) = board.perft(4);
+        assert_eq!(197281, count);
+    }
+
+    #[test]
+    fn perft_5() {
+        let mut board = Board::new();
+
+        let (count, _, _, _) = board.perft(5);
+        assert_eq!(4865609, count);
+    }
+
+    #[test]
+    fn perft_alt_1() {
+        let mut board = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
+            .parse::<Board>()
+            .unwrap();
+
+        let (count, _, _, _) = board.perft(1);
+        assert_eq!(44, count);
+    }
+
+    #[test]
+    fn perft_alt_2() {
+        let mut board = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
+            .parse::<Board>()
+            .unwrap();
+
+        let (count, _, _, _) = board.perft(2);
+        assert_eq!(1486, count);
+    }
+
+    #[test]
+    fn perft_alt_3() {
+        let mut board = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
+            .parse::<Board>()
+            .unwrap();
+
+        let (count, _, _, _) = board.perft(3);
+        assert_eq!(62379, count);
+    }
+
+    #[test]
+    fn perft_alt_4() {
+        let mut board = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8"
+            .parse::<Board>()
+            .unwrap();
+
+        let (count, _, _, _) = board.perft(4);
+        assert_eq!(2103487, count)
+    }
+}
