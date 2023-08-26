@@ -1028,7 +1028,7 @@ impl FromStr for Board {
 
         let is_white_turn = match pieces[1] {
             "w" => Ok(true),
-            "b" => Ok(false),
+            "b" => Ok(false), AS
             _ => Err(ParseFenError),
         }?;
 

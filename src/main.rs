@@ -1,3 +1,5 @@
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::time::Instant;
 
 use rustyline::error::ReadlineError;
@@ -15,6 +17,14 @@ fn main() -> rustyline::Result<()> {
         let readline = rl.readline(">> ");
         match readline {
             Ok(line) => match line.as_str() {
+                "play" => {
+                    // pick a random move
+                    let moves = board.gen_moves();
+                    let mut rng = rand::thread_rng();
+                    let random_move = moves.choose(&mut rng).unwrap();
+                    board.make_move(random_move);
+                    move_list.push(*random_move);
+                }
                 "board" => println!("{}", board),
                 "moves" => {
                     for mv in board.gen_moves().iter().filter(|m| board.is_legal(m)) {
