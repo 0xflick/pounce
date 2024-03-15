@@ -1,8 +1,8 @@
 use log::{info, LevelFilter};
-use rand::seq::SliceRandom;
 use std::io;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use regex::Regex;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
@@ -27,8 +27,8 @@ fn main() -> rustyline::Result<()> {
                     break;
                 }
                 "play" => {
-                    // pick a random move
-                    let mv = search(&mut board, 3);
+                    // set a 1 second time limit
+                    let mv = search(&mut board, Duration::from_secs(1));
                     board.make_move(&mv);
                     move_list.push(mv);
                 }
@@ -178,7 +178,25 @@ fn uci_mode(board: &mut Board) -> Result<(), ()> {
             }
             s => {
                 if s.starts_with("go") {
-                    let mv = search(board, 4);
+                    let wtime_regex = Regex::new(r"wtime (\d+)").unwrap();
+                    let btime_regex = Regex::new(r"btime (\d+)").unwrap();
+
+                    let wtime = wtime_regex
+                        .captures(s)
+                        .and_then(|cap| cap.get(1))
+                        .and_then(|time_match| time_match.as_str().parse::<u64>().ok());
+
+                    let btime = btime_regex
+                        .captures(s)
+                        .and_then(|cap| cap.get(1))
+                        .and_then(|time_match| time_match.as_str().parse::<u64>().ok());
+
+                    let timeout = match board.is_white_turn {
+                        true => wtime.map(|time| Duration::from_millis(time / 20)),
+                        false => btime.map(|time| Duration::from_millis(time / 20)),
+                    };
+                    // set a time out of 5% of the time limit
+                    let mv = search(board, timeout.unwrap_or(Duration::from_secs(1)));
                     board.make_move(&mv);
                     info!("bestmove {}", mv);
                     println!("bestmove {}", mv);
