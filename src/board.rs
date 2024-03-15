@@ -811,6 +811,25 @@ impl Board {
             false
         };
 
+        let king_helper = |enemy_king: Piece| {
+            for offset in [
+                Position { row: 1, col: 1 },
+                Position { row: 1, col: -1 },
+                Position { row: -1, col: 1 },
+                Position { row: -1, col: -1 },
+                Position { row: 0, col: 1 },
+                Position { row: 0, col: -1 },
+                Position { row: 1, col: 0 },
+                Position { row: -1, col: -0 },
+            ] {
+                let cell = pos + offset;
+                if cell.in_bounds() && self.get(cell) == enemy_king {
+                    return true;
+                }
+            }
+            false
+        };
+
         let rook_offsets = [
             Position { row: 0, col: 1 },
             Position { row: 0, col: -1 },
@@ -830,11 +849,13 @@ impl Board {
                 || helper(bishop_offsets, [Piece::BLACK_BISHOP, Piece::BLACK_QUEEN])
                 || knight_helper(Piece::BLACK_KNIGHT)
                 || pawn_helper(Piece::BLACK_PAWN, 1)
+                || king_helper(Piece::BLACK_KING)
         } else {
             helper(rook_offsets, [Piece::WHITE_ROOK, Piece::WHITE_QUEEN])
                 || helper(bishop_offsets, [Piece::WHITE_BISHOP, Piece::WHITE_QUEEN])
                 || knight_helper(Piece::WHITE_KNIGHT)
                 || pawn_helper(Piece::WHITE_PAWN, -1)
+                || king_helper(Piece::WHITE_KING)
         }
     }
 
@@ -1068,7 +1089,7 @@ impl FromStr for Board {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Move {
     start: Position,
     end: Position,
@@ -1173,11 +1194,11 @@ impl Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}{}", self.start, self.end)?;
         if let Some(prom) = self.promotion {
-            match prom {
-                Piece::WHITE_QUEEN => write!(f, "Q"),
-                Piece::WHITE_BISHOP => write!(f, "B"),
-                Piece::WHITE_ROOK => write!(f, "R"),
-                Piece::WHITE_KNIGHT => write!(f, "N"),
+            match prom.kind() {
+                Piece::QUEEN => write!(f, "Q"),
+                Piece::BISHOP => write!(f, "B"),
+                Piece::ROOK => write!(f, "R"),
+                Piece::KNIGHT => write!(f, "N"),
                 _ => Err(std::fmt::Error),
             }
         } else {

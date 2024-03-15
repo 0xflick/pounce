@@ -10,7 +10,8 @@ use flichess::board::{Board, Castle, Move, Position};
 use flichess::search::search;
 
 fn main() -> rustyline::Result<()> {
-    simple_logging::log_to_file("test.log", LevelFilter::Info).unwrap();
+    // simple_logging::log_to_file("test.log", LevelFilter::Info).unwrap();
+    simple_logging::log_to_stderr(LevelFilter::Info);
 
     let mut rl = DefaultEditor::new()?;
     let mut board: Board = Default::default();
