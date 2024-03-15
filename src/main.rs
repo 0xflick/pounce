@@ -1,29 +1,36 @@
+use log::{info, LevelFilter};
 use rand::seq::SliceRandom;
-use rand::thread_rng;
+use std::io;
 use std::time::Instant;
 
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use flichess::{Board, Castle, Move, Position};
+use flichess::board::{Board, Castle, Move, Position};
+use flichess::search::search;
 
 fn main() -> rustyline::Result<()> {
+    simple_logging::log_to_file("test.log", LevelFilter::Info).unwrap();
+
     let mut rl = DefaultEditor::new()?;
     let mut board: Board = Default::default();
 
     let mut move_list: Vec<Move> = Vec::new();
+    let mut uci = false;
 
     loop {
         let readline = rl.readline(">> ");
         match readline {
             Ok(line) => match line.as_str() {
+                "uci" => {
+                    uci = true;
+                    break;
+                }
                 "play" => {
                     // pick a random move
-                    let moves = board.gen_moves();
-                    let mut rng = rand::thread_rng();
-                    let random_move = moves.choose(&mut rng).unwrap();
-                    board.make_move(random_move);
-                    move_list.push(*random_move);
+                    let mv = search(&mut board, 3);
+                    board.make_move(&mv);
+                    move_list.push(mv);
                 }
                 "board" => println!("{}", board),
                 "moves" => {
@@ -103,6 +110,10 @@ fn main() -> rustyline::Result<()> {
                                     total, captures, ep, castles
                                 );
                                 println!("time: {} ms", elapsed.as_millis());
+                                println!(
+                                    "nodes/s: {:.2}M",
+                                    (total as f64 / 1_000_000.0) / elapsed.as_secs_f64()
+                                );
                             };
                         }
                     }
@@ -142,6 +153,55 @@ fn main() -> rustyline::Result<()> {
         }
     }
 
+    if uci {
+        uci_mode(&mut board).expect("error in uci mode");
+    }
+    Ok(())
+}
+
+fn uci_mode(board: &mut Board) -> Result<(), ()> {
+    info!("starting uci mode");
+    println!("id name flichess");
+    println!("id author flichess");
+    println!("uciok");
+    let mut buf = String::new();
+    loop {
+        buf.clear();
+        io::stdin()
+            .read_line(&mut buf)
+            .expect("error reading from stdin");
+        match buf.trim() {
+            "isready" => println!("readyok"),
+            "quit" => break,
+            "ucinewgame" => {
+                *board = Default::default();
+            }
+            s => {
+                if s.starts_with("go") {
+                    let mv = search(board, 4);
+                    board.make_move(&mv);
+                    info!("bestmove {}", mv);
+                    println!("bestmove {}", mv);
+                } else if s.starts_with("position") {
+                    let split = s.split_once(' ');
+                    if let Some((_, rest)) = split {
+                        let split = rest.split_once("moves ");
+                        if let Some((_, moves)) = split {
+                            let ml = parse_move_list(moves);
+                            if let Ok(moves) = ml {
+                                *board = Default::default();
+
+                                moves.iter().for_each(|m| {
+                                    let annotated_move = board.annotate_move(m);
+                                    board.make_move(&annotated_move);
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 

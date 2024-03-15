@@ -9,8 +9,10 @@ debug = true
 
 [dependencies]
 arrayvec = "0.7.4"
+log = "0.4.21"
 rand = "0.8.5"
 rustyline = "12.0.0"
+simple-logging = "2.0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
