@@ -1,17 +1,16 @@
 use log::{info, LevelFilter};
 use std::io;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use regex::Regex;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use flichess::board::{Board, Castle, Move, Position};
-use flichess::search::search;
+use flichess::board::{parse_move_list, Board, Castle, Move, Position};
+use flichess::uci::Uci;
 
 fn main() -> rustyline::Result<()> {
     // simple_logging::log_to_file("test.log", LevelFilter::Info).unwrap();
-    simple_logging::log_to_stderr(LevelFilter::Info);
+    // simple_logging::log_to_stderr(LevelFilter::Info);
 
     let mut rl = DefaultEditor::new()?;
     let mut board: Board = Default::default();
@@ -27,12 +26,13 @@ fn main() -> rustyline::Result<()> {
                     uci = true;
                     break;
                 }
-                "play" => {
-                    // set a 1 second time limit
-                    let mv = search(&mut board, Duration::from_secs(1));
-                    board.make_move(&mv);
-                    move_list.push(mv);
-                }
+                // "play" => {
+                //     // set a 1 second time limit
+                //     let mut search = Search::new(&mut board, Duration::from_secs(1));
+                //     let mv = search.search();
+                //     board.make_move(&mv);
+                //     move_list.push(mv);
+                // }
                 "board" => println!("{}", board),
                 "moves" => {
                     for mv in board.gen_moves().iter().filter(|m| board.is_legal(m)) {
@@ -155,84 +155,25 @@ fn main() -> rustyline::Result<()> {
     }
 
     if uci {
-        uci_mode(&mut board).expect("error in uci mode");
+        uci_mode().expect("error in uci mode");
     }
     Ok(())
 }
 
-fn uci_mode(board: &mut Board) -> Result<(), ()> {
+fn uci_mode() -> Result<(), ()> {
     info!("starting uci mode");
-    println!("id name flichess");
-    println!("id author flichess");
-    println!("uciok");
+    let mut uci = Uci::new();
+    uci.identify();
+
     let mut buf = String::new();
     loop {
         buf.clear();
         io::stdin()
             .read_line(&mut buf)
             .expect("error reading from stdin");
-        match buf.trim() {
-            "isready" => println!("readyok"),
-            "quit" => break,
-            "ucinewgame" => {
-                *board = Default::default();
-            }
-            s => {
-                if s.starts_with("go") {
-                    let wtime_regex = Regex::new(r"wtime (\d+)").unwrap();
-                    let btime_regex = Regex::new(r"btime (\d+)").unwrap();
-
-                    let wtime = wtime_regex
-                        .captures(s)
-                        .and_then(|cap| cap.get(1))
-                        .and_then(|time_match| time_match.as_str().parse::<u64>().ok());
-
-                    let btime = btime_regex
-                        .captures(s)
-                        .and_then(|cap| cap.get(1))
-                        .and_then(|time_match| time_match.as_str().parse::<u64>().ok());
-
-                    let timeout = match board.is_white_turn {
-                        true => wtime.map(|time| Duration::from_millis(time / 20)),
-                        false => btime.map(|time| Duration::from_millis(time / 20)),
-                    };
-                    // set a time out of 5% of the time limit
-                    let mv = search(board, timeout.unwrap_or(Duration::from_secs(1)));
-                    board.make_move(&mv);
-                    info!("bestmove {}", mv);
-                    println!("bestmove {}", mv);
-                } else if s.starts_with("position") {
-                    let split = s.split_once(' ');
-                    if let Some((_, rest)) = split {
-                        let split = rest.split_once("moves ");
-                        if let Some((_, moves)) = split {
-                            let ml = parse_move_list(moves);
-                            if let Ok(moves) = ml {
-                                *board = Default::default();
-
-                                moves.iter().for_each(|m| {
-                                    let annotated_move = board.annotate_move(m);
-                                    board.make_move(&annotated_move);
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+        let cmd_str = buf.clone();
+        {
+            uci.cmd(cmd_str);
         }
     }
-    Ok(())
-}
-
-struct ParseMoveListError;
-fn parse_move_list(list: &str) -> Result<Vec<Move>, ParseMoveListError> {
-    let mut res: Vec<Move> = Vec::new();
-    for s in list.split(' ') {
-        match s.parse::<Move>() {
-            Ok(m) => res.push(m),
-            _ => return Err(ParseMoveListError),
-        }
-    }
-
-    Ok(res)
 }

@@ -1,3 +1,4 @@
 pub mod board;
-pub mod search;
 mod score;
+pub mod search;
+pub mod uci;

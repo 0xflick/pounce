@@ -82,7 +82,7 @@ struct BoardState {
 const MAX_HISTORY: usize = 255;
 type History = Vec<BoardState>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Board {
     pub board: [[Piece; 8]; 8],
     white_king: Position,
@@ -1292,6 +1292,19 @@ impl FromStr for Position {
 
         Ok(Position { row: r, col: c })
     }
+}
+
+pub struct ParseMoveListError;
+pub fn parse_move_list(list: &str) -> Result<Vec<Move>, ParseMoveListError> {
+    let mut res: Vec<Move> = Vec::new();
+    for s in list.split(' ') {
+        match s.parse::<Move>() {
+            Ok(m) => res.push(m),
+            _ => return Err(ParseMoveListError),
+        }
+    }
+
+    Ok(res)
 }
 
 #[cfg(test)]
