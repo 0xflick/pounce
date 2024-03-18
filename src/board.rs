@@ -9,7 +9,7 @@ const MAX_MOVES: usize = 512;
 
 type MoveList = ArrayVec<Move, MAX_MOVES>;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Ord, PartialOrd)]
 pub struct Piece(u8);
 impl Piece {
     pub const WHITE: u8 = 0b00000000;
@@ -23,7 +23,7 @@ impl Piece {
     pub const QUEEN: u8 = 5;
     pub const KING: u8 = 6;
 
-    const NULL_PIECE: Piece = Piece(Self::NULL);
+    pub const NULL_PIECE: Piece = Piece(Self::NULL);
 
     const WHITE_PAWN: Piece = Piece(Self::PAWN);
     const WHITE_ROOK: Piece = Piece(Self::ROOK);
@@ -952,6 +952,10 @@ impl Board {
 
             (count, capture_count, ep_count, castles)
         }
+    }
+
+    pub fn moves_played(&self) -> usize {
+        self.history.len() - 1
     }
 }
 

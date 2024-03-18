@@ -59,11 +59,16 @@ impl Uci {
             }
             Some("fen") => {
                 let mut fen = String::new();
-                for part in parts.take(6) {
-                    fen.push_str(part);
-                    fen.push(' ');
+                fen.push_str(&parts.take(6).collect::<Vec<_>>().join(" "));
+                match fen.parse() {
+                    Ok(board) => {
+                        self.board = Some(board);
+                    }
+                    Err(e) => {
+                        println!("error parsing fen: {:?}", e);
+                        return;
+                    }
                 }
-                self.board = Some(fen.parse().unwrap());
             }
             _ => println!("unknown position command"),
         }

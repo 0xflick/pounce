@@ -3,12 +3,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::board::{Board, Move};
+use crate::board::{Board, Move, Piece};
 use crate::score::score;
+use crate::score::MATE;
 
 const POS_INF: i32 = 9_999_999;
 const NEG_INF: i32 = -POS_INF;
-const MATE: i32 = 1_000_000;
 
 #[derive(Debug)]
 pub struct Search {
@@ -33,21 +33,22 @@ impl Search {
 
         info!("starting search: {:?}", self);
 
-        let moves: Vec<Move> = self
+        let mut moves: Vec<Move> = self
             .board
             .gen_moves()
             .into_iter()
             .filter(|m| self.board.is_legal(m))
             .collect();
         let mut best = NEG_INF;
-        let mut best_move = Move::default();
 
+        moves.sort_by_key(|m| m.capture.unwrap_or(Piece::NULL_PIECE).kind());
         if moves.is_empty() {
-            return best_move;
+            return Move::default();
         }
+        let mut best_move = moves[0];
 
         let mut canceled = false;
-        for depth in 0..255 {
+        for depth in 0..200 {
             if self.should_stop() {
                 info!("search canceled at depth: {}", depth);
                 break;
@@ -59,10 +60,6 @@ impl Search {
             for mv in moves.as_slice() {
                 self.board.make_move(mv);
                 let res = self.nega_max(NEG_INF, POS_INF, depth, 0);
-                info!(
-                    "move: {}, score: {:?}, depth: {}, depth_best: {}, depth_best_move: {}",
-                    mv, res, depth, depth_best, depth_best_move
-                );
                 self.board.unmake_move(mv);
                 match res {
                     Some(score) => {
@@ -93,12 +90,9 @@ impl Search {
         best_move
     }
 
-    fn nega_max(&mut self, alpha: i32, beta: i32, depth: u8, ply_from_root: u8) -> Option<i32> {
+    fn nega_max(&mut self, mut alpha: i32, beta: i32, depth: u8, ply_from_root: u8) -> Option<i32> {
         if depth == 0 {
-            if self.board.is_check() {
-                return Some(-MATE + ply_from_root as i32);
-            }
-            return Some(score(&self.board));
+            return self.quiesce(alpha, beta);
         }
         let moves: Vec<Move> = self
             .board
@@ -113,35 +107,68 @@ impl Search {
                 return Some(0);
             }
         }
-        let mut new_alpha = alpha;
-
         for mv in moves {
             if self.must_stop() {
                 return None;
             }
 
             self.board.make_move(&mv);
-            let res = self.nega_max(-beta, -new_alpha, depth - 1, ply_from_root + 1);
+            let res = self.nega_max(-beta, -alpha, depth - 1, ply_from_root + 1);
             self.board.unmake_move(&mv);
 
             match res {
                 Some(score) => {
                     if -score >= beta {
-                        info!("beta cutoff at depth: {}", depth);
                         return Some(beta); // fail hard beta-cutoff
                     }
-                    if -score > new_alpha {
-                        new_alpha = -score; // alpha acts like max in MiniMax
+                    if -score > alpha {
+                        alpha = -score; // alpha acts like max in MiniMax
                     }
                 }
                 None => {
-                    info!("search canceled at depth: {}", depth);
                     return None;
                 }
             }
         }
-        info!("returning alpha: {}, depth: {}", new_alpha, depth);
-        Some(new_alpha)
+        Some(alpha)
+    }
+
+    fn quiesce(&mut self, mut alpha: i32, beta: i32) -> Option<i32> {
+        if self.must_stop() {
+            return None;
+        }
+        let stand_pat = score(&self.board);
+        if stand_pat >= beta {
+            return Some(beta);
+        }
+        if alpha < stand_pat {
+            alpha = stand_pat;
+        }
+        let moves: Vec<Move> = self
+            .board
+            .gen_moves()
+            .into_iter()
+            .filter(|m| m.capture.is_some() && self.board.is_legal(m))
+            .collect();
+        for mv in moves {
+            self.board.make_move(&mv);
+            let res = self.quiesce(-beta, -alpha);
+            self.board.unmake_move(&mv);
+            match res {
+                Some(score) => {
+                    if -score >= beta {
+                        return Some(beta);
+                    }
+                    if -score > alpha {
+                        alpha = -score;
+                    }
+                }
+                None => {
+                    return None;
+                }
+            }
+        }
+        Some(alpha)
     }
 
     fn time_remaining(&self) -> Duration {
