@@ -1,10 +1,10 @@
+use arrayvec::ArrayVec;
 use log::info;
-use std::slice::Iter;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::board::{Board, Move, MoveList};
+use crate::board::{Board, Move, MoveList, MAX_MOVES};
 use crate::score::{score, MATE};
 use crate::table::{Entry, ScoreType, Table};
 
@@ -40,7 +40,7 @@ impl Search {
     pub fn search(&mut self) -> Move {
         self.start_time = Instant::now();
 
-        let moves: MoveList = self.board.gen_moves();
+        let mut moves: MoveList = self.board.gen_moves();
         let mut best = NEG_INF;
 
         if moves.is_empty() {
@@ -62,19 +62,19 @@ impl Search {
 
             info!("searching depth: {}", depth);
 
-            for mv in MoveOrderer::new(&moves, best_move.as_ref()) {
-                if !self.board.is_legal(mv) {
+            for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
+                if !self.board.is_legal(&mv) {
                     continue;
                 }
-                self.board.make_move(mv);
+                self.board.make_move(&mv);
                 let res = self.nega_max(NEG_INF, POS_INF, depth, 0);
-                self.board.unmake_move(mv);
+                self.board.unmake_move(&mv);
                 match res {
                     Some(score) => {
                         if -score > depth_best {
                             // info!("new best move: {}, score: {}, depth: {}", mv, -score, depth);
                             depth_best = -score;
-                            depth_best_move = Some(*mv);
+                            depth_best_move = Some(mv);
                         }
                     }
                     None => {
@@ -103,11 +103,14 @@ impl Search {
     }
 
     fn nega_max(&mut self, mut alpha: i32, beta: i32, depth: u8, ply_from_root: u8) -> Option<i32> {
+        if self.board.is_stalemate() {
+            return Some(0);
+        }
+
         if depth == 0 {
             self.nodes += 1;
             return self.quiesce(alpha, beta);
         }
-
         let mut best_move: Option<Move> = None;
 
         if let Some(hit) = self.table.lock().unwrap().probe(self.board.z_hash) {
@@ -134,7 +137,7 @@ impl Search {
             }
         }
 
-        let moves: MoveList = self.board.gen_moves();
+        let mut moves: MoveList = self.board.gen_moves();
         if moves.is_empty() {
             if self.board.is_check() {
                 return Some(-MATE + ply_from_root as i32);
@@ -143,8 +146,8 @@ impl Search {
         }
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
-        for mv in MoveOrderer::new(&moves, best_move.as_ref()) {
-            if !self.board.is_legal(mv) {
+        for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
+            if !self.board.is_legal(&mv) {
                 continue;
             }
             if self.nodes % (1 << 16) == 0 {
@@ -162,16 +165,16 @@ impl Search {
                 return None;
             }
 
-            self.board.make_move(mv);
+            self.board.make_move(&mv);
             let res = self.nega_max(-beta, -alpha, depth - 1, ply_from_root + 1);
-            self.board.unmake_move(mv);
+            self.board.unmake_move(&mv);
 
             match res {
                 Some(score) => {
                     if -score >= beta {
                         self.table.lock().unwrap().save(Entry {
                             z_key: self.board.z_hash,
-                            best_move: Some(*mv),
+                            best_move: Some(mv),
                             depth,
                             score: -score,
                             score_type: ScoreType::Beta,
@@ -180,7 +183,7 @@ impl Search {
                     }
                     if -score > alpha {
                         score_type = ScoreType::Exact;
-                        search_best = Some(*mv);
+                        search_best = Some(mv);
                         alpha = -score; // alpha acts like max in MiniMax
                     }
                 }
@@ -202,6 +205,9 @@ impl Search {
     fn quiesce(&mut self, mut alpha: i32, beta: i32) -> Option<i32> {
         if self.must_stop() {
             return None;
+        }
+        if self.board.is_stalemate() {
+            return Some(0);
         }
         let stand_pat = score(&self.board);
         if stand_pat >= beta {
@@ -262,49 +268,113 @@ impl Search {
     }
 }
 
-enum MoveOrderStage {
-    HashMove,
-    Rest,
-}
+type ScoreList = ArrayVec<i32, MAX_MOVES>;
+
+const HASH_MOVE_SCORE: i32 = 1000;
+const MVV_LVA_SCORE: i32 = 900;
+const REST_SCORE: i32 = 0;
+
+const MVV_LVA: [[i32; 6]; 6] = [
+    [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
+    [14, 24, 34, 44, 54, 0], // attacker knight, victim P, N, B, R, Q,  K
+    [13, 23, 33, 43, 53, 0], // attacker bishop, victim P, N, B, R, Q,  K
+    [12, 22, 32, 42, 52, 0], // attacker rook, victim P, N, B, R, Q,  K
+    [11, 21, 31, 41, 51, 0], // attacker queen, victim P, N, B, R, Q,  K
+    [10, 20, 30, 40, 50, 0], // attacker king, victim P, N, B, R, Q,  K
+];
 
 struct MoveOrderer<'a> {
-    moves: Iter<'a, Move>,
-    hash_move: Option<&'a Move>,
-    stage: MoveOrderStage,
+    moves: &'a mut MoveList,
+    scores: ScoreList,
+    idx: usize,
 }
 
 impl<'a> MoveOrderer<'a> {
-    fn new(moves: &'a MoveList, hash_move: Option<&'a Move>) -> MoveOrderer<'a> {
+    fn new(moves: &'a mut MoveList, hash_move: Option<&Move>) -> MoveOrderer<'a> {
+        let mut scores: ScoreList = ArrayVec::new();
+
+        for mv in moves.as_ref() {
+            let score = if hash_move.is_some_and(|hm| hm == mv) {
+                HASH_MOVE_SCORE
+            } else if let Some(capture) = mv.capture {
+                let attacker = mv.piece.kind() - 1;
+                let victim = capture.kind() - 1;
+                MVV_LVA_SCORE + MVV_LVA[attacker as usize][victim as usize]
+            } else {
+                REST_SCORE
+            };
+            scores.push(score);
+        }
+
         MoveOrderer {
-            moves: moves.into_iter(),
-            hash_move,
-            stage: MoveOrderStage::HashMove,
+            moves,
+            scores,
+            idx: 0,
         }
     }
 }
 
 impl<'a> Iterator for MoveOrderer<'a> {
-    type Item = &'a Move;
+    type Item = Move;
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stage {
-            MoveOrderStage::HashMove => {
-                self.stage = MoveOrderStage::Rest;
-                if let Some(hash_move) = self.hash_move {
-                    return Some(hash_move);
-                }
-                self.stage = MoveOrderStage::Rest;
-                self.next()
-            }
-            MoveOrderStage::Rest => {
-                if let Some(hash_move) = self.hash_move {
-                    for mv in &mut self.moves {
-                        if mv != hash_move {
-                            return Some(mv);
-                        }
-                    }
-                }
-                self.moves.next()
-            }
+        let max_idx = self
+            .scores
+            .iter()
+            .enumerate()
+            .skip(self.idx)
+            .max_by_key(|(_, s)| *s)
+            .map(|(i, _)| i);
+
+        if let Some(max_idx) = max_idx {
+            self.moves.swap(self.idx, max_idx);
+            self.scores.swap(self.idx, max_idx);
+            self.idx += 1;
+            Some(self.moves[self.idx - 1])
+        } else {
+            None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::Piece;
+
+    #[test]
+    fn test_move_orderer() {
+        let mut moves = MoveList::default();
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_PAWN;
+            m
+        });
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_PAWN;
+            m.capture = Some(Piece::BLACK_KNIGHT);
+            m
+        });
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_KNIGHT;
+            m.capture = Some(Piece::BLACK_PAWN);
+            m
+        });
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::BLACK_KING;
+            m.capture = Some(Piece::BLACK_KING);
+            m
+        });
+
+        let moves_copy = moves.clone();
+
+        let mut orderer = MoveOrderer::new(&mut moves, moves_copy.get(3));
+        assert_eq!(orderer.next(), Some(moves_copy[3]));
+        assert_eq!(orderer.next(), Some(moves_copy[1]));
+        assert_eq!(orderer.next(), Some(moves_copy[2]));
+        assert_eq!(orderer.next(), Some(moves_copy[0]));
+        assert_eq!(orderer.next(), None);
     }
 }

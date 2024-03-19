@@ -13,7 +13,7 @@ lazy_static = "1.4.0"
 log = "0.4.21"
 rand = "0.8.5"
 regex = "1.10.3"
-rustyline = "12.0.0"
+rustyline = "14.0.0"
 simple-logging = "2.0.2"
 
 [dev-dependencies]
@@ -21,4 +21,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
 name = "perft"
+harness = false
+
+[[bench]]
+name = "search"
 harness = false

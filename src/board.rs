@@ -7,7 +7,7 @@ use arrayvec::ArrayVec;
 
 use crate::zobrist::ZOBRIST;
 
-const MAX_MOVES: usize = 512;
+pub const MAX_MOVES: usize = 512;
 
 pub type MoveList = ArrayVec<Move, MAX_MOVES>;
 
@@ -27,19 +27,19 @@ impl Piece {
 
     pub const NULL_PIECE: Piece = Piece(Self::NULL);
 
-    const WHITE_PAWN: Piece = Piece(Self::PAWN);
-    const WHITE_ROOK: Piece = Piece(Self::ROOK);
-    const WHITE_KNIGHT: Piece = Piece(Self::KNIGHT);
-    const WHITE_BISHOP: Piece = Piece(Self::BISHOP);
-    const WHITE_QUEEN: Piece = Piece(Self::QUEEN);
-    const WHITE_KING: Piece = Piece(Self::KING);
+    pub const WHITE_PAWN: Piece = Piece(Self::PAWN);
+    pub const WHITE_ROOK: Piece = Piece(Self::ROOK);
+    pub const WHITE_KNIGHT: Piece = Piece(Self::KNIGHT);
+    pub const WHITE_BISHOP: Piece = Piece(Self::BISHOP);
+    pub const WHITE_QUEEN: Piece = Piece(Self::QUEEN);
+    pub const WHITE_KING: Piece = Piece(Self::KING);
 
-    const BLACK_PAWN: Piece = Piece(Self::BLACK | Self::PAWN);
-    const BLACK_ROOK: Piece = Piece(Self::BLACK | Self::ROOK);
-    const BLACK_KNIGHT: Piece = Piece(Self::BLACK | Self::KNIGHT);
-    const BLACK_BISHOP: Piece = Piece(Self::BLACK | Self::BISHOP);
-    const BLACK_QUEEN: Piece = Piece(Self::BLACK | Self::QUEEN);
-    const BLACK_KING: Piece = Piece(Self::BLACK | Self::KING);
+    pub const BLACK_PAWN: Piece = Piece(Self::BLACK | Self::PAWN);
+    pub const BLACK_ROOK: Piece = Piece(Self::BLACK | Self::ROOK);
+    pub const BLACK_KNIGHT: Piece = Piece(Self::BLACK | Self::KNIGHT);
+    pub const BLACK_BISHOP: Piece = Piece(Self::BLACK | Self::BISHOP);
+    pub const BLACK_QUEEN: Piece = Piece(Self::BLACK | Self::QUEEN);
+    pub const BLACK_KING: Piece = Piece(Self::BLACK | Self::KING);
 
     fn is_null(self) -> bool {
         self.0 == Self::NULL
@@ -124,9 +124,14 @@ pub struct Board {
     pub board: [[Piece; 8]; 8],
     white_king: Position,
     black_king: Position,
-    history: History,
-    pub z_hash: u64,
     pub is_white_turn: bool,
+
+    history: History,
+
+    pub z_hash: u64,
+    z_hash_history: Vec<u64>,
+
+    irreversible_move: Vec<u8>,
 }
 
 impl Board {
@@ -172,7 +177,9 @@ impl Board {
             black_king: Position { row: 7, col: 4 },
             history,
             z_hash: 0,
+            z_hash_history: Vec::with_capacity(MAX_HISTORY),
             is_white_turn: true,
+            irreversible_move: vec![0],
         };
         b.z_hash = b.zobrist_hash();
         b
@@ -204,6 +211,7 @@ impl Board {
     }
 
     pub fn make_move(&mut self, mv: &Move) {
+        self.z_hash_history.push(self.z_hash);
         let mut next_state = if let Some(prev_state) = self.history.last() {
             // update zobrist hash for board state
             self.z_hash ^= prev_state.zobrist_hash();
@@ -211,6 +219,13 @@ impl Board {
         } else {
             BoardState::default()
         };
+
+        if self.get(mv.start).kind() == Piece::PAWN || mv.capture.is_some() {
+            self.irreversible_move.push(self.history.len() as u8);
+        } else {
+            self.irreversible_move
+                .push(*self.irreversible_move.last().unwrap());
+        }
 
         // update zobrist hash piece positions
         self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.start.row as usize]
@@ -328,19 +343,11 @@ impl Board {
     }
 
     pub fn unmake_move(&mut self, mv: &Move) {
-        // update zobrist hash piece positions
-        self.z_hash ^= ZOBRIST.pieces[self.get(mv.end).zobrist_key()][mv.start.row as usize]
-            [mv.start.col as usize];
-        self.z_hash ^= ZOBRIST.pieces[self.get(mv.end).zobrist_key()][mv.end.row as usize]
-            [mv.end.col as usize];
-        self.z_hash ^= self.history.last().unwrap().zobrist_hash();
-
+        self.z_hash = self.z_hash_history.pop().unwrap();
         *self.get_mut(mv.start) = self.get(mv.end);
         *self.get_mut(mv.end) = Piece::NULL_PIECE;
 
         if let Some(p) = mv.capture {
-            self.z_hash ^=
-                ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
             if mv.en_passante {
                 // remove pawn from passed square
                 let offset = if self.is_white_turn { 1 } else { -1 };
@@ -390,9 +397,7 @@ impl Board {
 
         self.is_white_turn = !self.is_white_turn;
         self.history.pop();
-
-        self.z_hash ^= ZOBRIST.black;
-        self.z_hash ^= self.history.last().unwrap().zobrist_hash();
+        self.irreversible_move.pop();
     }
 
     pub fn is_legal(&mut self, mv: &Move) -> bool {
@@ -411,6 +416,27 @@ impl Board {
 
     fn get_mut(&mut self, pos: Position) -> &mut Piece {
         &mut self.board[pos.row as usize][pos.col as usize]
+    }
+
+    pub fn is_stalemate(&self) -> bool {
+        // 50 move rule
+        if (*self.irreversible_move.last().unwrap() as usize) + 99 < self.history.len() {
+            return true;
+        }
+
+        if (*self.irreversible_move.last().unwrap() as usize) + 4 < self.history.len() {
+            let count = self
+                .z_hash_history
+                .iter()
+                .skip(*self.irreversible_move.last().unwrap() as usize)
+                .filter(|z| *z == &self.z_hash)
+                .count();
+
+            if count >= 2 {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn gen_moves(&self) -> MoveList {
@@ -1201,6 +1227,8 @@ impl FromStr for Board {
             s => s.parse::<Position>().map(Some).map_err(|_| ParseFenError),
         }?;
 
+        let half_move: u8 = pieces[4].parse().map_err(|_| ParseFenError)?;
+
         let mut history = Vec::with_capacity(MAX_HISTORY);
         history.push(BoardState {
             castle_rights,
@@ -1213,7 +1241,9 @@ impl FromStr for Board {
             is_white_turn,
             white_king,
             black_king,
+            z_hash_history: Vec::with_capacity(MAX_HISTORY),
             z_hash: 0,
+            irreversible_move: vec![half_move],
         };
         b.z_hash = b.zobrist_hash();
 
@@ -1289,14 +1319,6 @@ impl BitOr for Castle {
         Self(self.0 | rhs.0)
     }
 }
-
-// pub enum Castle {
-//     No,
-//     WhiteKingSide,
-//     WhiteQueenSide,
-//     BlackKingSide,
-//     BlackQueenSide,
-// }
 
 #[derive(Debug)]
 pub struct ParseMoveError;
@@ -1564,5 +1586,42 @@ mod tests {
 
         let (count, _, _, _) = board.perft(4);
         assert_eq!(2103487, count)
+    }
+
+    #[test]
+    fn threefold_1() {
+        let mut board = Board::new();
+
+        let moves = vec![
+            "b1c3", "b8c6", "a1b1", "a8b8", "b1a1", "b8a8", "a1b1", "a8b8", "b1a1", "b8a8", "a1b1",
+            "a8b8",
+        ]
+        .into_iter()
+        .map(|s| s.parse::<Move>().unwrap());
+
+        for mv in moves {
+            let anno = board.annotate_move(&mv);
+            board.make_move(&anno);
+        }
+        assert!(board.is_stalemate());
+    }
+
+    #[test]
+    fn threefold_2() {
+        let mut board = Board::new();
+        let moves = vec![
+            "b1c3", "b8c6", "c3d5", "g8h6", "g1f3", "h6g4", "d2d4", "g4f6", "d5f6", "e7f6", "d4d5",
+            "c6e5", "f3e5", "f6e5", "d1d3", "d8f6", "c1e3", "f8d6", "e1c1", "e8f8", "d3e4", "d6e7",
+            "d1d2", "e7d6", "c1b1", "d6e7", "b1a1", "e7d6", "h1g1", "d6e7", "e4c4", "e7d6", "c4e4",
+            "d6e7", "e4c4", "e7d6", "c4e4",
+        ]
+        .into_iter()
+        .map(|s| s.parse::<Move>().unwrap());
+
+        for mv in moves {
+            let anno = board.annotate_move(&mv);
+            board.make_move(&anno);
+        }
+        assert!(board.is_stalemate());
     }
 }
