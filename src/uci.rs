@@ -1,14 +1,30 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::board::{Board, Move, ParseMoveError};
 use crate::search::Search;
+use crate::table::Table;
 
 pub struct Uci {
     board: Option<Board>,
     abort: Arc<AtomicBool>,
+    table: Arc<Mutex<Table>>,
+    options: Options,
+}
+
+#[derive(Copy, Clone)]
+struct Options {
+    hash: usize,
+}
+
+impl Default for Options {
+    fn default() -> Options {
+        Options {
+            hash: 64 * 1024 * 1024,
+        }
+    }
 }
 
 impl Uci {
@@ -16,13 +32,9 @@ impl Uci {
         Uci {
             board: None,
             abort: Arc::new(AtomicBool::new(false)),
+            table: Arc::new(Mutex::new(Table::new(64 * 1024 * 1024))),
+            options: Options::default(),
         }
-    }
-
-    pub fn identify(&self) {
-        println!("id name flichess");
-        println!("id author alex flick");
-        println!("uciok");
     }
 
     pub fn cmd(&mut self, cmd: String) {
@@ -30,23 +42,45 @@ impl Uci {
         match parts.next() {
             Some("uci") => self.cmd_uci(),
             Some("isready") => self.cmd_isready(),
+            Some("setoption") => self.cmd_setoption(&mut parts),
             Some("position") => self.cmd_position(&mut parts),
             Some("go") => self.cmd_go(&mut parts),
             Some("stop") => self.cmd_stop(),
             Some("quit") => self.cmd_quit(),
-            Some("ucinewgame") => {}
+            Some("ucinewgame") => self.cmd_ucinewgame(),
             _ => println!("unknown command: {}", cmd),
         }
     }
 
-    fn cmd_uci(&self) {
+    pub fn cmd_uci(&self) {
         println!("id name flichess");
         println!("id author alex flick");
+        println!("option name Hash type spin default 64 min 1 max 1024");
         println!("uciok");
+    }
+
+    fn cmd_ucinewgame(&mut self) {
+        self.board = None;
+        self.table = Arc::new(Mutex::new(Table::new(self.options.hash)));
     }
 
     fn cmd_isready(&self) {
         println!("readyok");
+    }
+
+    fn cmd_setoption<'b, I>(&mut self, parts: &mut I)
+    where
+        I: Iterator<Item = &'b str>,
+    {
+        if parts.next() == Some("name") {
+            let name = parts.next().unwrap();
+            if name == "Hash" && parts.next() == Some("value") {
+                let value = parts.next().unwrap();
+                if let Ok(hash) = value.parse::<usize>() {
+                    self.options.hash = hash * 1024 * 1024;
+                }
+            }
+        }
     }
 
     fn cmd_position<'b, I>(&mut self, parts: &mut I)
@@ -104,8 +138,9 @@ impl Uci {
 
         let abort = self.abort.clone();
         let board = self.board.as_ref().unwrap().clone();
+        let table = self.table.clone();
         thread::spawn(move || {
-            let mut search = Search::new(board, tl, abort);
+            let mut search = Search::new(board, tl, abort, table);
             let best_move = search.search();
 
             println!("bestmove {}", best_move);

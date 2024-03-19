@@ -1,13 +1,15 @@
 use std::default;
 use std::fmt::Display;
-use std::ops::Add;
+use std::ops::{Add, BitOr};
 use std::str::FromStr;
 
 use arrayvec::ArrayVec;
 
+use crate::zobrist::ZOBRIST;
+
 const MAX_MOVES: usize = 512;
 
-type MoveList = ArrayVec<Move, MAX_MOVES>;
+pub type MoveList = ArrayVec<Move, MAX_MOVES>;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Ord, PartialOrd)]
 pub struct Piece(u8);
@@ -50,6 +52,24 @@ impl Piece {
     pub fn side(self) -> u8 {
         self.0 & Self::BLACK
     }
+
+    pub fn zobrist_key(self) -> usize {
+        match self {
+            Piece::WHITE_PAWN => 0,
+            Piece::WHITE_ROOK => 1,
+            Piece::WHITE_KNIGHT => 2,
+            Piece::WHITE_BISHOP => 3,
+            Piece::WHITE_QUEEN => 4,
+            Piece::WHITE_KING => 5,
+            Piece::BLACK_PAWN => 6,
+            Piece::BLACK_ROOK => 7,
+            Piece::BLACK_KNIGHT => 8,
+            Piece::BLACK_BISHOP => 9,
+            Piece::BLACK_QUEEN => 10,
+            Piece::BLACK_KING => 11,
+            _ => 12,
+        }
+    }
 }
 
 impl Display for Piece {
@@ -75,8 +95,25 @@ impl Display for Piece {
 
 #[derive(Default, Debug, Clone)]
 struct BoardState {
-    castle_rights: ArrayVec<Castle, 4>,
+    castle_rights: Castle,
     en_passante_state: Option<Position>,
+}
+
+impl BoardState {
+    fn zobrist_hash(&self) -> u64 {
+        let mut hash = ZOBRIST.castling[self.castle_zobrist_key()];
+        if let Some(ep) = self.ep_zobrist_key() {
+            hash ^= ZOBRIST.en_passant[ep];
+        }
+        hash
+    }
+
+    fn castle_zobrist_key(&self) -> usize {
+        self.castle_rights.zobrist_key()
+    }
+    fn ep_zobrist_key(&self) -> Option<usize> {
+        self.en_passante_state.map(|p| p.col as usize)
+    }
 }
 
 const MAX_HISTORY: usize = 255;
@@ -88,6 +125,7 @@ pub struct Board {
     white_king: Position,
     black_king: Position,
     history: History,
+    pub z_hash: u64,
     pub is_white_turn: bool,
 }
 
@@ -96,96 +134,136 @@ impl Board {
         let mut history = Vec::with_capacity(MAX_HISTORY);
         history.push(BoardState {
             en_passante_state: None,
-            castle_rights: ArrayVec::from([
-                Castle::WhiteKingSide,
-                Castle::WhiteQueenSide,
-                Castle::BlackKingSide,
-                Castle::BlackQueenSide,
-            ]),
+            castle_rights: Castle::ALL,
         });
-        Self {
-            board: [
-                [
-                    Piece::WHITE_ROOK,
-                    Piece::WHITE_KNIGHT,
-                    Piece::WHITE_BISHOP,
-                    Piece::WHITE_QUEEN,
-                    Piece::WHITE_KING,
-                    Piece::WHITE_BISHOP,
-                    Piece::WHITE_KNIGHT,
-                    Piece::WHITE_ROOK,
-                ],
-                [Piece::WHITE_PAWN; 8],
-                [Piece(Piece::NULL); 8],
-                [Piece(Piece::NULL); 8],
-                [Piece(Piece::NULL); 8],
-                [Piece(Piece::NULL); 8],
-                [Piece::BLACK_PAWN; 8],
-                [
-                    Piece::BLACK_ROOK,
-                    Piece::BLACK_KNIGHT,
-                    Piece::BLACK_BISHOP,
-                    Piece::BLACK_QUEEN,
-                    Piece::BLACK_KING,
-                    Piece::BLACK_BISHOP,
-                    Piece::BLACK_KNIGHT,
-                    Piece::BLACK_ROOK,
-                ],
+
+        let board = [
+            [
+                Piece::WHITE_ROOK,
+                Piece::WHITE_KNIGHT,
+                Piece::WHITE_BISHOP,
+                Piece::WHITE_QUEEN,
+                Piece::WHITE_KING,
+                Piece::WHITE_BISHOP,
+                Piece::WHITE_KNIGHT,
+                Piece::WHITE_ROOK,
             ],
+            [Piece::WHITE_PAWN; 8],
+            [Piece(Piece::NULL); 8],
+            [Piece(Piece::NULL); 8],
+            [Piece(Piece::NULL); 8],
+            [Piece(Piece::NULL); 8],
+            [Piece::BLACK_PAWN; 8],
+            [
+                Piece::BLACK_ROOK,
+                Piece::BLACK_KNIGHT,
+                Piece::BLACK_BISHOP,
+                Piece::BLACK_QUEEN,
+                Piece::BLACK_KING,
+                Piece::BLACK_BISHOP,
+                Piece::BLACK_KNIGHT,
+                Piece::BLACK_ROOK,
+            ],
+        ];
+
+        let mut b = Self {
+            board,
             white_king: Position { row: 0, col: 4 },
             black_king: Position { row: 7, col: 4 },
             history,
+            z_hash: 0,
             is_white_turn: true,
+        };
+        b.z_hash = b.zobrist_hash();
+        b
+    }
+
+    pub fn zobrist_hash(&self) -> u64 {
+        let mut z_hash = 0;
+
+        // Piece positions
+        for (r_index, row) in self.board.iter().enumerate() {
+            for (c_index, cell) in row.iter().enumerate() {
+                if cell.is_null() {
+                    continue;
+                }
+                z_hash ^= ZOBRIST.pieces[cell.zobrist_key()][r_index][c_index];
+            }
         }
+
+        let history = self.history.last().unwrap();
+
+        z_hash ^= history.zobrist_hash();
+
+        // Side to move
+        if !self.is_white_turn {
+            z_hash ^= ZOBRIST.black;
+        }
+
+        z_hash
     }
 
     pub fn make_move(&mut self, mv: &Move) {
         let mut next_state = if let Some(prev_state) = self.history.last() {
+            // update zobrist hash for board state
+            self.z_hash ^= prev_state.zobrist_hash();
             (*prev_state).clone()
         } else {
             BoardState::default()
         };
+
+        // update zobrist hash piece positions
+        self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.start.row as usize]
+            [mv.start.col as usize];
+        self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.end.row as usize]
+            [mv.end.col as usize];
+
+        // update zobrist hash for captured piece
+        if let Some(p) = mv.capture {
+            self.z_hash ^=
+                ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
+        }
+
         next_state.en_passante_state = None;
         if mv.capture.is_some() {
             match (self.get(mv.end), mv.end) {
-                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::WhiteQueenSide),
-                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::WhiteKingSide),
-                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::BlackQueenSide),
-                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::BlackKingSide),
+                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
+                    next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
+                }
+                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
+                    next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
+                }
+                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
+                    next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
+                }
+                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
+                    next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
+                }
                 _ => {}
             }
         };
         // remove castling rights if we're moving a rook or KING
-        if !self.history.last().unwrap().castle_rights.is_empty() {
+        if self.history.last().unwrap().castle_rights != Castle::NONE {
             match (self.get(mv.start), mv.start) {
-                (Piece::WHITE_KING, Position { row: 0, col: 4 }) => {
-                    next_state
-                        .castle_rights
-                        .retain(|&mut r| r != Castle::WhiteKingSide && r != Castle::WhiteQueenSide);
-                }
+                (Piece::WHITE_KING, Position { row: 0, col: 4 }) => next_state
+                    .castle_rights
+                    .remove(Castle::WHITE_KING_SIDE | Castle::WHITE_QUEEN_SIDE),
                 (Piece::BLACK_KING, Position { row: 7, col: 4 }) => next_state
                     .castle_rights
-                    .retain(|&mut r| r != Castle::BlackKingSide && r != Castle::BlackQueenSide),
-                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::WhiteQueenSide),
-                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::WhiteKingSide),
-                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::BlackQueenSide),
-                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => next_state
-                    .castle_rights
-                    .retain(|&mut r| r != Castle::BlackKingSide),
+                    .remove(Castle::BLACK_KING_SIDE | Castle::BLACK_QUEEN_SIDE),
+                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
+                    next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
+                }
+                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
+                    next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
+                }
+                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
+                    next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
+                }
+                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
+                    next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
+                }
+
                 _ => {}
             }
         }
@@ -211,19 +289,19 @@ impl Board {
         }
 
         match mv.castle {
-            Castle::WhiteKingSide => {
+            Castle::WHITE_KING_SIDE => {
                 *self.get_mut(Position { row: 0, col: 5 }) = Piece::WHITE_ROOK;
                 *self.get_mut(Position { row: 0, col: 7 }) = Piece::NULL_PIECE;
             }
-            Castle::WhiteQueenSide => {
+            Castle::WHITE_QUEEN_SIDE => {
                 *self.get_mut(Position { row: 0, col: 3 }) = Piece::WHITE_ROOK;
                 *self.get_mut(Position { row: 0, col: 0 }) = Piece::NULL_PIECE;
             }
-            Castle::BlackKingSide => {
+            Castle::BLACK_KING_SIDE => {
                 *self.get_mut(Position { row: 7, col: 5 }) = Piece::BLACK_ROOK;
                 *self.get_mut(Position { row: 7, col: 7 }) = Piece::NULL_PIECE;
             }
-            Castle::BlackQueenSide => {
+            Castle::BLACK_QUEEN_SIDE => {
                 *self.get_mut(Position { row: 7, col: 3 }) = Piece::BLACK_ROOK;
                 *self.get_mut(Position { row: 7, col: 0 }) = Piece::NULL_PIECE;
             }
@@ -241,14 +319,28 @@ impl Board {
         }
 
         self.is_white_turn = !self.is_white_turn;
+
+        // update zobrist hash for board state
+        self.z_hash ^= next_state.zobrist_hash();
+        self.z_hash ^= ZOBRIST.black;
+
         self.history.push(next_state);
     }
 
     pub fn unmake_move(&mut self, mv: &Move) {
+        // update zobrist hash piece positions
+        self.z_hash ^= ZOBRIST.pieces[self.get(mv.end).zobrist_key()][mv.start.row as usize]
+            [mv.start.col as usize];
+        self.z_hash ^= ZOBRIST.pieces[self.get(mv.end).zobrist_key()][mv.end.row as usize]
+            [mv.end.col as usize];
+        self.z_hash ^= self.history.last().unwrap().zobrist_hash();
+
         *self.get_mut(mv.start) = self.get(mv.end);
         *self.get_mut(mv.end) = Piece::NULL_PIECE;
 
         if let Some(p) = mv.capture {
+            self.z_hash ^=
+                ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
             if mv.en_passante {
                 // remove pawn from passed square
                 let offset = if self.is_white_turn { 1 } else { -1 };
@@ -262,19 +354,19 @@ impl Board {
         };
 
         match mv.castle {
-            Castle::WhiteKingSide => {
+            Castle::WHITE_KING_SIDE => {
                 *self.get_mut(Position { row: 0, col: 5 }) = Piece::NULL_PIECE;
                 *self.get_mut(Position { row: 0, col: 7 }) = Piece::WHITE_ROOK;
             }
-            Castle::WhiteQueenSide => {
+            Castle::WHITE_QUEEN_SIDE => {
                 *self.get_mut(Position { row: 0, col: 3 }) = Piece::NULL_PIECE;
                 *self.get_mut(Position { row: 0, col: 0 }) = Piece::WHITE_ROOK;
             }
-            Castle::BlackKingSide => {
+            Castle::BLACK_KING_SIDE => {
                 *self.get_mut(Position { row: 7, col: 5 }) = Piece::NULL_PIECE;
                 *self.get_mut(Position { row: 7, col: 7 }) = Piece::BLACK_ROOK;
             }
-            Castle::BlackQueenSide => {
+            Castle::BLACK_QUEEN_SIDE => {
                 *self.get_mut(Position { row: 7, col: 3 }) = Piece::NULL_PIECE;
                 *self.get_mut(Position { row: 7, col: 0 }) = Piece::BLACK_ROOK;
             }
@@ -298,6 +390,9 @@ impl Board {
 
         self.is_white_turn = !self.is_white_turn;
         self.history.pop();
+
+        self.z_hash ^= ZOBRIST.black;
+        self.z_hash ^= self.history.last().unwrap().zobrist_hash();
     }
 
     pub fn is_legal(&mut self, mv: &Move) -> bool {
@@ -398,6 +493,8 @@ impl Board {
             col: pos.col,
         };
 
+        let piece = self.get(pos);
+
         if !move_pos.in_bounds() {
             return;
         }
@@ -424,6 +521,7 @@ impl Board {
                     move_list.push(Move {
                         start: pos,
                         end: move_pos,
+                        piece,
                         promotion: Some(p),
                         ..Default::default()
                     });
@@ -432,6 +530,7 @@ impl Board {
                 move_list.push(Move {
                     start: pos,
                     end: move_pos,
+                    piece,
                     ..Default::default()
                 });
             }
@@ -447,6 +546,7 @@ impl Board {
                     move_list.push(Move {
                         start: pos,
                         end: double_move_pos,
+                        piece,
                         double_pawn_push: true,
                         ..Default::default()
                     })
@@ -490,6 +590,7 @@ impl Board {
                         move_list.push(Move {
                             start: pos,
                             end: attack,
+                            piece,
                             capture: Some(self.get(attack)),
                             promotion: Some(p),
                             ..Default::default()
@@ -499,6 +600,7 @@ impl Board {
                     move_list.push(Move {
                         start: pos,
                         end: attack,
+                        piece,
                         capture: Some(self.get(attack)),
                         ..Default::default()
                     })
@@ -519,6 +621,7 @@ impl Board {
                 move_list.push(Move {
                     start: pos,
                     end: attack,
+                    piece,
                     capture: Some(self.get(attack + offset)),
                     en_passante: true,
                     ..Default::default()
@@ -533,6 +636,7 @@ impl Board {
         } else {
             Piece::BLACK
         };
+        let piece = self.get(pos);
         let offsets = [
             Position { col: 2, row: 1 },
             Position { col: 2, row: -1 },
@@ -556,6 +660,7 @@ impl Board {
                 move_list.push(Move {
                     start: pos,
                     end: pos + offset,
+                    piece,
                     capture,
                     ..Default::default()
                 })
@@ -574,6 +679,8 @@ impl Board {
         } else {
             Piece::BLACK
         };
+        let piece = self.get(start_pos);
+
         for offset in offsets {
             let mut cell = start_pos + offset;
             while cell.in_bounds() {
@@ -588,6 +695,7 @@ impl Board {
                     move_list.push(Move {
                         start: start_pos,
                         end: cell,
+                        piece,
                         capture,
                         ..Default::default()
                     });
@@ -632,6 +740,8 @@ impl Board {
         } else {
             Piece::BLACK
         };
+        let piece = self.get(start_pos);
+
         for offset in [
             Position { row: 1, col: 1 },
             Position { row: 1, col: -1 },
@@ -657,15 +767,24 @@ impl Board {
             move_list.push(Move {
                 start: start_pos,
                 end: start_pos + offset,
+                piece,
                 capture,
                 ..Default::default()
             })
         }
 
         if !self.is_check() {
-            for castling in &self.history.last().unwrap().castle_rights {
+            for castling in [
+                Castle::WHITE_KING_SIDE,
+                Castle::WHITE_QUEEN_SIDE,
+                Castle::BLACK_KING_SIDE,
+                Castle::BLACK_QUEEN_SIDE,
+            ]
+            .into_iter()
+            .filter(|c| self.history.last().unwrap().castle_rights.contains(*c))
+            {
                 match (side, castling) {
-                    (Piece::WHITE, Castle::WhiteKingSide) => {
+                    (Piece::WHITE, Castle::WHITE_KING_SIDE) => {
                         let mut valid = true;
                         for position in [Position { row: 0, col: 5 }, Position { row: 0, col: 6 }] {
                             if self.is_attacked(position) || !self.get(position).is_null() {
@@ -677,12 +796,13 @@ impl Board {
                             move_list.push(Move {
                                 start: start_pos,
                                 end: Position { row: 0, col: 6 },
-                                castle: Castle::WhiteKingSide,
+                                piece,
+                                castle: Castle::WHITE_KING_SIDE,
                                 ..Default::default()
                             })
                         };
                     }
-                    (Piece::WHITE, Castle::WhiteQueenSide) => {
+                    (Piece::WHITE, Castle::WHITE_QUEEN_SIDE) => {
                         let mut valid = true;
                         for position in [Position { row: 0, col: 3 }, Position { row: 0, col: 2 }] {
                             if self.is_attacked(position) || !self.get(position).is_null() {
@@ -695,12 +815,13 @@ impl Board {
                             move_list.push(Move {
                                 start: start_pos,
                                 end: Position { row: 0, col: 2 },
-                                castle: Castle::WhiteQueenSide,
+                                piece,
+                                castle: Castle::WHITE_QUEEN_SIDE,
                                 ..Default::default()
                             })
                         }
                     }
-                    (Piece::BLACK, Castle::BlackKingSide) => {
+                    (Piece::BLACK, Castle::BLACK_KING_SIDE) => {
                         let mut valid = true;
                         for position in [Position { row: 7, col: 5 }, Position { row: 7, col: 6 }] {
                             if self.is_attacked(position) || !self.get(position).is_null() {
@@ -712,12 +833,13 @@ impl Board {
                             move_list.push(Move {
                                 start: start_pos,
                                 end: Position { row: 7, col: 6 },
-                                castle: Castle::BlackKingSide,
+                                piece,
+                                castle: Castle::BLACK_KING_SIDE,
                                 ..Default::default()
                             })
                         }
                     }
-                    (Piece::BLACK, Castle::BlackQueenSide) => {
+                    (Piece::BLACK, Castle::BLACK_QUEEN_SIDE) => {
                         let mut valid = true;
                         for position in [Position { row: 7, col: 3 }, Position { row: 7, col: 2 }] {
                             if self.is_attacked(position) || !self.get(position).is_null() {
@@ -730,7 +852,8 @@ impl Board {
                             move_list.push(Move {
                                 start: start_pos,
                                 end: Position { row: 7, col: 2 },
-                                castle: Castle::BlackQueenSide,
+                                piece,
+                                castle: Castle::BLACK_QUEEN_SIDE,
                                 ..Default::default()
                             })
                         }
@@ -875,32 +998,33 @@ impl Board {
         let castle = match self.get(mv.start) {
             Piece::WHITE_KING => {
                 if !(mv.start == Position { row: 0, col: 4 }) {
-                    Castle::No
+                    Castle::NONE
                 } else {
                     match mv.end.col {
-                        2 => Castle::WhiteQueenSide,
-                        6 => Castle::WhiteKingSide,
-                        _ => Castle::No,
+                        2 => Castle::WHITE_QUEEN_SIDE,
+                        6 => Castle::WHITE_KING_SIDE,
+                        _ => Castle::NONE,
                     }
                 }
             }
             Piece::BLACK_KING => {
                 if !(mv.start == Position { row: 7, col: 4 }) {
-                    Castle::No
+                    Castle::NONE
                 } else {
                     match mv.end.col {
-                        2 => Castle::BlackQueenSide,
-                        6 => Castle::BlackKingSide,
-                        _ => Castle::No,
+                        2 => Castle::BLACK_QUEEN_SIDE,
+                        6 => Castle::BLACK_KING_SIDE,
+                        _ => Castle::NONE,
                     }
                 }
             }
-            _ => Castle::No,
+            _ => Castle::NONE,
         };
 
         Move {
             start: mv.start,
             end: mv.end,
+            piece: self.get(mv.start),
             double_pawn_push,
             en_passante,
             capture,
@@ -924,7 +1048,7 @@ impl Board {
                 if mv.en_passante {
                     ep_count += 1;
                 }
-                if mv.castle != Castle::No {
+                if mv.castle != Castle::NONE {
                     castles += 1;
                 }
             }
@@ -1057,18 +1181,18 @@ impl FromStr for Board {
             _ => Err(ParseFenError),
         }?;
 
-        let mut castle_rights: ArrayVec<Castle, 4> = Default::default();
+        let mut castle_rights = Castle::NONE;
         for c in pieces[2].chars() {
-            let push = match c {
+            let right_or = match c {
                 '-' => Ok(None),
-                'K' => Ok(Some(Castle::WhiteKingSide)),
-                'Q' => Ok(Some(Castle::WhiteQueenSide)),
-                'k' => Ok(Some(Castle::BlackKingSide)),
-                'q' => Ok(Some(Castle::BlackQueenSide)),
+                'K' => Ok(Some(Castle::WHITE_KING_SIDE)),
+                'Q' => Ok(Some(Castle::WHITE_QUEEN_SIDE)),
+                'k' => Ok(Some(Castle::BLACK_KING_SIDE)),
+                'q' => Ok(Some(Castle::BLACK_QUEEN_SIDE)),
                 _ => Err(ParseFenError),
             }?;
-            if let Some(right) = push {
-                castle_rights.push(right);
+            if let Some(right) = right_or {
+                castle_rights.add(right);
             };
         }
 
@@ -1083,20 +1207,25 @@ impl FromStr for Board {
             en_passante_state,
         });
 
-        Ok(Self {
+        let mut b = Board {
             board,
             history,
             is_white_turn,
             white_king,
             black_king,
-        })
+            z_hash: 0,
+        };
+        b.z_hash = b.zobrist_hash();
+
+        Ok(b)
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Move {
     start: Position,
     end: Position,
+    pub piece: Piece,
     double_pawn_push: bool,
     pub capture: Option<Piece>,
     en_passante: bool,
@@ -1109,23 +1238,65 @@ impl Default for Move {
         Move {
             start: Position { row: 0, col: 0 },
             end: Position { row: 0, col: 0 },
+            piece: Piece::NULL_PIECE,
             double_pawn_push: false,
             capture: None,
             en_passante: false,
-            castle: Castle::No,
+            castle: Castle::NONE,
             promotion: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Castle {
-    No,
-    WhiteKingSide,
-    WhiteQueenSide,
-    BlackKingSide,
-    BlackQueenSide,
+pub struct Castle(u8);
+
+impl Castle {
+    pub const NONE: Self = Self(0);
+    pub const WHITE_KING_SIDE: Self = Self(1);
+    pub const WHITE_QUEEN_SIDE: Self = Self(1 << 1);
+    pub const BLACK_KING_SIDE: Self = Self(1 << 2);
+    pub const BLACK_QUEEN_SIDE: Self = Self(1 << 3);
+
+    pub const ALL: Self = Self(0b1111);
+
+    pub fn add(&mut self, castle: Castle) {
+        self.0 |= castle.0;
+    }
+
+    pub fn remove(&mut self, castle: Castle) {
+        self.0 &= !castle.0;
+    }
+
+    pub fn contains(&self, castle: Castle) -> bool {
+        self.0 & castle.0 != 0
+    }
+
+    pub fn zobrist_key(&self) -> usize {
+        self.0 as usize
+    }
 }
+
+impl Default for Castle {
+    fn default() -> Self {
+        Castle::ALL
+    }
+}
+
+impl BitOr for Castle {
+    type Output = Self;
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+// pub enum Castle {
+//     No,
+//     WhiteKingSide,
+//     WhiteQueenSide,
+//     BlackKingSide,
+//     BlackQueenSide,
+// }
 
 #[derive(Debug)]
 pub struct ParseMoveError;

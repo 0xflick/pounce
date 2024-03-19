@@ -5,7 +5,7 @@ use std::time::Instant;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
-use flichess::board::{parse_move_list, Board, Castle, Move, Position};
+use flichess::board::{parse_move_list, Board, Castle, Move};
 use flichess::uci::Uci;
 
 fn main() -> rustyline::Result<()> {
@@ -36,7 +36,7 @@ fn main() -> rustyline::Result<()> {
                 "board" => println!("{}", board),
                 "moves" => {
                     for mv in board.gen_moves().iter().filter(|m| board.is_legal(m)) {
-                        if mv.castle != Castle::No {
+                        if mv.castle != Castle::NONE {
                             print!("castle: ")
                         }
                         print!("{} ", mv);
@@ -62,6 +62,10 @@ fn main() -> rustyline::Result<()> {
                 }
                 "debug" => {
                     println!("{:?}", board)
+                }
+                "zobrist" => {
+                    println!("{:?}", board.z_hash);
+                    println!("{:?}", board.zobrist_hash());
                 }
                 s => {
                     if s.starts_with("perft") {
@@ -133,9 +137,6 @@ fn main() -> rustyline::Result<()> {
                         move_list.push(annotated_move);
                         println!("{}", annotated_move);
                         continue;
-                    } else if let Ok(p) = s.parse::<Position>() {
-                        println!("{}", board.get(p));
-                        continue;
                     }
                 }
             },
@@ -163,7 +164,7 @@ fn main() -> rustyline::Result<()> {
 fn uci_mode() -> Result<(), ()> {
     info!("starting uci mode");
     let mut uci = Uci::new();
-    uci.identify();
+    uci.cmd_uci();
 
     let mut buf = String::new();
     loop {
