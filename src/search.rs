@@ -37,18 +37,17 @@ impl Search {
         }
     }
 
-    pub fn search(&mut self) -> Move {
+    pub fn search(&mut self) -> Option<Move> {
         self.start_time = Instant::now();
 
         let mut moves: MoveList = self.board.gen_moves();
         let mut best = NEG_INF;
 
-        if moves.is_empty() {
-            return Move::default();
-        }
         let mut best_move: Option<Move> = None;
         let mut depth_best_move: Option<Move> = None;
         let mut depth_best;
+
+        info!("searching. time limit: {} ms", self.time_limit.as_millis());
 
         let mut canceled = false;
         for depth in 0..200 {
@@ -61,18 +60,21 @@ impl Search {
             depth_best = NEG_INF;
 
             info!("searching depth: {}", depth);
-
             for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
                 if !self.board.is_legal(&mv) {
                     continue;
                 }
+                if depth_best_move.is_none() {
+                    depth_best_move = Some(mv);
+                }
                 self.board.make_move(&mv);
-                let res = self.nega_max(NEG_INF, POS_INF, depth, 0);
+                let extension = if self.board.is_check() { 1 } else { 0 };
+                let res = self.nega_max(NEG_INF, POS_INF, depth + extension, extension, 0);
                 self.board.unmake_move(&mv);
                 match res {
                     Some(score) => {
                         if -score > depth_best {
-                            // info!("new best move: {}, score: {}, depth: {}", mv, -score, depth);
+                            info!("new best move: {}, score: {}, depth: {}", mv, -score, depth);
                             depth_best = -score;
                             depth_best_move = Some(mv);
                         }
@@ -99,16 +101,26 @@ impl Search {
             }
         }
         println!("info score cp {} nodes {}", best, self.nodes);
-        best_move.unwrap_or(depth_best_move.unwrap_or(moves[0]))
+        info!(
+            "search done. move {}",
+            best_move.or(depth_best_move).unwrap_or_default()
+        );
+        best_move.or(depth_best_move)
     }
 
-    fn nega_max(&mut self, mut alpha: i32, beta: i32, depth: u8, ply_from_root: u8) -> Option<i32> {
+    fn nega_max(
+        &mut self,
+        mut alpha: i32,
+        beta: i32,
+        depth: u8,
+        extensions: u8,
+        ply_from_root: u8,
+    ) -> Option<i32> {
         if self.board.is_stalemate() {
             return Some(0);
         }
 
         if depth == 0 {
-            self.nodes += 1;
             return self.quiesce(alpha, beta);
         }
         let mut best_move: Option<Move> = None;
@@ -138,18 +150,15 @@ impl Search {
         }
 
         let mut moves: MoveList = self.board.gen_moves();
-        if moves.is_empty() {
-            if self.board.is_check() {
-                return Some(-MATE + ply_from_root as i32);
-            }
-            return Some(0);
-        }
+
+        let mut moved = true;
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
         for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
             if !self.board.is_legal(&mv) {
                 continue;
             }
+            moved = false;
             if self.nodes % (1 << 16) == 0 {
                 let table = self.table.lock().unwrap();
                 println!(
@@ -166,7 +175,18 @@ impl Search {
             }
 
             self.board.make_move(&mv);
-            let res = self.nega_max(-beta, -alpha, depth - 1, ply_from_root + 1);
+            let extension = if extensions < 16 && self.board.is_check() {
+                1
+            } else {
+                0
+            };
+            let res = self.nega_max(
+                -beta,
+                -alpha,
+                depth - 1 + extension,
+                ply_from_root + 1,
+                extensions + extension,
+            );
             self.board.unmake_move(&mv);
 
             match res {
@@ -192,6 +212,12 @@ impl Search {
                 }
             }
         }
+        if moved {
+            if self.board.is_check() {
+                return Some(-MATE + ply_from_root as i32);
+            }
+            return Some(0);
+        }
         self.table.lock().unwrap().save(Entry {
             z_key: self.board.z_hash,
             best_move: search_best,
@@ -203,6 +229,7 @@ impl Search {
     }
 
     fn quiesce(&mut self, mut alpha: i32, beta: i32) -> Option<i32> {
+        self.nodes += 1;
         if self.must_stop() {
             return None;
         }
@@ -216,14 +243,9 @@ impl Search {
         if stand_pat > alpha {
             alpha = stand_pat;
         }
-        let moves: Vec<Move> = self
-            .board
-            .gen_moves()
-            .into_iter()
-            .filter(|m| m.capture.is_some())
-            .collect();
-        for mv in moves {
-            if !self.board.is_legal(&mv) {
+        let mut moves = self.board.gen_moves();
+        for mv in MoveOrderer::new(&mut moves, None) {
+            if mv.capture.is_none() || !self.board.is_legal(&mv) {
                 continue;
             }
             self.board.make_move(&mv);

@@ -1,3 +1,4 @@
+use log::info;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -38,6 +39,7 @@ impl Uci {
     }
 
     pub fn cmd(&mut self, cmd: String) {
+        info!("cmd: {}", cmd);
         let mut parts = cmd.split_whitespace();
         match parts.next() {
             Some("uci") => self.cmd_uci(),
@@ -48,6 +50,11 @@ impl Uci {
             Some("stop") => self.cmd_stop(),
             Some("quit") => self.cmd_quit(),
             Some("ucinewgame") => self.cmd_ucinewgame(),
+            Some("board") => {
+                if let Some(board) = &self.board {
+                    println!("{}", board);
+                }
+            }
             _ => println!("unknown command: {}", cmd),
         }
     }
@@ -141,9 +148,12 @@ impl Uci {
         let table = self.table.clone();
         thread::spawn(move || {
             let mut search = Search::new(board, tl, abort, table);
-            let best_move = search.search();
-
-            println!("bestmove {}", best_move);
+            match search.search() {
+                Some(best_move) => {
+                    println!("bestmove {}", best_move);
+                }
+                None => println!("bestmove (none)"),
+            }
         });
     }
 

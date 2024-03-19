@@ -11,10 +11,11 @@ debug = true
 arrayvec = "0.7.4"
 lazy_static = "1.4.0"
 log = "0.4.21"
+log-panics = { version = "2.1.0", features = ["with-backtrace"] }
 rand = "0.8.5"
-regex = "1.10.3"
 rustyline = "14.0.0"
 simple-logging = "2.0.2"
+uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -1,6 +1,6 @@
 use log::{info, LevelFilter};
-use std::io;
 use std::time::Instant;
+use uuid::Uuid;
 
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -9,8 +9,9 @@ use flichess::board::{parse_move_list, Board, Castle, Move};
 use flichess::uci::Uci;
 
 fn main() -> rustyline::Result<()> {
-    // simple_logging::log_to_file("test.log", LevelFilter::Info).unwrap();
-    simple_logging::log_to_stderr(LevelFilter::Info);
+    simple_logging::log_to_file(format!("test-{}.log", Uuid::new_v4()), LevelFilter::Info).unwrap();
+    log_panics::init();
+    // simple_logging::log_to_stderr(LevelFilter::Info);
 
     let mut rl = DefaultEditor::new()?;
     let mut board: Board = Default::default();
@@ -161,20 +162,21 @@ fn main() -> rustyline::Result<()> {
     Ok(())
 }
 
-fn uci_mode() -> Result<(), ()> {
+fn uci_mode() -> rustyline::Result<()> {
     info!("starting uci mode");
     let mut uci = Uci::new();
     uci.cmd_uci();
 
-    let mut buf = String::new();
+    let mut rl = DefaultEditor::new()?;
+
     loop {
-        buf.clear();
-        io::stdin()
-            .read_line(&mut buf)
-            .expect("error reading from stdin");
-        let cmd_str = buf.clone();
-        {
-            uci.cmd(cmd_str);
+        let readline = rl.readline("");
+        match readline {
+            Ok(line) => uci.cmd(line),
+            Err(_) => {
+                break;
+            }
         }
     }
+    Ok(())
 }

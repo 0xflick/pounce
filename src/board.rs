@@ -1015,12 +1015,16 @@ impl Board {
             Piece::NULL_PIECE => None,
             p => Some(p),
         };
-        let en_passante = self
-            .history
-            .last()
-            .unwrap()
-            .en_passante_state
-            .is_some_and(|p| p == mv.end);
+        let en_passante = if self.get(mv.start).kind() == Piece::PAWN {
+            self.history
+                .last()
+                .unwrap()
+                .en_passante_state
+                .is_some_and(|p| p == mv.end)
+        } else {
+            false
+        };
+
         let castle = match self.get(mv.start) {
             Piece::WHITE_KING => {
                 if !(mv.start == Position { row: 0, col: 4 }) {
@@ -1362,9 +1366,9 @@ impl FromStr for Move {
                 if side == Piece::BLACK {
                     prom = prom.map(|p| match p {
                         Piece::WHITE_QUEEN => Piece::BLACK_QUEEN,
-                        Piece::BLACK_BISHOP => Piece::BLACK_BISHOP,
-                        Piece::BLACK_ROOK => Piece::BLACK_ROOK,
-                        Piece::BLACK_KNIGHT => Piece::BLACK_KNIGHT,
+                        Piece::WHITE_BISHOP => Piece::BLACK_BISHOP,
+                        Piece::WHITE_ROOK => Piece::BLACK_ROOK,
+                        Piece::WHITE_KNIGHT => Piece::BLACK_KNIGHT,
                         _ => p,
                     })
                 }
