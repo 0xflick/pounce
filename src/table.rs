@@ -53,11 +53,13 @@ impl Table {
         let index = (entry.z_key as usize) % self.entries.len();
         let should_replace = match self.entries[index] {
             Some(ref e) => e.epoch + 1 < entry.epoch || e.depth <= entry.depth + 1,
-            None => true,
+            None => {
+                self.num_entries += 1;
+                true
+            }
         };
 
         if should_replace {
-            self.num_entries += 1;
             self.entries[index] = Some(entry);
         }
     }
