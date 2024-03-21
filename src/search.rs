@@ -342,7 +342,7 @@ enum MoveStage {
     Quiet,
 }
 
-const MVV_LVA: [[i32; 6]; 6] = [
+const MVV_LVA: [[u16; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
     [14, 24, 34, 44, 54, 0], // attacker knight, victim P, N, B, R, Q,  K
     [13, 23, 33, 43, 53, 0], // attacker bishop, victim P, N, B, R, Q,  K
@@ -351,10 +351,12 @@ const MVV_LVA: [[i32; 6]; 6] = [
     [10, 20, 30, 40, 50, 0], // attacker king, victim P, N, B, R, Q,  K
 ];
 
+type MoveListWithScores<'a> = [Option<(&'a Move, u16)>; MAX_MOVES];
+
 struct MoveOrderer<'a> {
-    moves: &'a mut MoveList,
-    scores: [u16; MAX_MOVES],
+    moves: MoveListWithScores<'a>,
     idx: usize,
+    max_idx: usize,
     current_stage: MoveStage,
     hash_move: Option<&'a Move>,
     killers: [Option<&'a Move>; 2],
@@ -366,9 +368,14 @@ impl<'a> MoveOrderer<'a> {
         hash_move: Option<&'a Move>,
         killers: [Option<&'a Move>; 2],
     ) -> MoveOrderer<'a> {
+        let mut move_list = [None; MAX_MOVES];
+        for (i, mv) in moves.iter().enumerate() {
+            move_list[i] = Some((mv, 0));
+        }
+
         MoveOrderer {
-            moves,
-            scores: [0; MAX_MOVES],
+            moves: move_list,
+            max_idx: moves.len(),
             hash_move,
             killers,
             idx: 0,
@@ -377,39 +384,28 @@ impl<'a> MoveOrderer<'a> {
     }
 
     fn score(&mut self) {
-        for (i, mv) in self.moves.into_iter().skip(self.idx).enumerate() {
+        for (mv, score) in self.moves.iter_mut().skip(self.idx).flatten() {
             if let Some(capture) = mv.capture {
                 let attacker = mv.piece.kind() - 1;
                 let victim = capture.kind() - 1;
-                let score = MVV_LVA[attacker as usize][victim as usize];
-                self.scores[self.idx + i] = score as u16;
+                *score = MVV_LVA[attacker as usize][victim as usize];
             }
         }
     }
 
     fn sort(&mut self, begin: usize, end: usize) {
-        for i in begin..end {
-            let mut max = i;
-            for j in (i + 1)..end {
-                if self.scores[j] > self.scores[max] {
-                    max = j;
-                }
-            }
-            self.scores.swap(i, max);
-            self.moves.swap(i, max);
-        }
+        self.moves[begin..end].sort_unstable_by(|a, b| b.unwrap().1.cmp(&a.unwrap().1))
     }
 
     fn select<F>(&mut self, f: F) -> Option<Move>
     where
         F: Fn(&Move) -> bool,
     {
-        for i in self.idx..self.moves.len() {
-            if f(&self.moves[i]) {
+        for i in self.idx..self.max_idx {
+            if f(self.moves[i].unwrap().0) {
                 self.moves.swap(self.idx, i);
-                self.scores.swap(self.idx, i);
                 self.idx += 1;
-                return Some(self.moves[self.idx - 1]);
+                return Some(*self.moves[self.idx - 1].unwrap().0);
             }
         }
         None
@@ -429,7 +425,7 @@ impl<'a> Iterator for MoveOrderer<'a> {
                 self.current_stage = MoveStage::Capture;
 
                 self.score();
-                self.sort(self.idx, self.moves.len());
+                self.sort(self.idx, self.max_idx);
                 self.next()
             }
             MoveStage::Capture => {
