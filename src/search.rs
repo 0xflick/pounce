@@ -1,4 +1,3 @@
-use arrayvec::ArrayVec;
 use log::info;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -11,6 +10,14 @@ use crate::table::{Entry, ScoreType, Table};
 const POS_INF: i32 = 9_999_999;
 const NEG_INF: i32 = -POS_INF;
 
+const MAX_DEPTH: usize = 64;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct StackFrame {
+    ply: u8,
+    killers: [Option<Move>; 2],
+}
+
 pub struct Search {
     board: Board,
     start_time: Instant,
@@ -19,6 +26,7 @@ pub struct Search {
     stop: Arc<AtomicBool>,
     nodes: u64,
     epoch: u16,
+    stack: [StackFrame; MAX_DEPTH],
 }
 
 impl Search {
@@ -29,6 +37,12 @@ impl Search {
         table: Arc<Mutex<Table>>,
     ) -> Search {
         let epoch = board.moves_played() as u16;
+        let mut stack: [StackFrame; MAX_DEPTH] = [Default::default(); MAX_DEPTH];
+
+        for (i, frame) in stack.iter_mut().enumerate() {
+            frame.ply = i as u8;
+        }
+
         Search {
             board,
             start_time: Instant::now(),
@@ -37,6 +51,7 @@ impl Search {
             table,
             nodes: 0,
             epoch,
+            stack,
         }
     }
 
@@ -63,7 +78,12 @@ impl Search {
             depth_best = NEG_INF;
 
             info!("searching depth: {}", depth);
-            for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
+            let killers = self.stack[0].killers;
+            for (_, mv) in MoveOrderer::new(
+                &mut moves,
+                best_move.as_ref(),
+                [killers[0].as_ref(), killers[1].as_ref()],
+            ) {
                 if !self.board.is_legal(&mv) {
                     continue;
                 }
@@ -157,7 +177,12 @@ impl Search {
         let mut moved = true;
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
-        for mv in MoveOrderer::new(&mut moves, best_move.as_ref()) {
+        let killers = self.stack[ply_from_root as usize].killers;
+        for (stage, mv) in MoveOrderer::new(
+            &mut moves,
+            best_move.as_ref(),
+            [killers[0].as_ref(), killers[1].as_ref()],
+        ) {
             if !self.board.is_legal(&mv) {
                 continue;
             }
@@ -195,6 +220,7 @@ impl Search {
             match res {
                 Some(score) => {
                     if -score >= beta {
+                        // fail hard beta-cutoff
                         self.table.lock().unwrap().save(Entry {
                             z_key: self.board.z_hash,
                             best_move: Some(mv),
@@ -203,7 +229,12 @@ impl Search {
                             score_type: ScoreType::Beta,
                             epoch: self.epoch,
                         });
-                        return Some(beta); // fail hard beta-cutoff
+
+                        if stage == MoveStage::Quiet {
+                            self.update_killers(mv, ply_from_root);
+                        }
+
+                        return Some(beta);
                     }
                     if -score > alpha {
                         score_type = ScoreType::Exact;
@@ -249,7 +280,7 @@ impl Search {
             alpha = stand_pat;
         }
         let mut moves = self.board.gen_moves();
-        for mv in MoveOrderer::new(&mut moves, None) {
+        for (_, mv) in MoveOrderer::new(&mut moves, None, [None, None]) {
             if mv.capture.is_none() || !self.board.is_legal(&mv) {
                 continue;
             }
@@ -293,13 +324,23 @@ impl Search {
         self.stop.load(std::sync::atomic::Ordering::Relaxed)
             || (self.time_remaining() == Duration::from_secs(0))
     }
+
+    fn update_killers(&mut self, mv: Move, ply: u8) {
+        let killers = &mut self.stack[ply as usize].killers;
+        if killers[0].is_none() || killers[0] == Some(mv) {
+            killers[1] = killers[0];
+            killers[0] = Some(mv);
+        }
+    }
 }
 
-type ScoreList = ArrayVec<i32, MAX_MOVES>;
-
-const HASH_MOVE_SCORE: i32 = 1000;
-const MVV_LVA_SCORE: i32 = 900;
-const REST_SCORE: i32 = 0;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MoveStage {
+    TT,
+    Capture,
+    Killer,
+    Quiet,
+}
 
 const MVV_LVA: [[i32; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
@@ -312,53 +353,108 @@ const MVV_LVA: [[i32; 6]; 6] = [
 
 struct MoveOrderer<'a> {
     moves: &'a mut MoveList,
-    scores: ScoreList,
+    scores: [u16; MAX_MOVES],
     idx: usize,
+    current_stage: MoveStage,
+    hash_move: Option<&'a Move>,
+    killers: [Option<&'a Move>; 2],
 }
 
 impl<'a> MoveOrderer<'a> {
-    fn new(moves: &'a mut MoveList, hash_move: Option<&Move>) -> MoveOrderer<'a> {
-        let mut scores: ScoreList = ArrayVec::new();
-
-        for mv in moves.as_ref() {
-            let score = if hash_move.is_some_and(|hm| hm == mv) {
-                HASH_MOVE_SCORE
-            } else if let Some(capture) = mv.capture {
-                let attacker = mv.piece.kind() - 1;
-                let victim = capture.kind() - 1;
-                MVV_LVA_SCORE + MVV_LVA[attacker as usize][victim as usize]
-            } else {
-                REST_SCORE
-            };
-            scores.push(score);
-        }
-
+    fn new(
+        moves: &'a mut MoveList,
+        hash_move: Option<&'a Move>,
+        killers: [Option<&'a Move>; 2],
+    ) -> MoveOrderer<'a> {
         MoveOrderer {
             moves,
-            scores,
+            scores: [0; MAX_MOVES],
+            hash_move,
+            killers,
             idx: 0,
+            current_stage: MoveStage::TT,
         }
+    }
+
+    fn score(&mut self) {
+        for (i, mv) in self.moves.into_iter().skip(self.idx).enumerate() {
+            if let Some(capture) = mv.capture {
+                let attacker = mv.piece.kind() - 1;
+                let victim = capture.kind() - 1;
+                let score = MVV_LVA[attacker as usize][victim as usize];
+                self.scores[self.idx + i] = score as u16;
+            }
+        }
+    }
+
+    fn sort(&mut self, begin: usize, end: usize) {
+        for i in begin..end {
+            let mut max = i;
+            for j in (i + 1)..end {
+                if self.scores[j] > self.scores[max] {
+                    max = j;
+                }
+            }
+            self.scores.swap(i, max);
+            self.moves.swap(i, max);
+        }
+    }
+
+    fn select<F>(&mut self, f: F) -> Option<Move>
+    where
+        F: Fn(&Move) -> bool,
+    {
+        for i in self.idx..self.moves.len() {
+            if f(&self.moves[i]) {
+                self.moves.swap(self.idx, i);
+                self.scores.swap(self.idx, i);
+                self.idx += 1;
+                return Some(self.moves[self.idx - 1]);
+            }
+        }
+        None
     }
 }
 
 impl<'a> Iterator for MoveOrderer<'a> {
-    type Item = Move;
+    type Item = (MoveStage, Move);
     fn next(&mut self) -> Option<Self::Item> {
-        let max_idx = self
-            .scores
-            .iter()
-            .enumerate()
-            .skip(self.idx)
-            .max_by_key(|(_, s)| *s)
-            .map(|(i, _)| i);
+        match self.current_stage {
+            MoveStage::TT => {
+                if let Some(hm) = self.hash_move {
+                    if let Some(mv) = self.select(|mv| mv == hm) {
+                        return Some((MoveStage::TT, mv));
+                    }
+                }
+                self.current_stage = MoveStage::Capture;
 
-        if let Some(max_idx) = max_idx {
-            self.moves.swap(self.idx, max_idx);
-            self.scores.swap(self.idx, max_idx);
-            self.idx += 1;
-            Some(self.moves[self.idx - 1])
-        } else {
-            None
+                self.score();
+                self.sort(self.idx, self.moves.len());
+                self.next()
+            }
+            MoveStage::Capture => {
+                let capture = self.select(|mv| mv.capture.is_some());
+                if let Some(capture_mv) = capture {
+                    return Some((MoveStage::Capture, capture_mv));
+                }
+
+                self.current_stage = MoveStage::Killer;
+                self.next()
+            }
+            MoveStage::Killer => {
+                let killers = self.killers;
+                let killer = self.select(|mv| {
+                    killers[0].is_some_and(|k| k == mv) || killers[1].is_some_and(|k| k == mv)
+                });
+
+                if let Some(killer_mv) = killer {
+                    return Some((MoveStage::Killer, killer_mv));
+                }
+
+                self.current_stage = MoveStage::Quiet;
+                self.next()
+            }
+            MoveStage::Quiet => self.select(|_| true).map(|mv| (MoveStage::Quiet, mv)),
         }
     }
 }
@@ -394,14 +490,28 @@ mod tests {
             m.capture = Some(Piece::BLACK_KING);
             m
         });
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_QUEEN;
+            m
+        });
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::BLACK_PAWN;
+            m
+        });
 
         let moves_copy = moves.clone();
 
-        let mut orderer = MoveOrderer::new(&mut moves, moves_copy.get(3));
-        assert_eq!(orderer.next(), Some(moves_copy[3]));
-        assert_eq!(orderer.next(), Some(moves_copy[1]));
-        assert_eq!(orderer.next(), Some(moves_copy[2]));
-        assert_eq!(orderer.next(), Some(moves_copy[0]));
+        let mut orderer =
+            MoveOrderer::new(&mut moves, moves_copy.get(3), [moves_copy.get(5), None]);
+
+        assert_eq!(orderer.next(), Some((MoveStage::TT, (moves_copy[3]))));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[1])));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[2])));
+        assert_eq!(orderer.next(), Some((MoveStage::Killer, moves_copy[5])));
+        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[4])));
+        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[0])));
         assert_eq!(orderer.next(), None);
     }
 }
