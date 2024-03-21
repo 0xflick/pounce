@@ -172,12 +172,16 @@ impl Uci {
         };
         while let Some(part) = parts.next() {
             match part {
-                "wtime" => time_control.wtime = parts.next().map(|s| s.parse().unwrap()),
-                "btime" => time_control.btime = parts.next().map(|s| s.parse().unwrap()),
-                "winc" => time_control.winc = parts.next().map(|s| s.parse().unwrap()),
-                "binc" => time_control.binc = parts.next().map(|s| s.parse().unwrap()),
-                "movestogo" => time_control.movestogo = parts.next().map(|s| s.parse().unwrap()),
-                "movetime" => time_control.move_time = parts.next().map(|s| s.parse().unwrap()),
+                "wtime" => time_control.wtime = parts.next().map(|s| s.parse().unwrap_or_default()),
+                "btime" => time_control.btime = parts.next().map(|s| s.parse().unwrap_or_default()),
+                "winc" => time_control.winc = parts.next().map(|s| s.parse().unwrap_or_default()),
+                "binc" => time_control.binc = parts.next().map(|s| s.parse().unwrap_or_default()),
+                "movestogo" => {
+                    time_control.movestogo = parts.next().map(|s| s.parse().unwrap_or_default())
+                }
+                "movetime" => {
+                    time_control.move_time = parts.next().map(|s| s.parse().unwrap_or_default())
+                }
                 "infinite" => time_control.infinite = true,
                 _ => println!("unknown go command"),
             }

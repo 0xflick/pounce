@@ -18,6 +18,7 @@ pub struct Search {
     table: Arc<Mutex<Table>>,
     stop: Arc<AtomicBool>,
     nodes: u64,
+    epoch: u16,
 }
 
 impl Search {
@@ -27,6 +28,7 @@ impl Search {
         stop: Arc<AtomicBool>,
         table: Arc<Mutex<Table>>,
     ) -> Search {
+        let epoch = board.moves_played() as u16;
         Search {
             board,
             start_time: Instant::now(),
@@ -34,6 +36,7 @@ impl Search {
             stop,
             table,
             nodes: 0,
+            epoch,
         }
     }
 
@@ -198,6 +201,7 @@ impl Search {
                             depth,
                             score: -score,
                             score_type: ScoreType::Beta,
+                            epoch: self.epoch,
                         });
                         return Some(beta); // fail hard beta-cutoff
                     }
@@ -224,6 +228,7 @@ impl Search {
             depth,
             score: alpha,
             score_type,
+            epoch: self.epoch,
         });
         Some(alpha)
     }

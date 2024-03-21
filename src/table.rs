@@ -16,6 +16,7 @@ pub struct Entry {
     pub depth: u8,
     pub score: i32,
     pub score_type: ScoreType,
+    pub epoch: u16,
 }
 
 pub struct Table {
@@ -50,14 +51,15 @@ impl Table {
 
     pub fn save(&mut self, entry: Entry) {
         let index = (entry.z_key as usize) % self.entries.len();
-        if let Some(ref e) = self.entries[index] {
-            if e.depth <= entry.depth {
-                return;
-            }
-        } else {
+        let should_replace = match self.entries[index] {
+            Some(ref e) => e.epoch + 1 < entry.epoch || e.depth <= entry.depth + 1,
+            None => true,
+        };
+
+        if should_replace {
             self.num_entries += 1;
+            self.entries[index] = Some(entry);
         }
-        self.entries[index] = Some(entry);
     }
 
     pub fn per_mille_full(&self) -> usize {
