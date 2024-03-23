@@ -172,7 +172,10 @@ fn uci_mode() -> rustyline::Result<()> {
     loop {
         let readline = rl.readline("");
         match readline {
-            Ok(line) => uci.cmd(line),
+            Ok(line) => {
+                rl.add_history_entry(line.as_str())?;
+                uci.cmd(line)
+            }
             Err(_) => {
                 break;
             }

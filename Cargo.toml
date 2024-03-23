@@ -9,6 +9,7 @@ debug = true
 
 [dependencies]
 arrayvec = "0.7.4"
+colored = "2.1.0"
 lazy_static = "1.4.0"
 log = "0.4.21"
 log-panics = { version = "2.1.0", features = ["with-backtrace"] }

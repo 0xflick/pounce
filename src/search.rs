@@ -25,8 +25,13 @@ pub struct Search {
     table: Arc<Mutex<Table>>,
     stop: Arc<AtomicBool>,
     nodes: u64,
+    score_nodes: u64,
+    tt_cuts: u64,
+    capture_cuts: u64,
+    killer_cuts: u64,
     epoch: u16,
     stack: [StackFrame; MAX_DEPTH],
+    silent: bool,
 }
 
 impl Search {
@@ -50,9 +55,18 @@ impl Search {
             stop,
             table,
             nodes: 0,
+            score_nodes: 0,
+            tt_cuts: 0,
+            capture_cuts: 0,
+            killer_cuts: 0,
             epoch,
             stack,
+            silent: false,
         }
+    }
+
+    pub fn set_silent(&mut self, silent: bool) {
+        self.silent = silent;
     }
 
     pub fn search(&mut self) -> Option<Move> {
@@ -68,11 +82,13 @@ impl Search {
         info!("searching. time limit: {} ms", self.time_limit.as_millis());
 
         let mut canceled = false;
+        let mut max_depth = 0;
         for depth in 0..200 {
             if self.should_stop() {
                 info!("search canceled at depth: {}", depth);
                 break;
             }
+            let before_nodes = self.nodes;
 
             depth_best_move = None;
             depth_best = NEG_INF;
@@ -115,15 +131,38 @@ impl Search {
 
             info!("depth: {}, best: {}", depth, depth_best);
             if depth_best_move.is_some() {
-                println!(
-                    "info score cp {} depth {} nodes {}",
-                    depth_best, depth, self.nodes
-                );
+                let table = self.table.lock().unwrap();
+                self.writeln(format!("info score cp {} nodes {} nps {} depth {} hashfull {} string hashhits {} string ttcuts {} string capturecuts {} string killercuts {}",
+                        best, self.nodes,
+                        (self.nodes as f64 / self.start_time.elapsed().as_secs_f64()) as usize,
+                        depth,
+                        table.per_mille_full(),
+                        table.per_mille_hits(),
+                        self.tt_cuts,
+                        self.capture_cuts,
+                        self.killer_cuts,
+                    ));
                 best = depth_best;
                 best_move = depth_best_move;
+                max_depth = depth;
             }
+            self.writeln(format!(
+                "info string ebf {}",
+                f64::sqrt(self.nodes as f64 / (before_nodes + 1) as f64)
+            ));
         }
-        println!("info score cp {} nodes {}", best, self.nodes);
+        let table = self.table.lock().unwrap();
+        self.writeln(format!("info score cp {} nodes {} nps {} depth {} hashfull {} string hashhits {} string ttcuts {} string capturecuts {} string killercuts {} string score_nodes {}",
+            best, self.nodes,
+            (self.nodes as f64 / self.start_time.elapsed().as_secs_f64()) as usize,
+            max_depth,
+            table.per_mille_full(),
+            table.per_mille_hits(),
+            self.tt_cuts,
+            self.capture_cuts,
+            self.killer_cuts,
+            self.score_nodes,
+        ));
         info!(
             "search done. move {}",
             best_move.or(depth_best_move).unwrap_or_default()
@@ -139,7 +178,9 @@ impl Search {
         extensions: u8,
         ply_from_root: u8,
     ) -> Option<i32> {
+        self.nodes += 1;
         if self.board.is_stalemate() {
+            self.score_nodes += 1;
             return Some(0);
         }
 
@@ -153,15 +194,18 @@ impl Search {
                 if hit.depth >= depth {
                     match hit.score_type {
                         ScoreType::Exact => {
+                            self.score_nodes += 1;
                             return Some(hit.score);
                         }
                         ScoreType::Alpha => {
                             if hit.score <= alpha {
+                                self.score_nodes += 1;
                                 return Some(alpha);
                             }
                         }
                         ScoreType::Beta => {
                             if hit.score >= beta {
+                                self.score_nodes += 1;
                                 return Some(beta);
                             }
                         }
@@ -174,7 +218,7 @@ impl Search {
 
         let mut moves: MoveList = self.board.gen_moves();
 
-        let mut moved = true;
+        let mut moved = false;
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
         let killers = self.stack[ply_from_root as usize].killers;
@@ -186,16 +230,19 @@ impl Search {
             if !self.board.is_legal(&mv) {
                 continue;
             }
-            moved = false;
-            if self.nodes % (1 << 16) == 0 {
+            moved = true;
+            if self.nodes % (1 << 17) == 0 {
                 let table = self.table.lock().unwrap();
-                println!(
-                    "info nodes {} nps {} hashfull {} string hashhits {}",
+                self.writeln(format!(
+                    "info nodes {} nps {} hashfull {} string hashhits {} string ttcuts {} string capturecuts {} string killercuts {}",
                     self.nodes,
                     (self.nodes as f64 / self.start_time.elapsed().as_secs_f64()) as usize,
                     table.per_mille_full(),
-                    table.per_mille_hits()
-                );
+                    table.per_mille_hits(),
+                    self.tt_cuts,
+                    self.capture_cuts,
+                    self.killer_cuts,
+                ));
             }
 
             if self.nodes % (1 << 14) == 0 && self.must_stop() {
@@ -230,8 +277,13 @@ impl Search {
                             epoch: self.epoch,
                         });
 
-                        if stage == MoveStage::Quiet {
-                            self.update_killers(mv, ply_from_root);
+                        match stage {
+                            MoveStage::TT => self.tt_cuts += 1,
+                            MoveStage::Capture => self.capture_cuts += 1,
+                            MoveStage::Killer => self.killer_cuts += 1,
+                            MoveStage::Quiet => {
+                                self.update_killers(mv, ply_from_root);
+                            }
                         }
 
                         return Some(beta);
@@ -247,7 +299,8 @@ impl Search {
                 }
             }
         }
-        if moved {
+        if !moved {
+            self.score_nodes += 1;
             if self.board.is_check() {
                 return Some(-MATE + ply_from_root as i32);
             }
@@ -270,20 +323,24 @@ impl Search {
             return None;
         }
         if self.board.is_stalemate() {
+            self.score_nodes += 1;
             return Some(0);
         }
         let stand_pat = score(&self.board);
         if stand_pat >= beta {
+            self.score_nodes += 1;
             return Some(beta);
         }
         if stand_pat > alpha {
             alpha = stand_pat;
         }
         let mut moves = self.board.gen_moves();
+        let mut moved = false;
         for (_, mv) in MoveOrderer::new(&mut moves, None, [None, None]) {
             if mv.capture.is_none() || !self.board.is_legal(&mv) {
                 continue;
             }
+            moved = true;
             self.board.make_move(&mv);
             let res = self.quiesce(-beta, -alpha);
             self.board.unmake_move(&mv);
@@ -301,6 +358,9 @@ impl Search {
                 }
             }
         }
+        if !moved {
+            self.score_nodes += 1;
+        }
         Some(alpha)
     }
 
@@ -317,7 +377,7 @@ impl Search {
 
     fn should_stop(&self) -> bool {
         self.stop.load(std::sync::atomic::Ordering::Relaxed)
-            || (self.time_remaining() < self.time_limit / 3)
+            || (self.time_remaining() < self.time_limit / 6)
     }
 
     fn must_stop(&self) -> bool {
@@ -330,6 +390,12 @@ impl Search {
         if killers[0].is_none() || killers[0] == Some(mv) {
             killers[1] = killers[0];
             killers[0] = Some(mv);
+        }
+    }
+
+    fn writeln(&self, s: String) {
+        if !self.silent {
+            println!("{}", s);
         }
     }
 }

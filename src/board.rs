@@ -1267,6 +1267,60 @@ pub struct Move {
     promotion: Option<Piece>,
 }
 
+impl Move {
+    pub fn to_algebraic(&self) -> String {
+        if self.castle != Castle::NONE {
+            return match self.castle {
+                Castle::WHITE_KING_SIDE => "O-O".to_string(),
+                Castle::WHITE_QUEEN_SIDE => "O-O-O".to_string(),
+                Castle::BLACK_KING_SIDE => "O-O".to_string(),
+                Castle::BLACK_QUEEN_SIDE => "O-O-O".to_string(),
+                _ => "".to_string(),
+            };
+        }
+        let piece = match self.piece.kind() {
+            Piece::KING => "K",
+            Piece::QUEEN => "Q",
+            Piece::BISHOP => "B",
+            Piece::ROOK => "R",
+            Piece::KNIGHT => "N",
+            Piece::PAWN => {
+                if self.capture.is_some() {
+                    match self.start.col {
+                        0 => "a",
+                        1 => "b",
+                        2 => "c",
+                        3 => "d",
+                        4 => "e",
+                        5 => "f",
+                        6 => "g",
+                        7 => "h",
+                        _ => "",
+                    }
+                } else {
+                    ""
+                }
+            }
+            _ => "",
+        };
+
+        let capture = if self.capture.is_some() { "x" } else { "" };
+        let to = format!("{}", self.end);
+        let promotion = match self.promotion {
+            Some(p) => match p.kind() {
+                Piece::QUEEN => "=Q",
+                Piece::BISHOP => "=B",
+                Piece::ROOK => "=R",
+                Piece::KNIGHT => "=N",
+                _ => "",
+            },
+            None => "",
+        };
+
+        format!("{}{}{}{}{}", piece, capture, to, promotion, "")
+    }
+}
+
 impl Default for Move {
     fn default() -> Self {
         Move {
