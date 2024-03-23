@@ -108,7 +108,7 @@ impl Search {
                 }
                 self.board.make_move(&mv);
                 let extension = if self.board.is_check() { 1 } else { 0 };
-                let res = self.nega_max(depth_best, POS_INF, depth + extension, extension, 0);
+                let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 0);
                 self.board.unmake_move(&mv);
                 match res {
                     Some(score) => {
