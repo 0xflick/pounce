@@ -226,111 +226,113 @@ impl Board {
             self.irreversible_move
                 .push(*self.irreversible_move.last().unwrap());
         }
+        next_state.en_passante_state = None;
 
         // update zobrist hash piece positions
-        self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.start.row as usize]
-            [mv.start.col as usize];
-        self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.end.row as usize]
-            [mv.end.col as usize];
+        if mv != &Move::NULL_MOVE {
+            self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.start.row as usize]
+                [mv.start.col as usize];
+            self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.end.row as usize]
+                [mv.end.col as usize];
 
-        // update zobrist hash for captured piece
-        if let Some(p) = mv.capture {
-            self.z_hash ^=
-                ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
-        }
+            // update zobrist hash for captured piece
+            if let Some(p) = mv.capture {
+                self.z_hash ^=
+                    ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
+            }
 
-        next_state.en_passante_state = None;
-        if mv.capture.is_some() {
-            match (self.get(mv.end), mv.end) {
-                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
-                    next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
+            if mv.capture.is_some() {
+                match (self.get(mv.end), mv.end) {
+                    (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
+                        next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
+                    }
+                    (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
+                        next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
+                    }
+                    (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
+                        next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
+                    }
+                    (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
+                        next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
+                    }
+                    _ => {}
                 }
-                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
-                    next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
+            };
+            // remove castling rights if we're moving a rook or KING
+            if self.history.last().unwrap().castle_rights != Castle::NONE {
+                match (self.get(mv.start), mv.start) {
+                    (Piece::WHITE_KING, Position { row: 0, col: 4 }) => next_state
+                        .castle_rights
+                        .remove(Castle::WHITE_KING_SIDE | Castle::WHITE_QUEEN_SIDE),
+                    (Piece::BLACK_KING, Position { row: 7, col: 4 }) => next_state
+                        .castle_rights
+                        .remove(Castle::BLACK_KING_SIDE | Castle::BLACK_QUEEN_SIDE),
+                    (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
+                        next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
+                    }
+                    (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
+                        next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
+                    }
+                    (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
+                        next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
+                    }
+                    (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
+                        next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
+                    }
+
+                    _ => {}
                 }
-                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
-                    next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
+            }
+
+            *self.get_mut(mv.end) = self.get(mv.start);
+            *self.get_mut(mv.start) = Piece::NULL_PIECE;
+
+            if mv.double_pawn_push {
+                let offset = if self.is_white_turn { -1 } else { 1 };
+                next_state.en_passante_state = Some(Position {
+                    row: mv.end.row + offset,
+                    col: mv.end.col,
+                })
+            }
+
+            if mv.en_passante {
+                // remove pawn from passed square
+                let offset = if self.is_white_turn { -1 } else { 1 };
+                *self.get_mut(Position {
+                    row: mv.end.row + offset,
+                    col: mv.end.col,
+                }) = Piece::NULL_PIECE;
+            }
+
+            match mv.castle {
+                Castle::WHITE_KING_SIDE => {
+                    *self.get_mut(Position { row: 0, col: 5 }) = Piece::WHITE_ROOK;
+                    *self.get_mut(Position { row: 0, col: 7 }) = Piece::NULL_PIECE;
                 }
-                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
-                    next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
+                Castle::WHITE_QUEEN_SIDE => {
+                    *self.get_mut(Position { row: 0, col: 3 }) = Piece::WHITE_ROOK;
+                    *self.get_mut(Position { row: 0, col: 0 }) = Piece::NULL_PIECE;
+                }
+                Castle::BLACK_KING_SIDE => {
+                    *self.get_mut(Position { row: 7, col: 5 }) = Piece::BLACK_ROOK;
+                    *self.get_mut(Position { row: 7, col: 7 }) = Piece::NULL_PIECE;
+                }
+                Castle::BLACK_QUEEN_SIDE => {
+                    *self.get_mut(Position { row: 7, col: 3 }) = Piece::BLACK_ROOK;
+                    *self.get_mut(Position { row: 7, col: 0 }) = Piece::NULL_PIECE;
                 }
                 _ => {}
             }
-        };
-        // remove castling rights if we're moving a rook or KING
-        if self.history.last().unwrap().castle_rights != Castle::NONE {
-            match (self.get(mv.start), mv.start) {
-                (Piece::WHITE_KING, Position { row: 0, col: 4 }) => next_state
-                    .castle_rights
-                    .remove(Castle::WHITE_KING_SIDE | Castle::WHITE_QUEEN_SIDE),
-                (Piece::BLACK_KING, Position { row: 7, col: 4 }) => next_state
-                    .castle_rights
-                    .remove(Castle::BLACK_KING_SIDE | Castle::BLACK_QUEEN_SIDE),
-                (Piece::WHITE_ROOK, Position { row: 0, col: 0 }) => {
-                    next_state.castle_rights.remove(Castle::WHITE_QUEEN_SIDE)
-                }
-                (Piece::WHITE_ROOK, Position { row: 0, col: 7 }) => {
-                    next_state.castle_rights.remove(Castle::WHITE_KING_SIDE)
-                }
-                (Piece::BLACK_ROOK, Position { row: 7, col: 0 }) => {
-                    next_state.castle_rights.remove(Castle::BLACK_QUEEN_SIDE)
-                }
-                (Piece::BLACK_ROOK, Position { row: 7, col: 7 }) => {
-                    next_state.castle_rights.remove(Castle::BLACK_KING_SIDE)
-                }
 
+            if let Some(prom) = mv.promotion {
+                *self.get_mut(mv.end) = prom;
+            };
+
+            match self.get(mv.end) {
+                Piece::WHITE_KING => self.white_king = mv.end,
+                Piece::BLACK_KING => self.black_king = mv.end,
                 _ => {}
             }
-        }
-
-        *self.get_mut(mv.end) = self.get(mv.start);
-        *self.get_mut(mv.start) = Piece::NULL_PIECE;
-
-        if mv.double_pawn_push {
-            let offset = if self.is_white_turn { -1 } else { 1 };
-            next_state.en_passante_state = Some(Position {
-                row: mv.end.row + offset,
-                col: mv.end.col,
-            })
-        }
-
-        if mv.en_passante {
-            // remove pawn from passed square
-            let offset = if self.is_white_turn { -1 } else { 1 };
-            *self.get_mut(Position {
-                row: mv.end.row + offset,
-                col: mv.end.col,
-            }) = Piece::NULL_PIECE;
-        }
-
-        match mv.castle {
-            Castle::WHITE_KING_SIDE => {
-                *self.get_mut(Position { row: 0, col: 5 }) = Piece::WHITE_ROOK;
-                *self.get_mut(Position { row: 0, col: 7 }) = Piece::NULL_PIECE;
-            }
-            Castle::WHITE_QUEEN_SIDE => {
-                *self.get_mut(Position { row: 0, col: 3 }) = Piece::WHITE_ROOK;
-                *self.get_mut(Position { row: 0, col: 0 }) = Piece::NULL_PIECE;
-            }
-            Castle::BLACK_KING_SIDE => {
-                *self.get_mut(Position { row: 7, col: 5 }) = Piece::BLACK_ROOK;
-                *self.get_mut(Position { row: 7, col: 7 }) = Piece::NULL_PIECE;
-            }
-            Castle::BLACK_QUEEN_SIDE => {
-                *self.get_mut(Position { row: 7, col: 3 }) = Piece::BLACK_ROOK;
-                *self.get_mut(Position { row: 7, col: 0 }) = Piece::NULL_PIECE;
-            }
-            _ => {}
-        }
-
-        if let Some(prom) = mv.promotion {
-            *self.get_mut(mv.end) = prom;
-        };
-
-        match self.get(mv.end) {
-            Piece::WHITE_KING => self.white_king = mv.end,
-            Piece::BLACK_KING => self.black_king = mv.end,
-            _ => {}
         }
 
         self.is_white_turn = !self.is_white_turn;
@@ -344,55 +346,58 @@ impl Board {
 
     pub fn unmake_move(&mut self, mv: &Move) {
         self.z_hash = self.z_hash_history.pop().unwrap();
-        *self.get_mut(mv.start) = self.get(mv.end);
-        *self.get_mut(mv.end) = Piece::NULL_PIECE;
 
-        if let Some(p) = mv.capture {
-            if mv.en_passante {
-                // remove pawn from passed square
-                let offset = if self.is_white_turn { 1 } else { -1 };
-                *self.get_mut(Position {
-                    row: mv.end.row + offset,
-                    col: mv.end.col,
-                }) = p;
-            } else {
-                *self.get_mut(mv.end) = p;
-            }
-        };
+        if mv != &Move::NULL_MOVE {
+            *self.get_mut(mv.start) = self.get(mv.end);
+            *self.get_mut(mv.end) = Piece::NULL_PIECE;
 
-        match mv.castle {
-            Castle::WHITE_KING_SIDE => {
-                *self.get_mut(Position { row: 0, col: 5 }) = Piece::NULL_PIECE;
-                *self.get_mut(Position { row: 0, col: 7 }) = Piece::WHITE_ROOK;
-            }
-            Castle::WHITE_QUEEN_SIDE => {
-                *self.get_mut(Position { row: 0, col: 3 }) = Piece::NULL_PIECE;
-                *self.get_mut(Position { row: 0, col: 0 }) = Piece::WHITE_ROOK;
-            }
-            Castle::BLACK_KING_SIDE => {
-                *self.get_mut(Position { row: 7, col: 5 }) = Piece::NULL_PIECE;
-                *self.get_mut(Position { row: 7, col: 7 }) = Piece::BLACK_ROOK;
-            }
-            Castle::BLACK_QUEEN_SIDE => {
-                *self.get_mut(Position { row: 7, col: 3 }) = Piece::NULL_PIECE;
-                *self.get_mut(Position { row: 7, col: 0 }) = Piece::BLACK_ROOK;
-            }
-            _ => {}
-        }
-
-        if mv.promotion.is_some() {
-            let side = self.get(mv.start).side();
-            *self.get_mut(mv.start) = if side == Piece::WHITE {
-                Piece::WHITE_PAWN
-            } else {
-                Piece::BLACK_PAWN
+            if let Some(p) = mv.capture {
+                if mv.en_passante {
+                    // remove pawn from passed square
+                    let offset = if self.is_white_turn { 1 } else { -1 };
+                    *self.get_mut(Position {
+                        row: mv.end.row + offset,
+                        col: mv.end.col,
+                    }) = p;
+                } else {
+                    *self.get_mut(mv.end) = p;
+                }
             };
-        };
 
-        match self.get(mv.start) {
-            Piece::WHITE_KING => self.white_king = mv.start,
-            Piece::BLACK_KING => self.black_king = mv.start,
-            _ => {}
+            match mv.castle {
+                Castle::WHITE_KING_SIDE => {
+                    *self.get_mut(Position { row: 0, col: 5 }) = Piece::NULL_PIECE;
+                    *self.get_mut(Position { row: 0, col: 7 }) = Piece::WHITE_ROOK;
+                }
+                Castle::WHITE_QUEEN_SIDE => {
+                    *self.get_mut(Position { row: 0, col: 3 }) = Piece::NULL_PIECE;
+                    *self.get_mut(Position { row: 0, col: 0 }) = Piece::WHITE_ROOK;
+                }
+                Castle::BLACK_KING_SIDE => {
+                    *self.get_mut(Position { row: 7, col: 5 }) = Piece::NULL_PIECE;
+                    *self.get_mut(Position { row: 7, col: 7 }) = Piece::BLACK_ROOK;
+                }
+                Castle::BLACK_QUEEN_SIDE => {
+                    *self.get_mut(Position { row: 7, col: 3 }) = Piece::NULL_PIECE;
+                    *self.get_mut(Position { row: 7, col: 0 }) = Piece::BLACK_ROOK;
+                }
+                _ => {}
+            }
+
+            if mv.promotion.is_some() {
+                let side = self.get(mv.start).side();
+                *self.get_mut(mv.start) = if side == Piece::WHITE {
+                    Piece::WHITE_PAWN
+                } else {
+                    Piece::BLACK_PAWN
+                };
+            };
+
+            match self.get(mv.start) {
+                Piece::WHITE_KING => self.white_king = mv.start,
+                Piece::BLACK_KING => self.black_king = mv.start,
+                _ => {}
+            }
         }
 
         self.is_white_turn = !self.is_white_turn;
@@ -1268,6 +1273,17 @@ pub struct Move {
 }
 
 impl Move {
+    pub const NULL_MOVE: Self = Self {
+        start: Position { row: 0, col: 0 },
+        end: Position { row: 0, col: 0 },
+        piece: Piece::NULL_PIECE,
+        double_pawn_push: false,
+        capture: None,
+        en_passante: false,
+        castle: Castle::NONE,
+        promotion: None,
+    };
+
     pub fn to_algebraic(&self) -> String {
         if self.castle != Castle::NONE {
             return match self.castle {
