@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::board::{Board, Move, MoveList, MAX_MOVES};
+use crate::board::{Board, Move, MoveList, Piece, MAX_MOVES};
 use crate::score::{score, MATE};
 use crate::table::{Entry, ScoreType, Table};
 
@@ -146,9 +146,10 @@ impl Search {
                 best_move = depth_best_move;
                 max_depth = depth;
             }
+            let nodes_at_level = (self.nodes - before_nodes) as f64;
             self.writeln(format!(
                 "info string ebf {}",
-                f64::sqrt(self.nodes as f64 / (before_nodes + 1) as f64)
+                nodes_at_level.powf(1.0 / (depth + 1) as f64)
             ));
         }
         let table = self.table.lock().unwrap();
@@ -212,7 +213,25 @@ impl Search {
                     }
                 }
 
-                best_move = hit.best_move;
+                if hit
+                    .best_move
+                    .is_some_and(|mv| mv.piece != Piece::NULL_PIECE)
+                {
+                    best_move = hit.best_move;
+                }
+            }
+        }
+
+        // static eval
+        let stand_pat = score(&self.board);
+
+        // null move
+        if depth > 3 && stand_pat > beta && !self.board.is_king_pawn() && !self.board.is_check() {
+            self.board.make_move(&Move::NULL_MOVE);
+            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, ply_from_root + 1, extensions);
+            self.board.unmake_move(&Move::NULL_MOVE);
+            if res.is_some_and(|score| -score >= beta) {
+                return Some(beta);
             }
         }
 

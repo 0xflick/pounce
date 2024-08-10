@@ -148,6 +148,7 @@ impl Uci {
         let table = self.table.clone();
         thread::spawn(move || {
             let mut search = Search::new(board, tl, abort, table);
+
             match search.search() {
                 Some(best_move) => {
                     println!("bestmove {}", best_move);
