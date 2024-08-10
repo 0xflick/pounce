@@ -903,6 +903,18 @@ impl Board {
         }
     }
 
+    pub fn is_king_pawn(&self) -> bool {
+        for row in self.board.iter() {
+            for cell in row.iter() {
+                match cell.kind() {
+                    Piece::KNIGHT | Piece::BISHOP | Piece::ROOK | Piece::QUEEN => return false,
+                    _ => {}
+                }
+            }
+        }
+        true
+    }
+
     fn is_attacked(&self, pos: Position) -> bool {
         let helper = |offsets: [Position; 4], slide_attackers: [Piece; 2]| {
             for offset in offsets {

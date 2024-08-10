@@ -222,20 +222,15 @@ impl Search {
             }
         }
 
+        // static eval
+        let stand_pat = score(&self.board);
+
         // null move
-        if depth > 3 && !self.board.is_check() {
+        if depth > 3 && stand_pat > beta && !self.board.is_king_pawn() && !self.board.is_check() {
             self.board.make_move(&Move::NULL_MOVE);
             let res = self.nega_max(-beta, -alpha, depth - 1 - 3, ply_from_root + 1, extensions);
             self.board.unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
-                self.table.lock().unwrap().save(Entry {
-                    z_key: self.board.z_hash,
-                    best_move: Some(Move::NULL_MOVE),
-                    depth,
-                    score: -res.unwrap(),
-                    score_type: ScoreType::Beta,
-                    epoch: self.epoch,
-                });
                 return Some(beta);
             }
         }
