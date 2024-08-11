@@ -54,8 +54,8 @@ elo1=$4
 check_dependencies
 
 # Build binaries for each commit
-binary1="bin_$commit1"
-binary2="bin_$commit2"
+binary1="bin_${commit1//\//_}"
+binary2="bin_${commit2//\//_}"
 
 build_binary $commit1 $binary1
 build_binary $commit2 $binary2
