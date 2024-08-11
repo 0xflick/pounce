@@ -1138,6 +1138,16 @@ impl Board {
     }
 }
 
+pub trait MoveGen {
+    fn gen_moves(&self) -> MoveList;
+}
+
+impl MoveGen for Board {
+    fn gen_moves(&self) -> MoveList {
+        self.gen_moves()
+    }
+}
+
 impl default::Default for Board {
     fn default() -> Self {
         Self::new()
