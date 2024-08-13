@@ -129,7 +129,7 @@ pub struct Board {
     history: History,
 
     pub z_hash: u64,
-    z_hash_history: Vec<u64>,
+    pub z_hash_history: Vec<u64>,
 
     irreversible_move: Vec<u8>,
 }
@@ -232,9 +232,6 @@ impl Board {
         if mv != &Move::NULL_MOVE {
             self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.start.row as usize]
                 [mv.start.col as usize];
-            self.z_hash ^= ZOBRIST.pieces[self.get(mv.start).zobrist_key()][mv.end.row as usize]
-                [mv.end.col as usize];
-
             // update zobrist hash for captured piece
             if let Some(p) = mv.capture {
                 self.z_hash ^=
@@ -306,18 +303,26 @@ impl Board {
 
             match mv.castle {
                 Castle::WHITE_KING_SIDE => {
+                    self.z_hash ^= ZOBRIST.pieces[Piece::WHITE_ROOK.zobrist_key()][0][5];
+                    self.z_hash ^= ZOBRIST.pieces[Piece::WHITE_ROOK.zobrist_key()][0][7];
                     *self.get_mut(Position { row: 0, col: 5 }) = Piece::WHITE_ROOK;
                     *self.get_mut(Position { row: 0, col: 7 }) = Piece::NULL_PIECE;
                 }
                 Castle::WHITE_QUEEN_SIDE => {
+                    self.z_hash ^= ZOBRIST.pieces[Piece::WHITE_ROOK.zobrist_key()][0][3];
+                    self.z_hash ^= ZOBRIST.pieces[Piece::WHITE_ROOK.zobrist_key()][0][0];
                     *self.get_mut(Position { row: 0, col: 3 }) = Piece::WHITE_ROOK;
                     *self.get_mut(Position { row: 0, col: 0 }) = Piece::NULL_PIECE;
                 }
                 Castle::BLACK_KING_SIDE => {
+                    self.z_hash ^= ZOBRIST.pieces[Piece::BLACK_ROOK.zobrist_key()][7][5];
+                    self.z_hash ^= ZOBRIST.pieces[Piece::BLACK_ROOK.zobrist_key()][7][7];
                     *self.get_mut(Position { row: 7, col: 5 }) = Piece::BLACK_ROOK;
                     *self.get_mut(Position { row: 7, col: 7 }) = Piece::NULL_PIECE;
                 }
                 Castle::BLACK_QUEEN_SIDE => {
+                    self.z_hash ^= ZOBRIST.pieces[Piece::BLACK_ROOK.zobrist_key()][7][3];
+                    self.z_hash ^= ZOBRIST.pieces[Piece::BLACK_ROOK.zobrist_key()][7][0];
                     *self.get_mut(Position { row: 7, col: 3 }) = Piece::BLACK_ROOK;
                     *self.get_mut(Position { row: 7, col: 0 }) = Piece::NULL_PIECE;
                 }
@@ -327,6 +332,9 @@ impl Board {
             if let Some(prom) = mv.promotion {
                 *self.get_mut(mv.end) = prom;
             };
+
+            self.z_hash ^= ZOBRIST.pieces[self.get(mv.end).zobrist_key()][mv.end.row as usize]
+                [mv.end.col as usize];
 
             match self.get(mv.end) {
                 Piece::WHITE_KING => self.white_king = mv.end,
