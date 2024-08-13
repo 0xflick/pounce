@@ -492,22 +492,30 @@ impl<'a> MoveOrderer<'a> {
         }
     }
 
-    fn sort(&mut self, begin: usize, end: usize) {
-        self.moves[begin..end].sort_unstable_by(|a, b| b.unwrap().1.cmp(&a.unwrap().1))
-    }
-
     fn select<F>(&mut self, f: F) -> Option<Move>
     where
         F: Fn(&Move) -> bool,
     {
+        let mut max_score = 0;
+        let mut idx = None;
         for i in self.idx..self.max_idx {
-            if f(&self.moves[i].unwrap().0) {
-                self.moves.swap(self.idx, i);
-                self.idx += 1;
-                return Some(self.moves[self.idx - 1].unwrap().0);
+            if f(&self.moves[i].unwrap().0)
+                // && self.moves[i].map(|mv_score| mv_score.0).as_ref() != self.hash_move
+                && self.moves[i].unwrap().1 >= max_score
+            {
+                max_score = self.moves[i].unwrap().1;
+                idx = Some(i);
             }
         }
-        None
+
+        match idx {
+            Some(i) => {
+                self.moves.swap(self.idx, i);
+                self.idx += 1;
+                self.moves[self.idx - 1].map(|mv_score| mv_score.0)
+            }
+            None => None,
+        }
     }
 }
 
@@ -527,7 +535,6 @@ impl<'a> Iterator for MoveOrderer<'a> {
                 self.init_moves();
 
                 self.score();
-                self.sort(self.idx, self.max_idx);
                 if let Some(hm) = self.hash_move {
                     self.select(|mv| mv == hm);
                 }
@@ -568,37 +575,49 @@ mod tests {
     #[test]
     fn test_move_orderer() {
         let mut moves = MoveList::default();
+
+        // 0: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::WHITE_PAWN;
             m
         });
-        moves.push({
-            let mut m = Move::default();
-            m.piece = Piece::WHITE_PAWN;
-            m.capture = Some(Piece::BLACK_KNIGHT);
-            m
-        });
-        moves.push({
-            let mut m = Move::default();
-            m.piece = Piece::WHITE_KNIGHT;
-            m.capture = Some(Piece::BLACK_PAWN);
-            m
-        });
+
+        // 1: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::BLACK_KING;
             m.capture = Some(Piece::BLACK_KING);
             m
         });
+
+        // 2: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::WHITE_QUEEN;
             m
         });
+
+        // 3: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::BLACK_PAWN;
+            m
+        });
+
+        // 4: score 25
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_PAWN;
+            m.capture = Some(Piece::BLACK_KNIGHT);
+            m
+        });
+
+        // 5: score 14
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_KNIGHT;
+            m.capture = Some(Piece::BLACK_PAWN);
             m
         });
 
@@ -616,14 +635,14 @@ mod tests {
 
         let mock = RefCell::new(MoveGenMock { moves });
 
-        let mut orderer = MoveOrderer::new(&mock, moves_copy.get(3), [moves_copy.get(5), None]);
+        let mut orderer = MoveOrderer::new(&mock, moves_copy.get(3), [moves_copy.first(), None]);
 
         assert_eq!(orderer.next(), Some((MoveStage::TT, (moves_copy[3]))));
-        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[2])));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[4])));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[5])));
         assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[1])));
-        assert_eq!(orderer.next(), Some((MoveStage::Killer, moves_copy[5])));
-        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[4])));
-        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[0])));
+        assert_eq!(orderer.next(), Some((MoveStage::Killer, moves_copy[0])));
+        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[2])));
         assert_eq!(orderer.next(), None);
     }
 }
