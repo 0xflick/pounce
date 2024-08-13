@@ -1,3 +1,4 @@
+use core::panic;
 use std::default;
 use std::fmt::Display;
 use std::ops::{Add, BitOr};
@@ -67,7 +68,7 @@ impl Piece {
             Piece::BLACK_BISHOP => 9,
             Piece::BLACK_QUEEN => 10,
             Piece::BLACK_KING => 11,
-            _ => 12,
+            _ => panic!("Attempting to get zobrist key of invalid piece"),
         }
     }
 }
@@ -234,8 +235,10 @@ impl Board {
                 [mv.start.col as usize];
             // update zobrist hash for captured piece
             if let Some(p) = mv.capture {
-                self.z_hash ^=
-                    ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
+                if !mv.en_passante {
+                    self.z_hash ^=
+                        ZOBRIST.pieces[p.zobrist_key()][mv.end.row as usize][mv.end.col as usize];
+                }
             }
 
             if mv.capture.is_some() {
@@ -295,10 +298,13 @@ impl Board {
             if mv.en_passante {
                 // remove pawn from passed square
                 let offset = if self.is_white_turn { -1 } else { 1 };
-                *self.get_mut(Position {
+                let pos = Position {
                     row: mv.end.row + offset,
                     col: mv.end.col,
-                }) = Piece::NULL_PIECE;
+                };
+                self.z_hash ^=
+                    ZOBRIST.pieces[self.get(pos).zobrist_key()][pos.row as usize][pos.col as usize];
+                *self.get_mut(pos) = Piece::NULL_PIECE;
             }
 
             match mv.castle {
@@ -1292,7 +1298,7 @@ impl FromStr for Board {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Move {
-    start: Position,
+    pub start: Position,
     end: Position,
     pub piece: Piece,
     double_pawn_push: bool,

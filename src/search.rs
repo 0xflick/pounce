@@ -112,7 +112,7 @@ impl Search {
                 } else {
                     0
                 };
-                let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 0);
+                let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 1);
                 self.board.borrow_mut().unmake_move(&mv);
                 match res {
                     Some(score) => {
@@ -236,7 +236,7 @@ impl Search {
             && !self.board.borrow().is_check()
         {
             self.board.get_mut().make_move(&Move::NULL_MOVE);
-            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, ply_from_root + 1, extensions);
+            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, extensions, ply_from_root + 1);
             self.board.get_mut().unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
                 return Some(beta);
@@ -284,8 +284,8 @@ impl Search {
                 -beta,
                 -alpha,
                 depth - 1 + extension,
-                ply_from_root + 1,
                 extensions + extension,
+                ply_from_root + 1,
             );
             self.board.borrow_mut().unmake_move(&mv);
 
