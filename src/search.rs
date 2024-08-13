@@ -1,9 +1,10 @@
 use log::info;
+use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::board::{Board, Move, MoveList, Piece, MAX_MOVES};
+use crate::board::{Board, Move, MoveGen, Piece, MAX_MOVES};
 use crate::score::{score, MATE};
 use crate::table::{Entry, ScoreType, Table};
 
@@ -19,7 +20,7 @@ struct StackFrame {
 }
 
 pub struct Search {
-    board: Board,
+    board: RefCell<Board>,
     start_time: Instant,
     time_limit: Duration,
     table: Arc<Mutex<Table>>,
@@ -49,7 +50,7 @@ impl Search {
         }
 
         Search {
-            board,
+            board: RefCell::new(board),
             start_time: Instant::now(),
             time_limit,
             stop,
@@ -72,7 +73,6 @@ impl Search {
     pub fn search(&mut self) -> Option<Move> {
         self.start_time = Instant::now();
 
-        let mut moves: MoveList = self.board.gen_moves();
         let mut best = NEG_INF;
 
         let mut best_move: Option<Move> = None;
@@ -96,20 +96,24 @@ impl Search {
             info!("searching depth: {}", depth);
             let killers = self.stack[0].killers;
             for (_, mv) in MoveOrderer::new(
-                &mut moves,
+                &self.board.to_owned(),
                 best_move.as_ref(),
                 [killers[0].as_ref(), killers[1].as_ref()],
             ) {
-                if !self.board.is_legal(&mv) {
+                if !self.board.borrow_mut().is_legal(&mv) {
                     continue;
                 }
                 if depth_best_move.is_none() {
                     depth_best_move = Some(mv);
                 }
-                self.board.make_move(&mv);
-                let extension = if self.board.is_check() { 1 } else { 0 };
-                let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 0);
-                self.board.unmake_move(&mv);
+                self.board.borrow_mut().make_move(&mv);
+                let extension = if self.board.borrow_mut().is_check() {
+                    1
+                } else {
+                    0
+                };
+                let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 1);
+                self.board.borrow_mut().unmake_move(&mv);
                 match res {
                     Some(score) => {
                         if -score > depth_best {
@@ -180,7 +184,7 @@ impl Search {
         ply_from_root: u8,
     ) -> Option<i32> {
         self.nodes += 1;
-        if self.board.is_stalemate() {
+        if self.board.borrow().is_stalemate() {
             self.score_nodes += 1;
             return Some(0);
         }
@@ -190,8 +194,8 @@ impl Search {
         }
         let mut best_move: Option<Move> = None;
 
-        if let Some(hit) = self.table.lock().unwrap().probe(self.board.z_hash) {
-            if hit.z_key == self.board.z_hash {
+        if let Some(hit) = self.table.lock().unwrap().probe(self.board.borrow().z_hash) {
+            if hit.z_key == self.board.borrow().z_hash {
                 if hit.depth >= depth {
                     match hit.score_type {
                         ScoreType::Exact => {
@@ -223,30 +227,32 @@ impl Search {
         }
 
         // static eval
-        let stand_pat = score(&self.board);
+        let stand_pat = score(&self.board.borrow());
 
         // null move
-        if depth > 3 && stand_pat > beta && !self.board.is_king_pawn() && !self.board.is_check() {
-            self.board.make_move(&Move::NULL_MOVE);
-            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, ply_from_root + 1, extensions);
-            self.board.unmake_move(&Move::NULL_MOVE);
+        if depth > 3
+            && stand_pat > beta
+            && !self.board.borrow().is_king_pawn()
+            && !self.board.borrow().is_check()
+        {
+            self.board.get_mut().make_move(&Move::NULL_MOVE);
+            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, extensions, ply_from_root + 1);
+            self.board.get_mut().unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
                 return Some(beta);
             }
         }
-
-        let mut moves: MoveList = self.board.gen_moves();
 
         let mut moved = false;
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
         let killers = self.stack[ply_from_root as usize].killers;
         for (stage, mv) in MoveOrderer::new(
-            &mut moves,
+            &self.board.to_owned(),
             best_move.as_ref(),
             [killers[0].as_ref(), killers[1].as_ref()],
         ) {
-            if !self.board.is_legal(&mv) {
+            if !self.board.borrow_mut().is_legal(&mv) {
                 continue;
             }
             moved = true;
@@ -268,8 +274,8 @@ impl Search {
                 return None;
             }
 
-            self.board.make_move(&mv);
-            let extension = if extensions < 16 && self.board.is_check() {
+            self.board.borrow_mut().make_move(&mv);
+            let extension = if extensions < 16 && self.board.borrow().is_check() {
                 1
             } else {
                 0
@@ -278,17 +284,17 @@ impl Search {
                 -beta,
                 -alpha,
                 depth - 1 + extension,
-                ply_from_root + 1,
                 extensions + extension,
+                ply_from_root + 1,
             );
-            self.board.unmake_move(&mv);
+            self.board.borrow_mut().unmake_move(&mv);
 
             match res {
                 Some(score) => {
                     if -score >= beta {
                         // fail hard beta-cutoff
                         self.table.lock().unwrap().save(Entry {
-                            z_key: self.board.z_hash,
+                            z_key: self.board.borrow().z_hash,
                             best_move: Some(mv),
                             depth,
                             score: -score,
@@ -303,6 +309,7 @@ impl Search {
                             MoveStage::Quiet => {
                                 self.update_killers(mv, ply_from_root);
                             }
+                            _ => {}
                         }
 
                         return Some(beta);
@@ -320,13 +327,13 @@ impl Search {
         }
         if !moved {
             self.score_nodes += 1;
-            if self.board.is_check() {
+            if self.board.borrow().is_check() {
                 return Some(-MATE + ply_from_root as i32);
             }
             return Some(0);
         }
         self.table.lock().unwrap().save(Entry {
-            z_key: self.board.z_hash,
+            z_key: self.board.borrow().z_hash,
             best_move: search_best,
             depth,
             score: alpha,
@@ -341,11 +348,11 @@ impl Search {
         if self.must_stop() {
             return None;
         }
-        if self.board.is_stalemate() {
+        if self.board.borrow().is_stalemate() {
             self.score_nodes += 1;
             return Some(0);
         }
-        let stand_pat = score(&self.board);
+        let stand_pat = score(&self.board.borrow());
         if stand_pat >= beta {
             self.score_nodes += 1;
             return Some(beta);
@@ -353,16 +360,15 @@ impl Search {
         if stand_pat > alpha {
             alpha = stand_pat;
         }
-        let mut moves = self.board.gen_moves();
         let mut moved = false;
-        for (_, mv) in MoveOrderer::new(&mut moves, None, [None, None]) {
-            if mv.capture.is_none() || !self.board.is_legal(&mv) {
+        for (_, mv) in MoveOrderer::new(&self.board.to_owned(), None, [None, None]) {
+            if mv.capture.is_none() || !self.board.borrow_mut().is_legal(&mv) {
                 continue;
             }
             moved = true;
-            self.board.make_move(&mv);
+            self.board.borrow_mut().make_move(&mv);
             let res = self.quiesce(-beta, -alpha);
-            self.board.unmake_move(&mv);
+            self.board.borrow_mut().unmake_move(&mv);
             match res {
                 Some(score) => {
                     if -score >= beta {
@@ -422,6 +428,7 @@ impl Search {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MoveStage {
     TT,
+    Gen,
     Capture,
     Killer,
     Quiet,
@@ -436,10 +443,11 @@ const MVV_LVA: [[u16; 6]; 6] = [
     [10, 20, 30, 40, 50, 0], // attacker king, victim P, N, B, R, Q,  K
 ];
 
-type MoveListWithScores<'a> = [Option<(&'a Move, u16)>; MAX_MOVES];
+type MoveListWithScores = [Option<(Move, u16)>; MAX_MOVES];
 
 struct MoveOrderer<'a> {
-    moves: MoveListWithScores<'a>,
+    move_gen: &'a RefCell<dyn MoveGen>,
+    moves: MoveListWithScores,
     idx: usize,
     max_idx: usize,
     current_stage: MoveStage,
@@ -449,23 +457,29 @@ struct MoveOrderer<'a> {
 
 impl<'a> MoveOrderer<'a> {
     fn new(
-        moves: &'a mut MoveList,
+        move_gen: &'a RefCell<dyn MoveGen>,
         hash_move: Option<&'a Move>,
         killers: [Option<&'a Move>; 2],
     ) -> MoveOrderer<'a> {
-        let mut move_list = [None; MAX_MOVES];
-        for (i, mv) in moves.iter().enumerate() {
-            move_list[i] = Some((mv, 0));
-        }
-
         MoveOrderer {
-            moves: move_list,
-            max_idx: moves.len(),
+            move_gen,
+            moves: [None; MAX_MOVES],
+            max_idx: 0,
             hash_move,
             killers,
             idx: 0,
             current_stage: MoveStage::TT,
         }
+    }
+
+    fn init_moves(&mut self) {
+        self.max_idx = 0;
+        let moves = self.move_gen.borrow_mut().gen_moves();
+        for (i, mv) in moves.iter().cloned().enumerate() {
+            self.moves[i] = Some((mv, 0));
+        }
+
+        self.max_idx = moves.len();
     }
 
     fn score(&mut self) {
@@ -478,22 +492,30 @@ impl<'a> MoveOrderer<'a> {
         }
     }
 
-    fn sort(&mut self, begin: usize, end: usize) {
-        self.moves[begin..end].sort_unstable_by(|a, b| b.unwrap().1.cmp(&a.unwrap().1))
-    }
-
     fn select<F>(&mut self, f: F) -> Option<Move>
     where
         F: Fn(&Move) -> bool,
     {
+        let mut max_score = 0;
+        let mut idx = None;
         for i in self.idx..self.max_idx {
-            if f(self.moves[i].unwrap().0) {
-                self.moves.swap(self.idx, i);
-                self.idx += 1;
-                return Some(*self.moves[self.idx - 1].unwrap().0);
+            if f(&self.moves[i].unwrap().0)
+                // && self.moves[i].map(|mv_score| mv_score.0).as_ref() != self.hash_move
+                && self.moves[i].unwrap().1 >= max_score
+            {
+                max_score = self.moves[i].unwrap().1;
+                idx = Some(i);
             }
         }
-        None
+
+        match idx {
+            Some(i) => {
+                self.moves.swap(self.idx, i);
+                self.idx += 1;
+                self.moves[self.idx - 1].map(|mv_score| mv_score.0)
+            }
+            None => None,
+        }
     }
 }
 
@@ -502,15 +524,20 @@ impl<'a> Iterator for MoveOrderer<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.current_stage {
             MoveStage::TT => {
+                self.current_stage = MoveStage::Gen;
                 if let Some(hm) = self.hash_move {
-                    if let Some(mv) = self.select(|mv| mv == hm) {
-                        return Some((MoveStage::TT, mv));
-                    }
+                    return Some((MoveStage::TT, *hm));
                 }
+                self.next()
+            }
+            MoveStage::Gen => {
                 self.current_stage = MoveStage::Capture;
+                self.init_moves();
 
                 self.score();
-                self.sort(self.idx, self.max_idx);
+                if let Some(hm) = self.hash_move {
+                    self.select(|mv| mv == hm);
+                }
                 self.next()
             }
             MoveStage::Capture => {
@@ -543,56 +570,79 @@ impl<'a> Iterator for MoveOrderer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::Piece;
+    use crate::board::{MoveList, Piece};
 
     #[test]
     fn test_move_orderer() {
         let mut moves = MoveList::default();
+
+        // 0: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::WHITE_PAWN;
             m
         });
-        moves.push({
-            let mut m = Move::default();
-            m.piece = Piece::WHITE_PAWN;
-            m.capture = Some(Piece::BLACK_KNIGHT);
-            m
-        });
-        moves.push({
-            let mut m = Move::default();
-            m.piece = Piece::WHITE_KNIGHT;
-            m.capture = Some(Piece::BLACK_PAWN);
-            m
-        });
+
+        // 1: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::BLACK_KING;
             m.capture = Some(Piece::BLACK_KING);
             m
         });
+
+        // 2: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::WHITE_QUEEN;
             m
         });
+
+        // 3: score 0
         moves.push({
             let mut m = Move::default();
             m.piece = Piece::BLACK_PAWN;
             m
         });
 
+        // 4: score 25
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_PAWN;
+            m.capture = Some(Piece::BLACK_KNIGHT);
+            m
+        });
+
+        // 5: score 14
+        moves.push({
+            let mut m = Move::default();
+            m.piece = Piece::WHITE_KNIGHT;
+            m.capture = Some(Piece::BLACK_PAWN);
+            m
+        });
+
         let moves_copy = moves.clone();
 
-        let mut orderer =
-            MoveOrderer::new(&mut moves, moves_copy.get(3), [moves_copy.get(5), None]);
+        struct MoveGenMock {
+            moves: MoveList,
+        }
+
+        impl MoveGen for MoveGenMock {
+            fn gen_moves(&self) -> MoveList {
+                self.moves.clone()
+            }
+        }
+
+        let mock = RefCell::new(MoveGenMock { moves });
+
+        let mut orderer = MoveOrderer::new(&mock, moves_copy.get(3), [moves_copy.first(), None]);
 
         assert_eq!(orderer.next(), Some((MoveStage::TT, (moves_copy[3]))));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[4])));
+        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[5])));
         assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[1])));
-        assert_eq!(orderer.next(), Some((MoveStage::Capture, moves_copy[2])));
-        assert_eq!(orderer.next(), Some((MoveStage::Killer, moves_copy[5])));
-        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[4])));
-        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[0])));
+        assert_eq!(orderer.next(), Some((MoveStage::Killer, moves_copy[0])));
+        assert_eq!(orderer.next(), Some((MoveStage::Quiet, moves_copy[2])));
         assert_eq!(orderer.next(), None);
     }
 }
