@@ -1,4 +1,5 @@
 use log::info;
+use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -19,7 +20,7 @@ struct StackFrame {
 }
 
 pub struct Search {
-    board: Board,
+    board: RefCell<Board>,
     start_time: Instant,
     time_limit: Duration,
     table: Arc<Mutex<Table>>,
@@ -49,7 +50,7 @@ impl Search {
         }
 
         Search {
-            board,
+            board: RefCell::new(board),
             start_time: Instant::now(),
             time_limit,
             stop,
@@ -99,16 +100,20 @@ impl Search {
                 best_move.as_ref(),
                 [killers[0].as_ref(), killers[1].as_ref()],
             ) {
-                if !self.board.is_legal(&mv) {
+                if !self.board.borrow_mut().is_legal(&mv) {
                     continue;
                 }
                 if depth_best_move.is_none() {
                     depth_best_move = Some(mv);
                 }
-                self.board.make_move(&mv);
-                let extension = if self.board.is_check() { 1 } else { 0 };
+                self.board.borrow_mut().make_move(&mv);
+                let extension = if self.board.borrow_mut().is_check() {
+                    1
+                } else {
+                    0
+                };
                 let res = self.nega_max(NEG_INF, -depth_best, depth + extension, extension, 0);
-                self.board.unmake_move(&mv);
+                self.board.borrow_mut().unmake_move(&mv);
                 match res {
                     Some(score) => {
                         if -score > depth_best {
@@ -179,7 +184,7 @@ impl Search {
         ply_from_root: u8,
     ) -> Option<i32> {
         self.nodes += 1;
-        if self.board.is_stalemate() {
+        if self.board.borrow().is_stalemate() {
             self.score_nodes += 1;
             return Some(0);
         }
@@ -189,8 +194,8 @@ impl Search {
         }
         let mut best_move: Option<Move> = None;
 
-        if let Some(hit) = self.table.lock().unwrap().probe(self.board.z_hash) {
-            if hit.z_key == self.board.z_hash {
+        if let Some(hit) = self.table.lock().unwrap().probe(self.board.borrow().z_hash) {
+            if hit.z_key == self.board.borrow().z_hash {
                 if hit.depth >= depth {
                     match hit.score_type {
                         ScoreType::Exact => {
@@ -222,13 +227,17 @@ impl Search {
         }
 
         // static eval
-        let stand_pat = score(&self.board);
+        let stand_pat = score(&self.board.borrow());
 
         // null move
-        if depth > 3 && stand_pat > beta && !self.board.is_king_pawn() && !self.board.is_check() {
-            self.board.make_move(&Move::NULL_MOVE);
+        if depth > 3
+            && stand_pat > beta
+            && !self.board.borrow().is_king_pawn()
+            && !self.board.borrow().is_check()
+        {
+            self.board.get_mut().make_move(&Move::NULL_MOVE);
             let res = self.nega_max(-beta, -alpha, depth - 1 - 3, ply_from_root + 1, extensions);
-            self.board.unmake_move(&Move::NULL_MOVE);
+            self.board.get_mut().unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
                 return Some(beta);
             }
@@ -243,7 +252,7 @@ impl Search {
             best_move.as_ref(),
             [killers[0].as_ref(), killers[1].as_ref()],
         ) {
-            if !self.board.is_legal(&mv) {
+            if !self.board.borrow_mut().is_legal(&mv) {
                 continue;
             }
             moved = true;
@@ -265,8 +274,8 @@ impl Search {
                 return None;
             }
 
-            self.board.make_move(&mv);
-            let extension = if extensions < 16 && self.board.is_check() {
+            self.board.borrow_mut().make_move(&mv);
+            let extension = if extensions < 16 && self.board.borrow().is_check() {
                 1
             } else {
                 0
@@ -278,14 +287,14 @@ impl Search {
                 ply_from_root + 1,
                 extensions + extension,
             );
-            self.board.unmake_move(&mv);
+            self.board.borrow_mut().unmake_move(&mv);
 
             match res {
                 Some(score) => {
                     if -score >= beta {
                         // fail hard beta-cutoff
                         self.table.lock().unwrap().save(Entry {
-                            z_key: self.board.z_hash,
+                            z_key: self.board.borrow().z_hash,
                             best_move: Some(mv),
                             depth,
                             score: -score,
@@ -318,13 +327,13 @@ impl Search {
         }
         if !moved {
             self.score_nodes += 1;
-            if self.board.is_check() {
+            if self.board.borrow().is_check() {
                 return Some(-MATE + ply_from_root as i32);
             }
             return Some(0);
         }
         self.table.lock().unwrap().save(Entry {
-            z_key: self.board.z_hash,
+            z_key: self.board.borrow().z_hash,
             best_move: search_best,
             depth,
             score: alpha,
@@ -339,11 +348,11 @@ impl Search {
         if self.must_stop() {
             return None;
         }
-        if self.board.is_stalemate() {
+        if self.board.borrow().is_stalemate() {
             self.score_nodes += 1;
             return Some(0);
         }
-        let stand_pat = score(&self.board);
+        let stand_pat = score(&self.board.borrow());
         if stand_pat >= beta {
             self.score_nodes += 1;
             return Some(beta);
@@ -353,13 +362,13 @@ impl Search {
         }
         let mut moved = false;
         for (_, mv) in MoveOrderer::new(&self.board.to_owned(), None, [None, None]) {
-            if mv.capture.is_none() || !self.board.is_legal(&mv) {
+            if mv.capture.is_none() || !self.board.borrow_mut().is_legal(&mv) {
                 continue;
             }
             moved = true;
-            self.board.make_move(&mv);
+            self.board.borrow_mut().make_move(&mv);
             let res = self.quiesce(-beta, -alpha);
-            self.board.unmake_move(&mv);
+            self.board.borrow_mut().unmake_move(&mv);
             match res {
                 Some(score) => {
                     if -score >= beta {
@@ -437,7 +446,7 @@ const MVV_LVA: [[u16; 6]; 6] = [
 type MoveListWithScores = [Option<(Move, u16)>; MAX_MOVES];
 
 struct MoveOrderer<'a> {
-    move_gen: &'a dyn MoveGen,
+    move_gen: &'a RefCell<dyn MoveGen>,
     moves: MoveListWithScores,
     idx: usize,
     max_idx: usize,
@@ -448,7 +457,7 @@ struct MoveOrderer<'a> {
 
 impl<'a> MoveOrderer<'a> {
     fn new(
-        move_gen: &'a dyn MoveGen,
+        move_gen: &'a RefCell<dyn MoveGen>,
         hash_move: Option<&'a Move>,
         killers: [Option<&'a Move>; 2],
     ) -> MoveOrderer<'a> {
@@ -465,7 +474,7 @@ impl<'a> MoveOrderer<'a> {
 
     fn init_moves(&mut self) {
         self.max_idx = 0;
-        let moves = self.move_gen.gen_moves();
+        let moves = self.move_gen.borrow_mut().gen_moves();
         for (i, mv) in moves.iter().cloned().enumerate() {
             self.moves[i] = Some((mv, 0));
         }
@@ -605,7 +614,7 @@ mod tests {
             }
         }
 
-        let mock = MoveGenMock { moves };
+        let mock = RefCell::new(MoveGenMock { moves });
 
         let mut orderer = MoveOrderer::new(&mock, moves_copy.get(3), [moves_copy.get(5), None]);
 
