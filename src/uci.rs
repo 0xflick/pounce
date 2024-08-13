@@ -1,8 +1,8 @@
 use log::info;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
+use std::{panic, process, thread};
 
 use crate::board::{Board, Move, ParseMoveError};
 use crate::search::Search;
@@ -147,13 +147,18 @@ impl Uci {
         let board = self.board.as_ref().unwrap().clone();
         let table = self.table.clone();
         thread::spawn(move || {
-            let mut search = Search::new(board, tl, abort, table);
+            let result = panic::catch_unwind(|| {
+                let mut search = Search::new(board, tl, abort, table);
 
-            match search.search() {
-                Some(best_move) => {
-                    println!("bestmove {}", best_move);
+                match search.search() {
+                    Some(best_move) => {
+                        println!("bestmove {}", best_move);
+                    }
+                    None => println!("bestmove (none)"),
                 }
-                None => println!("bestmove (none)"),
+            });
+            if result.is_err() {
+                process::exit(1);
             }
         });
     }
