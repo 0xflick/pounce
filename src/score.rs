@@ -170,61 +170,61 @@ pub fn score(board: &Board) -> i32 {
             match (cell.kind(), cell.side()) {
                 (Piece::PAWN, Piece::WHITE) => {
                     wpawns += 1;
-                    psqt_mg_score += PAWN_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += PAWN_TABLE[1][r_idx][c_idx];
-                }
-                (Piece::PAWN, Piece::BLACK) => {
-                    bpawns += 1;
                     psqt_mg_score += PAWN_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += PAWN_TABLE[1][7 - r_idx][c_idx];
                 }
+                (Piece::PAWN, Piece::BLACK) => {
+                    bpawns += 1;
+                    psqt_mg_score -= PAWN_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= PAWN_TABLE[1][r_idx][c_idx];
+                }
                 (Piece::KNIGHT, Piece::WHITE) => {
                     wknights += 1;
-                    psqt_mg_score += KNIGHT_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += KNIGHT_TABLE[1][r_idx][c_idx];
-                }
-                (Piece::KNIGHT, Piece::BLACK) => {
-                    bknights += 1;
                     psqt_mg_score += KNIGHT_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += KNIGHT_TABLE[1][7 - r_idx][c_idx];
                 }
+                (Piece::KNIGHT, Piece::BLACK) => {
+                    bknights += 1;
+                    psqt_mg_score -= KNIGHT_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= KNIGHT_TABLE[1][r_idx][c_idx];
+                }
                 (Piece::BISHOP, Piece::WHITE) => {
                     wbishops += 1;
-                    psqt_mg_score += BISHOP_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += BISHOP_TABLE[1][r_idx][c_idx];
-                }
-                (Piece::BISHOP, Piece::BLACK) => {
-                    bbishops += 1;
                     psqt_mg_score += BISHOP_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += BISHOP_TABLE[1][7 - r_idx][c_idx];
                 }
+                (Piece::BISHOP, Piece::BLACK) => {
+                    bbishops += 1;
+                    psqt_mg_score -= BISHOP_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= BISHOP_TABLE[1][r_idx][c_idx];
+                }
                 (Piece::ROOK, Piece::WHITE) => {
                     wrooks += 1;
-                    psqt_mg_score += ROOK_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += ROOK_TABLE[1][r_idx][c_idx];
-                }
-                (Piece::ROOK, Piece::BLACK) => {
-                    brooks += 1;
                     psqt_mg_score += ROOK_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += ROOK_TABLE[1][7 - r_idx][c_idx];
                 }
+                (Piece::ROOK, Piece::BLACK) => {
+                    brooks += 1;
+                    psqt_mg_score -= ROOK_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= ROOK_TABLE[1][r_idx][c_idx];
+                }
                 (Piece::QUEEN, Piece::WHITE) => {
                     wqueens += 1;
-                    psqt_mg_score += QUEEN_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += QUEEN_TABLE[1][r_idx][c_idx];
-                }
-                (Piece::QUEEN, Piece::BLACK) => {
-                    bqueens += 1;
                     psqt_mg_score += QUEEN_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += QUEEN_TABLE[1][7 - r_idx][c_idx];
                 }
-                (Piece::KING, Piece::WHITE) => {
-                    psqt_mg_score += KING_TABLE[0][r_idx][c_idx];
-                    psqt_eg_score += KING_TABLE[1][r_idx][c_idx];
+                (Piece::QUEEN, Piece::BLACK) => {
+                    bqueens += 1;
+                    psqt_mg_score -= QUEEN_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= QUEEN_TABLE[1][r_idx][c_idx];
                 }
-                (Piece::KING, Piece::BLACK) => {
+                (Piece::KING, Piece::WHITE) => {
                     psqt_mg_score += KING_TABLE[0][7 - r_idx][c_idx];
                     psqt_eg_score += KING_TABLE[1][7 - r_idx][c_idx];
+                }
+                (Piece::KING, Piece::BLACK) => {
+                    psqt_mg_score -= KING_TABLE[0][r_idx][c_idx];
+                    psqt_eg_score -= KING_TABLE[1][r_idx][c_idx];
                 }
                 _ => {}
             }
@@ -261,5 +261,30 @@ pub fn score(board: &Board) -> i32 {
         score
     } else {
         -score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::Board;
+    #[test]
+    fn test_score() {
+        let board = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+            .parse::<Board>()
+            .unwrap();
+        assert_eq!(score(&board), 0);
+    }
+
+    #[test]
+    fn test_single_pawn() {
+        let board = "8/8/8/8/8/8/P7/8 w - - 0 1".parse::<Board>().unwrap();
+        assert_eq!(score(&board), 221);
+    }
+
+    #[test]
+    fn test_single_pawn_black_turn() {
+        let board = "8/8/8/8/8/8/P7/8 b - - 0 1".parse::<Board>().unwrap();
+        assert_eq!(score(&board), -221);
     }
 }
