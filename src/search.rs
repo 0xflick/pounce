@@ -236,14 +236,20 @@ impl Search {
             && !self.board.borrow().is_check()
         {
             self.board.get_mut().make_move(&Move::NULL_MOVE);
-            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, extensions, ply_from_root + 1);
+            let res = self.nega_max(
+                -beta,
+                -beta + 1,
+                depth - 1 - 3,
+                extensions,
+                ply_from_root + 1,
+            );
             self.board.get_mut().unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
                 return Some(beta);
             }
         }
 
-        let mut moved = false;
+        let mut move_count = 0;
         let mut score_type = ScoreType::Alpha;
         let mut search_best = best_move.to_owned();
         let killers = self.stack[ply_from_root as usize].killers;
@@ -255,7 +261,7 @@ impl Search {
             if !self.board.borrow_mut().is_legal(&mv) {
                 continue;
             }
-            moved = true;
+            move_count += 1;
             if self.nodes % (1 << 17) == 0 {
                 let table = self.table.lock().unwrap();
                 self.writeln(format!(
@@ -280,13 +286,40 @@ impl Search {
             } else {
                 0
             };
-            let res = self.nega_max(
-                -beta,
-                -alpha,
-                depth - 1 + extension,
-                extensions + extension,
-                ply_from_root + 1,
-            );
+
+            let mut res;
+            // null move reduction
+            if move_count > 1 && depth > 2 && !self.board.borrow().is_check() {
+                let reduction = if depth > 6 && move_count > 3 { 2 } else { 1 };
+
+                res = self.nega_max(
+                    -alpha - 1,
+                    -alpha,
+                    depth - 1 - reduction + extension,
+                    extensions + extension,
+                    ply_from_root + 1,
+                );
+
+                // re-search if null move failed high. This should be a null window, but will
+                // wait until I refactor
+                if res.is_some_and(|score| -score > alpha) {
+                    res = self.nega_max(
+                        -beta,
+                        -alpha,
+                        depth - 1 + extension,
+                        extensions + extension,
+                        ply_from_root + 1,
+                    );
+                }
+            } else {
+                res = self.nega_max(
+                    -beta,
+                    -alpha,
+                    depth - 1 + extension,
+                    extensions + extension,
+                    ply_from_root + 1,
+                );
+            }
             self.board.borrow_mut().unmake_move(&mv);
 
             match res {
@@ -317,7 +350,7 @@ impl Search {
                     if -score > alpha {
                         score_type = ScoreType::Exact;
                         search_best = Some(mv);
-                        alpha = -score; // alpha acts like max in MiniMax
+                        alpha = -score;
                     }
                 }
                 None => {
@@ -325,10 +358,10 @@ impl Search {
                 }
             }
         }
-        if !moved {
+        if move_count == 0 {
             self.score_nodes += 1;
             if self.board.borrow().is_check() {
-                return Some(-MATE + ply_from_root as i32);
+                return Some(-MATE + (ply_from_root / 2) as i32);
             }
             return Some(0);
         }
