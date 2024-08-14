@@ -1,11 +1,5 @@
 use crate::board::{Board, Piece};
 
-// const PAWN_SCORE: i32 = 100;
-// const KNIGHT_SCORE: i32 = 320;
-// const BISHOP_SCORE: i32 = 330;
-// const ROOK_SCORE: i32 = 500;
-// const QUEEN_SCORE: i32 = 900;
-
 const PIECE_VALUES: [[i32; 6]; 2] = [
     [126, 781, 825, 1276, 2538, 0],
     [208, 854, 915, 1380, 2682, 0],
