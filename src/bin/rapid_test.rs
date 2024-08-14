@@ -173,7 +173,7 @@ fn main() {
 
     let mut num_sucesses = 0;
     let mut total = 0;
-    for test in tests.iter().take(15) {
+    for test in tests.iter() {
         let res = try_test(test).unwrap();
         total += 1;
 
@@ -210,10 +210,10 @@ struct TestResult {
 fn try_test(test_case: &Test) -> Result<TestResult, ParseFenError> {
     let board = test_case.fen.parse::<Board>()?;
 
-    let table = Table::new(16 * 1024 * 1024);
+    let table = Table::new(512 * 1024 * 1024);
     let mut search = Search::new(
         board,
-        Duration::from_secs(30),
+        Duration::from_secs(15),
         Arc::new(AtomicBool::new(false)),
         Arc::new(Mutex::new(table)),
     );
