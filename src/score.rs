@@ -180,9 +180,9 @@ pub fn score(board: &Board) -> i32 {
     for (r_idx, row) in board.board.iter().enumerate() {
         for (c_idx, cell) in row.iter().enumerate() {
             let r_corr = if cell.side() == Piece::WHITE {
-                r_idx
-            } else {
                 7 - r_idx
+            } else {
+                r_idx
             };
             match cell.kind() {
                 Piece::PAWN => match cell.side() {
