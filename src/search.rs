@@ -236,7 +236,13 @@ impl Search {
             && !self.board.borrow().is_check()
         {
             self.board.get_mut().make_move(&Move::NULL_MOVE);
-            let res = self.nega_max(-beta, -alpha, depth - 1 - 3, extensions, ply_from_root + 1);
+            let res = self.nega_max(
+                -beta,
+                -beta + 1,
+                depth - 1 - 3,
+                extensions,
+                ply_from_root + 1,
+            );
             self.board.get_mut().unmake_move(&Move::NULL_MOVE);
             if res.is_some_and(|score| -score >= beta) {
                 return Some(beta);
