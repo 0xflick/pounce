@@ -8,5 +8,6 @@ lto = true
 debug = true
 
 [dependencies]
+clap = { version = "4.5.15", features = ["derive"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
 rustyline = "14.0.0"

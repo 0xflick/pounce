@@ -1,4 +1,3 @@
-use crate::magic_finder::{bishop_attacks, rook_attacks};
 use crate::magic_gen::BISHOP_MAGICS;
 use crate::{bitboard::Bitboard, chess::Square, magic_gen::ROOK_MAGICS};
 
@@ -82,4 +81,133 @@ const fn init_bishop_magics() -> [Bitboard; BISHOP_TABLE_SIZE] {
     }
 
     table
+}
+
+pub const fn rook_attacks(sq: Square, occ: Bitboard) -> Bitboard {
+    let mut attacks = Bitboard(0);
+
+    let rank = sq.rank() as u8;
+    let file = sq.file() as u8;
+
+    {
+        let mut r = rank + 1;
+        while r < 8 {
+            let bb = 1 << (file + r * 8);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+            r += 1;
+        }
+    }
+    {
+        let mut r = rank;
+        while r > 0 {
+            r -= 1;
+            let bb = 1 << (file + r * 8);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+    }
+    {
+        let mut f = file + 1;
+        while f < 8 {
+            let bb = 1 << (f + rank * 8);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+            f += 1;
+        }
+    }
+    {
+        let mut f = file;
+        while f > 0 {
+            f -= 1;
+            let bb = 1 << (f + rank * 8);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+    }
+    attacks
+}
+
+pub const fn bishop_attacks(sq: Square, occ: Bitboard) -> Bitboard {
+    let mut attacks = Bitboard(0);
+
+    let rank = sq.rank() as u8;
+    let file = sq.file() as u8;
+
+    let mut i = 1;
+    while i < 8 {
+        if rank + i <= 7 && file + i <= 7 {
+            let bb = 1 << ((rank + i) * 8 + file + i);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    i = 1;
+    while i < 8 {
+        if rank + i <= 7 && file >= i {
+            let bb = 1 << ((rank + i) * 8 + file - i);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    i = 1;
+    while i < 8 {
+        if rank >= i && file + i <= 7 {
+            let bb = 1 << ((rank - i) * 8 + file + i);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    i = 1;
+    while i < 8 {
+        if rank >= i && file >= i {
+            let bb = 1 << ((rank - i) * 8 + file - i);
+            attacks.0 |= bb;
+            if (occ.0 & bb) != 0 {
+                break;
+            }
+        }
+        i += 1;
+    }
+    attacks
+}
+
+pub fn occupancy_bb(mask: &Bitboard, index: usize) -> Bitboard {
+    let mut occ = Bitboard(0);
+
+    // get indexes of all bits in mask
+    let mut bits = Vec::new();
+    let mut m = *mask;
+    while m.any() {
+        bits.push(m.0.trailing_zeros());
+        m &= m.0 - 1;
+    }
+
+    // set bits in occ according to index
+    (0..bits.len()).for_each(|i| {
+        if index & (1 << i) != 0 {
+            occ |= 1 << bits[i];
+        }
+    });
+    occ
 }

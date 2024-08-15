@@ -1,8 +1,6 @@
-use flichess::{
-    chess::Square,
-    magic_finder::{bishop_mask, find_magic, rook_mask},
-};
-use std::env;
+use clap::Parser;
+use flichess::chess::Square;
+use flichess::magic_finder::{bishop_mask, rook_mask, Wizard};
 use std::io::Write;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -11,18 +9,17 @@ struct Magic {
     magic: Option<u64>,
 }
 
+#[derive(Parser)]
+struct Cli {
+    // Output file for generated magics
+    output_file: String,
+
+    // Number of iteration rounds
+    rounds: usize,
+}
+
 fn main() {
-    // Generate magic numbers. We continue to generate magic numbers for all
-    // sliding pieces until the program quits
-
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 2 {
-        eprintln!("Usage: {} <output_file>", args[0]);
-        std::process::exit(1);
-    }
-
-    let output_file = &args[1];
+    let args = Cli::parse();
 
     let mut bishop_magics = [Magic {
         shift: 0,
@@ -36,7 +33,9 @@ fn main() {
     let num_tries = 100_000;
     let first_shift = 12;
 
-    for _ in 0..15 {
+    let mut wizard = Wizard::new();
+
+    for _ in 0..args.rounds {
         for sq in Square::ALL.into_iter() {
             let bishop_shift = if bishop_magics[sq as usize].magic.is_none() {
                 first_shift
@@ -50,7 +49,7 @@ fn main() {
                 rook_magics[sq as usize].shift - 1
             };
 
-            let bishop = find_magic(sq, bishop_shift, true, num_tries);
+            let bishop = wizard.find_magic(sq, bishop_shift, true, num_tries);
             if bishop.is_some() {
                 bishop_magics[sq as usize] = Magic {
                     shift: bishop_shift,
@@ -58,7 +57,7 @@ fn main() {
                 };
             }
 
-            let rook = find_magic(sq, rook_shift, false, num_tries);
+            let rook = wizard.find_magic(sq, rook_shift, false, num_tries);
             if rook.is_some() {
                 rook_magics[sq as usize] = Magic {
                     shift: rook_shift,
@@ -129,7 +128,7 @@ fn main() {
 
         if bishop_found == bishop_total && rook_found == rook_total {
             // write magics to file
-            let mut file = std::fs::File::create(output_file).unwrap();
+            let mut file = std::fs::File::create(&args.output_file).unwrap();
             writeln!(file, "use crate::bitboard::Bitboard;").unwrap();
             writeln!(file, "use crate::magic::Magic;").unwrap();
             writeln!(file).unwrap();

@@ -1,7 +1,118 @@
 use crate::bitboard::Bitboard;
 use crate::chess::Square;
+use crate::magic::{bishop_attacks, occupancy_bb, rook_attacks};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+
+pub struct Wizard {
+    rng: SmallRng,
+
+    r_masks: [Bitboard; 64],
+    r_attacks: Vec<Vec<Bitboard>>,
+
+    b_masks: [Bitboard; 64],
+    b_attacks: Vec<Vec<Bitboard>>,
+}
+
+impl Wizard {
+    pub fn new() -> Self {
+        let rng = SmallRng::from_entropy();
+        let mut r_masks = [Bitboard(0); 64];
+        let mut b_masks = [Bitboard(0); 64];
+
+        let mut r_attacks = vec![vec![Bitboard(0); 4096]; 64];
+        let mut b_attacks = vec![vec![Bitboard(0); 4096]; 64];
+
+        for sq in Square::ALL.into_iter() {
+            let r_mask = rook_mask(sq);
+            for i in 0..1 << r_mask.count() {
+                let occupancy = occupancy_bb(&r_mask, i as usize);
+                r_attacks[sq as usize][i as usize] = rook_attacks(sq, occupancy);
+            }
+            r_masks[sq as usize] = r_mask;
+
+            let b_mask = bishop_mask(sq);
+            for i in 0..1 << b_mask.count() {
+                let occupancy = occupancy_bb(&b_mask, i as usize);
+                b_attacks[sq as usize][i as usize] = bishop_attacks(sq, occupancy);
+            }
+            b_masks[sq as usize] = b_mask;
+        }
+
+        Wizard {
+            rng,
+            r_masks,
+            r_attacks,
+            b_masks,
+            b_attacks,
+        }
+    }
+
+    pub fn find_magic(
+        &mut self,
+        sq: Square,
+        shift: u8,
+        bishop: bool,
+        num_tries: usize,
+    ) -> Option<u64> {
+        let mask = if bishop {
+            self.b_masks[sq as usize]
+        } else {
+            self.r_masks[sq as usize]
+        };
+
+        let attacks = if bishop {
+            &self.b_attacks[sq as usize]
+        } else {
+            &self.r_attacks[sq as usize]
+        };
+
+        let mut local_attacks: [Bitboard; 4096] = [Bitboard(0); 4096];
+        for (i, bb) in attacks.iter().enumerate() {
+            local_attacks[i] = *bb;
+        }
+
+        let mut used = vec![Bitboard(0); 1 << shift];
+
+        for _ in 0..num_tries {
+            let magic = self.rng.gen::<u64>() & self.rng.gen::<u64>() & self.rng.gen::<u64>();
+            used.fill(Bitboard(0));
+
+            let mut fail = false;
+            let mut occ = Bitboard(0);
+
+            let mut i = 0;
+            loop {
+                let idx = (occ.0.wrapping_mul(magic) >> (64 - shift)) as usize;
+
+                if used[idx].none() {
+                    used[idx] = local_attacks[i];
+                } else if used[idx] != local_attacks[i] {
+                    fail = true;
+                    break;
+                }
+
+                occ = Bitboard(occ.0.wrapping_sub(mask.0)) & mask.0;
+                if occ.none() {
+                    break;
+                }
+                i += 1;
+            }
+
+            if !fail {
+                return Some(magic);
+            }
+        }
+
+        None
+    }
+}
+
+impl Default for Wizard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub fn rook_mask(sq: Square) -> Bitboard {
     let mut mask = Bitboard(0);
@@ -50,180 +161,6 @@ pub fn bishop_mask(sq: Square) -> Bitboard {
     }
 
     mask
-}
-
-pub const fn rook_attacks(sq: Square, occ: Bitboard) -> Bitboard {
-    let mut attacks = Bitboard(0);
-
-    let rank = sq.rank() as u8;
-    let file = sq.file() as u8;
-
-    {
-        let mut r = rank + 1;
-        while r < 8 {
-            let bb = 1 << (file + r * 8);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-            r += 1;
-        }
-    }
-    {
-        let mut r = rank;
-        while r > 0 {
-            r -= 1;
-            let bb = 1 << (file + r * 8);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-    }
-    {
-        let mut f = file + 1;
-        while f < 8 {
-            let bb = 1 << (f + rank * 8);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-            f += 1;
-        }
-    }
-    {
-        let mut f = file;
-        while f > 0 {
-            f -= 1;
-            let bb = 1 << (f + rank * 8);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-    }
-    attacks
-}
-
-pub const fn bishop_attacks(sq: Square, occ: Bitboard) -> Bitboard {
-    let mut attacks = Bitboard(0);
-
-    let rank = sq.rank() as u8;
-    let file = sq.file() as u8;
-
-    let mut i = 1;
-    while i < 8 {
-        if rank + i <= 7 && file + i <= 7 {
-            let bb = 1 << ((rank + i) * 8 + file + i);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-        i += 1;
-    }
-
-    i = 1;
-    while i < 8 {
-        if rank + i <= 7 && file >= i {
-            let bb = 1 << ((rank + i) * 8 + file - i);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-        i += 1;
-    }
-
-    i = 1;
-    while i < 8 {
-        if rank >= i && file + i <= 7 {
-            let bb = 1 << ((rank - i) * 8 + file + i);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-        i += 1;
-    }
-
-    i = 1;
-    while i < 8 {
-        if rank >= i && file >= i {
-            let bb = 1 << ((rank - i) * 8 + file - i);
-            attacks.0 |= bb;
-            if (occ.0 & bb) != 0 {
-                break;
-            }
-        }
-        i += 1;
-    }
-    attacks
-}
-
-pub fn occupancy_bb(mask: &Bitboard, index: usize) -> Bitboard {
-    let mut occ = Bitboard(0);
-
-    // get indexes of all bits in mask
-    let mut bits = Vec::new();
-    let mut m = *mask;
-    while m.any() {
-        bits.push(m.0.trailing_zeros());
-        m &= m.0 - 1;
-    }
-
-    // set bits in occ according to index
-    (0..bits.len()).for_each(|i| {
-        if index & (1 << i) != 0 {
-            occ |= 1 << bits[i];
-        }
-    });
-    occ
-}
-
-pub fn find_magic(sq: Square, shift: u8, bishop: bool, num_tries: usize) -> Option<u64> {
-    let mut rng = SmallRng::from_entropy();
-
-    let mask = if bishop {
-        bishop_mask(sq)
-    } else {
-        rook_mask(sq)
-    };
-
-    let n = mask.count();
-    let mut used = vec![Bitboard(0); 1 << shift];
-    let mut occupancy = vec![Bitboard(0); 1 << n];
-    let mut attacks = vec![Bitboard(0); 1 << n];
-    // init occupancy array and attack array
-    for i in 0..(1 << n) {
-        occupancy[i] = occupancy_bb(&mask, i);
-        attacks[i] = if bishop {
-            bishop_attacks(sq, occupancy[i])
-        } else {
-            rook_attacks(sq, occupancy[i])
-        };
-    }
-
-    for _ in 0..num_tries {
-        let magic = rng.gen::<u64>() & rng.gen::<u64>() & rng.gen::<u64>();
-        used.iter_mut().for_each(|u| *u = Bitboard(0));
-        let mut fail = false;
-        for i in 0..(1 << n) {
-            let idx = (occupancy[i].0.wrapping_mul(magic) >> (64 - shift)) as usize;
-
-            if used[idx].none() || used[idx] == attacks[i] {
-                used[idx] = attacks[i];
-            } else {
-                fail = true;
-                break;
-            }
-        }
-        if !fail {
-            return Some(magic);
-        }
-    }
-
-    None
 }
 
 #[cfg(test)]
