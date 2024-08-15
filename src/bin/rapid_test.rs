@@ -126,6 +126,7 @@ r2r2k1/pq2bppp/1np1bN2/1p2B1P1/5Q2/P4P2/1PP4P/2KR1B1R b - - bm Bxf6; id "ERET 10
 struct Test {
     fen: String,
     best_moves: Vec<String>,
+    avoid_moves: Vec<String>,
     name: String,
 }
 
@@ -133,6 +134,7 @@ fn main() {
     let mut tests: Vec<Test> = Vec::new();
     for test in TEST_SUITE.lines() {
         let mut best_moves: Vec<String> = Vec::new();
+        let mut avoid_moves: Vec<String> = Vec::new();
         let mut name: Option<String> = None;
 
         let mut parts = test.splitn(5, ' ');
@@ -144,6 +146,16 @@ fn main() {
                 match operation.trim() {
                     s if s.starts_with("bm") => {
                         best_moves = s
+                            .split_once(' ')
+                            .unwrap()
+                            .1
+                            .split([',', ' '])
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                    }
+                    s if s.starts_with("am") => {
+                        avoid_moves = s
                             .split_once(' ')
                             .unwrap()
                             .1
@@ -166,6 +178,7 @@ fn main() {
             tests.push(Test {
                 fen,
                 best_moves,
+                avoid_moves,
                 name,
             });
         }
@@ -183,11 +196,12 @@ fn main() {
                 println!("{}: {}", res.name, "OK".green())
             }
             false => println!(
-                "{}: {} (found: {}, expected: {})",
+                "{}: {} (found: {}, expected: {}, avoid: {})",
                 res.name,
                 "FAIL".red(),
                 res.found_move,
-                res.best_moves.join(", ")
+                res.best_moves.join(", "),
+                res.avoid_moves.join(", ")
             ),
         }
     }
@@ -204,6 +218,7 @@ struct TestResult {
     success: bool,
     found_move: String,
     best_moves: Vec<String>,
+    avoid_moves: Vec<String>,
     name: String,
 }
 
@@ -221,10 +236,17 @@ fn try_test(test_case: &Test) -> Result<TestResult, ParseFenError> {
 
     let found_move = search.search().unwrap().to_algebraic();
 
+    let success = if test_case.avoid_moves.is_empty() {
+        test_case.best_moves.contains(&found_move)
+    } else {
+        !test_case.avoid_moves.contains(&found_move)
+    };
+
     Ok(TestResult {
-        success: test_case.best_moves.contains(&found_move),
+        success,
         found_move,
         best_moves: test_case.best_moves.clone(),
+        avoid_moves: test_case.avoid_moves.clone(),
         name: test_case.name.clone(),
     })
 }
