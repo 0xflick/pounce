@@ -1,4 +1,7 @@
-use flichess::{chess::Square, magic::find_magic};
+use flichess::{
+    chess::Square,
+    magic_finder::{bishop_mask, find_magic, rook_mask},
+};
 use std::env;
 use std::io::Write;
 
@@ -31,9 +34,9 @@ fn main() {
     }; 64];
 
     let num_tries = 100_000;
-    let first_shift = 14;
+    let first_shift = 12;
 
-    loop {
+    for _ in 0..15 {
         for sq in Square::ALL.into_iter() {
             let bishop_shift = if bishop_magics[sq as usize].magic.is_none() {
                 first_shift
@@ -127,19 +130,50 @@ fn main() {
         if bishop_found == bishop_total && rook_found == rook_total {
             // write magics to file
             let mut file = std::fs::File::create(output_file).unwrap();
+            writeln!(file, "use crate::bitboard::Bitboard;").unwrap();
+            writeln!(file, "use crate::magic::Magic;").unwrap();
+            writeln!(file).unwrap();
+
+            writeln!(file, "#[rustfmt::skip]").unwrap();
+            writeln!(file, "pub const BISHOP_MAGICS: [Magic; 64] = [").unwrap();
+            let mut offset = 0;
             for sq in Square::ALL.into_iter() {
                 let bishop = bishop_magics[sq as usize];
-                let rook = rook_magics[sq as usize];
+                let mask = bishop_mask(sq);
                 writeln!(
                     file,
-                    "{} 0x{:x} {} 0x{:x}",
+                    "    Magic {{ mask: Bitboard(0x{:x}), shift: 0x{:x}, magic: 0x{:x}, offset: 0x{:x} }},",
+                    mask,
                     bishop.shift,
                     bishop.magic.unwrap(),
-                    rook.shift,
-                    rook.magic.unwrap()
+                    offset,
                 )
                 .unwrap();
+
+                offset += 1 << bishop.shift;
             }
+            writeln!(file, "];").unwrap();
+            writeln!(file).unwrap();
+
+            writeln!(file, "#[rustfmt::skip]").unwrap();
+            writeln!(file, "pub const ROOK_MAGICS: [Magic; 64] = [").unwrap();
+            let mut offset = 0;
+            for sq in Square::ALL.into_iter() {
+                let rook = rook_magics[sq as usize];
+                let mask = rook_mask(sq);
+                writeln!(
+                    file,
+                    "    Magic {{ mask: Bitboard(0x{:x}), shift: 0x{:x}, magic: 0x{:x}, offset: 0x{:x} }},",
+                    mask,
+                    rook.shift,
+                    rook.magic.unwrap(),
+                    offset,
+                )
+                .unwrap();
+
+                offset += 1 << rook.shift;
+            }
+            writeln!(file, "];").unwrap();
         }
     }
 }

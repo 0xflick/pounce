@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use crate::bitboard::Bitboard;
 
 // A rank is a row on the chess board
@@ -22,6 +24,33 @@ impl Rank {
 
     pub const fn new_unchecked(rank: u8) -> Rank {
         unsafe { std::mem::transmute(rank) }
+    }
+
+    pub const fn from_char(c: char) -> Option<Rank> {
+        match c {
+            '1' => Some(Rank::R1),
+            '2' => Some(Rank::R2),
+            '3' => Some(Rank::R3),
+            '4' => Some(Rank::R4),
+            '5' => Some(Rank::R5),
+            '6' => Some(Rank::R6),
+            '7' => Some(Rank::R7),
+            '8' => Some(Rank::R8),
+            _ => None,
+        }
+    }
+
+    pub const fn char(&self) -> char {
+        match self {
+            Rank::R1 => '1',
+            Rank::R2 => '2',
+            Rank::R3 => '3',
+            Rank::R4 => '4',
+            Rank::R5 => '5',
+            Rank::R6 => '6',
+            Rank::R7 => '7',
+            Rank::R8 => '8',
+        }
     }
 
     pub const ALL: [Rank; 8] = [
@@ -59,6 +88,34 @@ impl File {
     pub const fn new_unchecked(file: u8) -> File {
         unsafe { std::mem::transmute(file) }
     }
+
+    pub const fn from_char(c: char) -> Option<File> {
+        match c {
+            'a' | 'A' => Some(File::A),
+            'b' | 'B' => Some(File::B),
+            'c' | 'C' => Some(File::C),
+            'd' | 'D' => Some(File::D),
+            'e' | 'E' => Some(File::E),
+            'f' | 'F' => Some(File::F),
+            'g' | 'G' => Some(File::G),
+            'h' | 'H' => Some(File::H),
+            _ => None,
+        }
+    }
+
+    pub const fn char(&self) -> char {
+        match self {
+            File::A => 'a',
+            File::B => 'b',
+            File::C => 'c',
+            File::D => 'd',
+            File::E => 'e',
+            File::F => 'f',
+            File::G => 'g',
+            File::H => 'h',
+        }
+    }
+
     pub const ALL: [File; 8] = [
         File::A,
         File::B,
@@ -70,6 +127,17 @@ impl File {
         File::H,
     ];
 }
+
+#[derive(Debug)]
+pub struct ParseSquareError;
+
+impl std::fmt::Display for ParseSquareError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid square name")
+    }
+}
+
+impl Error for ParseSquareError {}
 
 // A square is a position on the chess board
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -108,8 +176,22 @@ impl Square {
         Bitboard(1 << (*self as u8))
     }
 
-    pub const fn make_square(file: File, rank: Rank) -> Square {
+    pub const fn make(file: File, rank: Rank) -> Square {
         Square::new_unchecked((rank as u8 * 8) + file as u8)
+    }
+
+    pub fn from_ascii(s: &str) -> Result<Square, ParseSquareError> {
+        if s.len() != 2 {
+            return Err(ParseSquareError);
+        }
+
+        match (
+            File::from_char(s.chars().nth(0).unwrap()),
+            Rank::from_char(s.chars().nth(1).unwrap()),
+        ) {
+            (Some(file), Some(rank)) => Ok(Square::make(file, rank)),
+            _ => Err(ParseSquareError),
+        }
     }
 
     #[rustfmt::skip]
@@ -123,6 +205,13 @@ impl Square {
         Square::A7, Square::B7, Square::C7, Square::D7, Square::E7, Square::F7, Square::G7, Square::H7,
         Square::A8, Square::B8, Square::C8, Square::D8, Square::E8, Square::F8, Square::G8, Square::H8,
     ];
+}
+
+impl core::str::FromStr for Square {
+    type Err = ParseSquareError;
+    fn from_str(s: &str) -> Result<Square, ParseSquareError> {
+        Square::from_ascii(s)
+    }
 }
 
 #[repr(u8)]
