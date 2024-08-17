@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
-                let square = Square::from_ascii(parts[0])?;
+                let square = Square::from_str(parts[0])?;
                 let occupancy = Bitboard(u64::from_str_radix(parts[1], 16).unwrap());
 
                 let bishop_magic = BISHOP_MAGICS[square as usize];

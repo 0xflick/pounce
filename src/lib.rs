@@ -1,5 +1,10 @@
 pub mod bitboard;
+pub mod board;
 pub mod chess;
+pub mod fen;
 pub mod magic;
 pub mod magic_finder;
 pub mod magic_gen;
+pub mod movegen;
+pub mod moves;
+pub mod position;

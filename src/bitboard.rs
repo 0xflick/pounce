@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Formatter;
 
-use crate::chess::{File, Rank, Square};
+use crate::chess::{Color, File, Rank, Square};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
 pub struct Bitboard(pub u64);
@@ -26,6 +26,52 @@ impl Bitboard {
     pub const fn count(self) -> u32 {
         self.0.count_ones()
     }
+
+    #[inline]
+    pub fn set(&mut self, sq: Square) {
+        *self |= Bitboard::from(sq);
+    }
+
+    #[inline]
+    pub fn clear(&mut self, sq: Square) {
+        *self &= !Bitboard::from(sq);
+    }
+
+    #[inline]
+    pub fn toggle(&mut self, sq: Square) {
+        *self ^= Bitboard::from(sq);
+    }
+
+    #[inline]
+    pub fn north(self) -> Bitboard {
+        self << 8
+    }
+
+    #[inline]
+    pub fn south(self) -> Bitboard {
+        self >> 8
+    }
+
+    #[inline]
+    pub fn up(self, color: Color) -> Bitboard {
+        if color == Color::White {
+            self.north()
+        } else {
+            self.south()
+        }
+    }
+
+    #[inline]
+    pub fn down(self, color: Color) -> Bitboard {
+        if color == Color::White {
+            self.south()
+        } else {
+            self.north()
+        }
+    }
+
+    pub const EMPTY: Bitboard = Bitboard(0);
+    pub const FULL: Bitboard = Bitboard(0xFFFFFFFFFFFFFFFF);
 }
 
 impl fmt::Debug for Bitboard {
@@ -202,5 +248,19 @@ impl std::ops::ShrAssign<usize> for Bitboard {
     #[inline]
     fn shr_assign(&mut self, rhs: usize) {
         self.0 >>= rhs;
+    }
+}
+
+impl Iterator for Bitboard {
+    type Item = Square;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0 == 0 {
+            return None;
+        }
+        let sq = Square::new_unchecked(self.0.trailing_zeros() as u8);
+        *self ^= Bitboard::from(sq);
+        Some(sq)
     }
 }
