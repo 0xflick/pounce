@@ -15,9 +15,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let Fen(mut pos) = Fen::parse(fen).unwrap();
 
-    perft(pos, 6);
-    return Ok(());
-
     let mut rl = DefaultEditor::new()?;
 
     let mut mv_stack = Vec::new();
@@ -69,6 +66,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         if let Ok(depth) = args[1].parse() {
                             move_perft(&mut pos, depth);
+                        } else {
+                            println!("Invalid depth");
+                        }
+                    }
+                    "fperft" => {
+                        if args.len() != 2 {
+                            println!("Usage: fperft <depth>");
+                            continue;
+                        }
+
+                        if let Ok(depth) = args[1].parse() {
+                            fast_perft(&mut pos, depth);
                         } else {
                             println!("Invalid depth");
                         }
@@ -148,6 +157,8 @@ fn move_perft(pos: &mut Position, depth: u8) {
         return;
     }
 
+    let now = std::time::Instant::now();
+
     let mg = MoveGen::new(pos);
 
     let mut total = 0;
@@ -160,5 +171,15 @@ fn move_perft(pos: &mut Position, depth: u8) {
         println!("{}: nodes: {}", mv, count);
         // pos.unmake_move(mv);
     }
+    let elapsed = now.elapsed();
     println!("Total: {}", total);
+    println!("Time: {}s", elapsed.as_secs_f64());
+}
+
+fn fast_perft(pos: &mut Position, depth: u8) {
+    let now = std::time::Instant::now();
+    let count = perft(*pos, depth);
+    let elapsed = now.elapsed();
+    println!("Total: {}", count);
+    println!("Time: {}s {}ms", elapsed.as_secs(), elapsed.subsec_millis());
 }
