@@ -15,6 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let Fen(mut pos) = Fen::parse(fen).unwrap();
 
+    perft(pos, 6);
+    return Ok(());
+
     let mut rl = DefaultEditor::new()?;
 
     let mut mv_stack = Vec::new();

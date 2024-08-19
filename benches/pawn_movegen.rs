@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use flichess::{
     fen::Fen,
-    movegen::{gen_all_tables, MoveList, Mover, NotCheck, PawnType},
+    movegen::{gen_all_tables, MoveList, Mover, NotCheck, PawnType, WhiteType},
 };
 use std::{hint::black_box, time::Duration};
 
@@ -14,7 +14,7 @@ fn bench_pawn_movegen(c: &mut Criterion) {
         b.iter_batched_ref(
             || MoveList::new(),
             |moves| {
-                PawnType::legal_moves::<NotCheck>(black_box(&startpos), moves);
+                PawnType::legal_moves::<NotCheck, WhiteType>(black_box(&startpos), moves);
             },
             BatchSize::SmallInput,
         )
