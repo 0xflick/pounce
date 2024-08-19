@@ -9,7 +9,7 @@ use crate::{
     position::Position,
 };
 
-pub type MoveList = ArrayVec<FromAndMoves, 20>;
+pub type MoveList = ArrayVec<FromAndMoves, 18>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FromAndMoves {
@@ -475,12 +475,12 @@ pub fn gen_all_tables() {
     gen_rook_rays();
 }
 
-struct PawnType;
-struct KnightType;
-struct BishopType;
-struct RookType;
-struct QueenType;
-struct KingType;
+pub struct PawnType;
+pub struct KnightType;
+pub struct BishopType;
+pub struct RookType;
+pub struct QueenType;
+pub struct KingType;
 
 pub trait Mover {
     fn into_piece() -> Role;
@@ -489,6 +489,7 @@ pub trait Mover {
 
     fn legal_moves<T: CheckType>(pos: &Position, movelist: &mut MoveList) {
         let ksq = Square::from(pos.our_king());
+        let pieces = pos.our(Self::into_piece());
         let pinned = pos.board.pinned();
         let checkers = pos.board.checkers();
 
@@ -498,7 +499,7 @@ pub trait Mover {
             Bitboard::FULL
         };
 
-        for sq in pos.our(Self::into_piece()) & !pinned {
+        for sq in pieces & !pinned {
             let moves = Self::pseudo_legal_moves(sq, pos) & check_mask;
 
             if moves != Bitboard::EMPTY {
@@ -513,7 +514,7 @@ pub trait Mover {
         }
 
         if !T::IN_CHECK {
-            for sq in pos.our(Self::into_piece()) & pinned {
+            for sq in pieces & pinned {
                 let moves = Self::pseudo_legal_moves(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
@@ -550,10 +551,14 @@ impl Mover for PawnType {
         bb
     }
 
+    #[inline]
     fn legal_moves<T: CheckType>(pos: &Position, movelist: &mut MoveList) {
         let ksq = Square::from(pos.our_king());
+        let pieces = pos.our(Self::into_piece());
         let pinned = pos.board.pinned();
         let checkers = pos.board.checkers();
+
+        let promotion_bb = Bitboard::from(pos.side.opponent().home_rank());
 
         let check_mask = if T::IN_CHECK {
             between(Square::from(checkers), ksq) ^ checkers
@@ -561,28 +566,28 @@ impl Mover for PawnType {
             Bitboard::FULL
         };
 
-        for sq in pos.our(Self::into_piece()) & !pinned {
+        for sq in pieces & !pinned {
             let moves = Self::pseudo_legal_moves(sq, pos) & check_mask;
             if moves != Bitboard::EMPTY {
                 unsafe {
                     movelist.push_unchecked(FromAndMoves {
                         from: sq,
                         moves,
-                        is_promotion: sq.rank() == pos.side.opponent().home_rank(),
+                        is_promotion: promotion_bb & Bitboard::from(sq) != Bitboard::EMPTY,
                     });
                 }
             }
         }
 
         if !T::IN_CHECK {
-            for sq in pos.our(Self::into_piece()) & pinned {
+            for sq in pieces & pinned {
                 let moves = Self::pseudo_legal_moves(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves {
                             from: sq,
                             moves,
-                            is_promotion: sq.rank() == pos.side.opponent().home_rank(),
+                            is_promotion: promotion_bb & Bitboard::from(sq) != Bitboard::EMPTY,
                         });
                     }
                 }

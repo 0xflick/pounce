@@ -2,6 +2,7 @@ use std::{
     error::Error,
     fmt::{self, Display, Formatter},
     num::NonZeroU32,
+    str::FromStr,
 };
 
 use crate::{
@@ -81,6 +82,13 @@ impl Fen {
         position.refresh_checks_and_pins();
 
         Ok(Fen(position))
+    }
+}
+
+impl FromStr for Fen {
+    type Err = ParseFenError;
+    fn from_str(fen: &str) -> Result<Self, Self::Err> {
+        Fen::parse(fen)
     }
 }
 

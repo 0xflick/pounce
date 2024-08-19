@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::str::FromStr;
 
 use flichess::bitboard::Bitboard;
 use flichess::chess::Square;
