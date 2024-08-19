@@ -13,7 +13,10 @@ use crate::{
 #[derive(Debug)]
 pub enum ParseFenError {
     InvalidPartCount,
-    InvalidBoard,
+    TooManySlashesInBoard,
+    CouldNotParsePiece(char),
+    CouldNotParseColor(String),
+    CouldNotParseCastle(String),
     InvalidColor,
     InvalidCastle,
     InvalidEpSquare,
@@ -29,7 +32,18 @@ impl Display for ParseFenError {
             ParseFenError::InvalidPartCount => {
                 write!(f, "FEN string must contain 6 parts separated by whitespace")
             }
-            ParseFenError::InvalidBoard => write!(f, "invalid board part of FEN string"),
+            ParseFenError::TooManySlashesInBoard => {
+                write!(f, "too many slashes in board part of FEN")
+            }
+            ParseFenError::CouldNotParsePiece(c) => {
+                write!(f, "could not parse piece character in FEN: '{}'", c)
+            }
+            ParseFenError::CouldNotParseColor(s) => {
+                write!(f, "could not parse color in FEN: '{}'", s)
+            }
+            ParseFenError::CouldNotParseCastle(s) => {
+                write!(f, "could not parse castling rights in FEN: '{}'", s)
+            }
             ParseFenError::InvalidColor => write!(f, "invalid color part of FEN"),
             ParseFenError::InvalidCastle => write!(f, "invalid castling part of FEN"),
             ParseFenError::InvalidEpSquare => write!(f, "invalid en passant square part of FEN"),
@@ -64,6 +78,8 @@ impl Fen {
         position.halfmove_clock = parse_halfmove_clock_part(halfmove_clock_str)?;
         position.fullmove_number = parse_fullmove_number_part(fullmove_number_str)?;
 
+        position.refresh_checks_and_pins();
+
         Ok(Fen(position))
     }
 }
@@ -78,18 +94,18 @@ fn parse_board_part(board_str: &str) -> Result<Board, ParseFenError> {
     for c in iter {
         match c {
             '/' => {
-                rank = rank.down().ok_or(ParseFenError::InvalidBoard)?;
+                rank = rank.down().ok_or(ParseFenError::TooManySlashesInBoard)?;
             }
             '1'..='8' => {
                 let n = c.to_digit(10).unwrap() as u8;
                 for _ in 0..n {
-                    file = file.right_wrapped()
+                    file = file.east_wrapped()
                 }
             }
             _ => {
-                let piece = Piece::from_char(c).ok_or(ParseFenError::InvalidBoard)?;
+                let piece = Piece::from_char(c).ok_or(ParseFenError::CouldNotParsePiece(c))?;
                 board.set(Square::make(file, rank), piece);
-                file = file.right_wrapped();
+                file = file.east_wrapped();
             }
         }
     }
@@ -101,7 +117,7 @@ fn parse_side_part(side_str: &str) -> Result<Color, ParseFenError> {
     match side_str {
         "w" => Ok(Color::White),
         "b" => Ok(Color::Black),
-        _ => Err(ParseFenError::InvalidBoard),
+        _ => Err(ParseFenError::CouldNotParseColor(side_str.to_string())),
     }
 }
 
@@ -113,7 +129,8 @@ fn parse_castle_part(castle_str: &str) -> Result<CastleRights, ParseFenError> {
             'Q' => castling.insert(CastleRights::WHITE_QUEEN_SIDE),
             'k' => castling.insert(CastleRights::BLACK_KING_SIDE),
             'q' => castling.insert(CastleRights::BLACK_QUEEN_SIDE),
-            _ => return Err(ParseFenError::InvalidBoard),
+            '-' => castling = CastleRights::empty(),
+            _ => return Err(ParseFenError::CouldNotParseCastle(castle_str.to_string())),
         }
     }
     Ok(castling)

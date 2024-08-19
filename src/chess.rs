@@ -120,7 +120,7 @@ impl File {
         unsafe { std::mem::transmute(file) }
     }
 
-    pub fn right(&self) -> Option<File> {
+    pub fn east(&self) -> Option<File> {
         if (*self as u8) < 7 {
             Some(File::new_unchecked((*self as u8 + 1) % 8))
         } else {
@@ -128,11 +128,11 @@ impl File {
         }
     }
 
-    pub fn right_wrapped(&self) -> File {
+    pub fn east_wrapped(&self) -> File {
         File::new_unchecked((*self as u8 + 1) % 8)
     }
 
-    pub fn left(&self) -> Option<File> {
+    pub fn west(&self) -> Option<File> {
         if (*self as u8) > 0 {
             Some(File::new_unchecked((*self as u8 - 1) % 8))
         } else {
@@ -148,6 +148,12 @@ impl File {
         } else {
             b - a
         }
+    }
+
+    pub fn direction(&self, other: File) -> i8 {
+        let a = *self as i8;
+        let b = other as i8;
+        b - a
     }
 
     pub const fn from_char(c: char) -> Option<File> {
@@ -239,11 +245,11 @@ impl Square {
     }
 
     pub fn east(&self) -> Option<Square> {
-        self.file().right().map(|f| Square::make(f, self.rank()))
+        self.file().east().map(|f| Square::make(f, self.rank()))
     }
 
     pub fn west(&self) -> Option<Square> {
-        self.file().left().map(|f| Square::make(f, self.rank()))
+        self.file().west().map(|f| Square::make(f, self.rank()))
     }
 
     #[inline]
@@ -310,7 +316,7 @@ impl Display for Square {
 
 impl From<Bitboard> for Square {
     fn from(bb: Bitboard) -> Square {
-        assert_ne!(bb, Bitboard::EMPTY);
+        debug_assert_ne!(bb, Bitboard::EMPTY);
         Square::new(bb.0.trailing_zeros() as u8)
     }
 }
@@ -388,10 +394,45 @@ pub enum Role {
     King,
 }
 
+impl Display for Role {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let c = match self {
+            Role::Pawn => 'P',
+            Role::Knight => 'N',
+            Role::Bishop => 'B',
+            Role::Rook => 'R',
+            Role::Queen => 'Q',
+            Role::King => 'K',
+        };
+        write!(f, "{}", c)
+    }
+}
+
+impl FromStr for Role {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "P" => Ok(Role::Pawn),
+            "N" => Ok(Role::Knight),
+            "B" => Ok(Role::Bishop),
+            "R" => Ok(Role::Rook),
+            "Q" => Ok(Role::Queen),
+            "K" => Ok(Role::King),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Piece {
-    pub role: Role,
     pub color: Color,
+    pub role: Role,
+}
+
+impl Piece {
+    pub fn new(color: Color, role: Role) -> Piece {
+        Piece { color, role }
+    }
 }
 
 impl Piece {
@@ -411,7 +452,7 @@ impl Piece {
             'k' => (Role::King, Color::Black),
             _ => return None,
         };
-        Some(Piece { role, color })
+        Some(Piece { color, role })
     }
 }
 
@@ -456,6 +497,20 @@ impl CastleRights {
             Square::A8 => self.remove(CastleRights::BLACK_QUEEN_SIDE),
             Square::H8 => self.remove(CastleRights::BLACK_KING_SIDE),
             _ => {}
+        }
+    }
+
+    pub fn can_castle_kingside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_KING_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_KING_SIDE),
+        }
+    }
+
+    pub fn can_castle_queenside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_QUEEN_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_QUEEN_SIDE),
         }
     }
 }

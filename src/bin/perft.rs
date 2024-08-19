@@ -16,7 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let Fen(mut pos) = Fen::parse(fen).unwrap();
 
-    let res = perft(&mut pos, 4);
+    let res = perft(pos, 7);
     println!("Perft: {}", res);
     return Ok(());
 
@@ -49,8 +49,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Err(_) => println!("Invalid move format"),
                         }
                     }
-                    "unmake" => {
-                        pos.unmake_move(mv_stack.pop().unwrap());
+                    // "unmake" => {
+                    //     pos.unmake_move(mv_stack.pop().unwrap());
+                    // }
+                    "fen" => {
+                        if args.len() != 7 {
+                            println!("Usage: fen");
+                            continue;
+                        }
+
+                        println!("{:?}, args: {:?}", args[1..7].join(" "), args);
+                        let f = Fen::parse(args[1..7].join(" ").as_str()).unwrap();
+                        pos = f.0;
                     }
                     "print" => println!("{:?}", pos),
                     "perft" => {
@@ -135,16 +145,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn move_perft(pos: &mut Position, depth: u8) {
+    if depth == 0 {
+        println!("Total: 1");
+        return;
+    }
+
     let mg = MoveGen::new(pos);
 
     let mut total = 0;
 
     for mv in mg {
-        pos.make_move(mv);
-        let count = perft(pos, depth - 1);
+        let mut new_pos = *pos;
+        new_pos.make_move(mv);
+        let count = perft(new_pos, depth - 1);
         total += count;
         println!("{}: nodes: {}", mv, count);
-        pos.unmake_move(mv);
+        // pos.unmake_move(mv);
     }
     println!("Total: {}", total);
 }

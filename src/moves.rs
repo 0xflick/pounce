@@ -42,7 +42,11 @@ impl Move {
 
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}{}", self.from(), self.to())
+        write!(f, "{}{}", self.from(), self.to())?;
+        if let Some(promotion) = self.promotion() {
+            write!(f, "{}", promotion)?;
+        }
+        Ok(())
     }
 }
 
@@ -66,11 +70,17 @@ impl Display for ParseMoveError {
 impl FromStr for Move {
     type Err = ParseMoveError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() != 4 {
-            return Err(ParseMoveError {});
+        if s.len() == 4 {
+            let from = Square::from_str(&s[0..2]).map_err(|_| ParseMoveError {})?;
+            let to = Square::from_str(&s[2..4]).map_err(|_| ParseMoveError {})?;
+            Ok(Move::new(from, to, None))
+        } else if s.len() == 5 {
+            let from = Square::from_str(&s[0..2]).map_err(|_| ParseMoveError {})?;
+            let to = Square::from_str(&s[2..4]).map_err(|_| ParseMoveError {})?;
+            let promotion = Role::from_str(&s[4..5]).map_err(|_| ParseMoveError {})?;
+            Ok(Move::new(from, to, Some(promotion)))
+        } else {
+            Err(ParseMoveError {})
         }
-        let from = Square::from_str(&s[0..2]).map_err(|_| ParseMoveError {})?;
-        let to = Square::from_str(&s[2..4]).map_err(|_| ParseMoveError {})?;
-        Ok(Move::new(from, to, None))
     }
 }

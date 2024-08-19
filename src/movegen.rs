@@ -2,7 +2,7 @@ use arrayvec::ArrayVec;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, File, Rank, Role, Square},
+    chess::{Color, File, Role, Square},
     magic::{BISHOP_ATTACKS, ROOK_ATTACKS},
     magic_gen::{BISHOP_MAGICS, ROOK_MAGICS},
     moves::Move,
@@ -10,14 +10,37 @@ use crate::{
 };
 
 pub type MoveList = ArrayVec<FromAndMoves, 20>;
+
+#[derive(Debug, Clone, Copy)]
 pub struct FromAndMoves {
     from: Square,
     moves: Bitboard,
+    is_promotion: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromotionIndex {
+    Queen,
+    Rook,
+    Bishop,
+    Knight,
+}
+
+impl PromotionIndex {
+    fn next(self) -> Self {
+        match self {
+            PromotionIndex::Queen => PromotionIndex::Rook,
+            PromotionIndex::Rook => PromotionIndex::Bishop,
+            PromotionIndex::Bishop => PromotionIndex::Knight,
+            PromotionIndex::Knight => PromotionIndex::Queen,
+        }
+    }
 }
 
 pub struct MoveGen {
     moves: MoveList,
     index: usize,
+    promotion_index: PromotionIndex,
     iter_mask: Bitboard,
 }
 
@@ -48,6 +71,7 @@ impl MoveGen {
         MoveGen {
             moves,
             index: 0,
+            promotion_index: PromotionIndex::Queen,
             iter_mask: Bitboard::FULL,
         }
     }
@@ -62,7 +86,12 @@ impl ExactSizeIterator for MoveGen {
     fn len(&self) -> usize {
         let mut res = 0;
         for i in self.index..self.moves.len() {
-            res += self.moves[i].moves.count();
+            let move_count = self.moves[i].moves.count();
+            if self.moves[i].is_promotion {
+                res += move_count * 4;
+            } else {
+                res += move_count;
+            }
         }
         res as usize
     }
@@ -79,6 +108,39 @@ impl Iterator for MoveGen {
     fn next(&mut self) -> Option<Self::Item> {
         if self.index >= self.moves.len() {
             None
+        } else if self.moves[self.index].is_promotion {
+            let moves = &mut self.moves[self.index];
+            let masked = moves.moves & self.iter_mask;
+            if masked == Bitboard::EMPTY {
+                self.index += 1;
+                return self.next();
+            }
+            let to = Square::from(masked);
+
+            match self.promotion_index {
+                PromotionIndex::Queen => {
+                    self.promotion_index = self.promotion_index.next();
+                    Some(Move::new(moves.from, to, Some(Role::Queen)))
+                }
+                PromotionIndex::Rook => {
+                    self.promotion_index = self.promotion_index.next();
+                    Some(Move::new(moves.from, to, Some(Role::Rook)))
+                }
+                PromotionIndex::Bishop => {
+                    self.promotion_index = self.promotion_index.next();
+                    Some(Move::new(moves.from, to, Some(Role::Bishop)))
+                }
+                PromotionIndex::Knight => {
+                    self.promotion_index = self.promotion_index.next();
+
+                    moves.moves ^= Bitboard::from(to);
+                    if moves.moves == Bitboard::EMPTY {
+                        self.index += 1;
+                    }
+
+                    Some(Move::new(moves.from, to, Some(Role::Knight)))
+                }
+            }
         } else {
             let moves = &mut self.moves[self.index];
             let masked = moves.moves & self.iter_mask;
@@ -113,7 +175,6 @@ impl CheckType for NotCheck {
 }
 
 pub static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-static mut PAWN_DOUBLES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
 static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
 static mut KNIGHT_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
 static mut KING_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
@@ -126,16 +187,11 @@ static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
 
 fn gen_pawn_move_table() {
     let mut moves = [[Bitboard::EMPTY; 64]; 2];
-    let mut doubles = [[Bitboard::EMPTY; 64]; 2];
     let mut attacks = [[Bitboard::EMPTY; 64]; 2];
 
     for color in [Color::White, Color::Black].into_iter() {
         for sq in Square::ALL {
-            if sq.rank() == color.back_rank() {
-                continue;
-            }
             let move_bb = &mut moves[color as usize][sq as usize];
-            let double_bb = &mut doubles[color as usize][sq as usize];
             let attack_bb = &mut attacks[color as usize][sq as usize];
             if let Some(s) = sq.up(color) {
                 move_bb.set(s);
@@ -149,7 +205,7 @@ fn gen_pawn_move_table() {
 
             if sq.rank() == color.home_rank() {
                 if let Some(s) = sq.up(color).and_then(|s| s.up(color)) {
-                    double_bb.set(s);
+                    move_bb.set(s);
                 }
             }
         }
@@ -157,7 +213,6 @@ fn gen_pawn_move_table() {
 
     unsafe {
         PAWN_MOVES = moves;
-        PAWN_DOUBLES = doubles;
         PAWN_ATTACKS = attacks;
     }
 }
@@ -220,13 +275,13 @@ fn gen_castle_table() {
     let mut kingside = [Bitboard::EMPTY; 2];
     let mut queenside = [Bitboard::EMPTY; 2];
     for color in [Color::White, Color::Black].into_iter() {
-        let home_rank = color.home_rank();
-        kingside[color as usize].set(Square::make(File::F, home_rank));
-        kingside[color as usize].set(Square::make(File::G, home_rank));
+        let back_rank = color.back_rank();
+        kingside[color as usize].set(Square::make(File::F, back_rank));
+        kingside[color as usize].set(Square::make(File::G, back_rank));
 
-        queenside[color as usize].set(Square::make(File::B, home_rank));
-        queenside[color as usize].set(Square::make(File::C, home_rank));
-        queenside[color as usize].set(Square::make(File::D, home_rank));
+        queenside[color as usize].set(Square::make(File::B, back_rank));
+        queenside[color as usize].set(Square::make(File::C, back_rank));
+        queenside[color as usize].set(Square::make(File::D, back_rank));
     }
     unsafe {
         KINGSIDE_CASTLE = kingside;
@@ -320,8 +375,9 @@ fn gen_line(from: Square, to: Square) -> Bitboard {
         }
 
         // same diagonal
-        if sq.rank().distance(from.rank()) == sq.file().distance(from.file())
-            && from.rank().distance(to.rank()) == from.file().distance(to.file())
+        if (sq.rank().distance(from.rank()) == sq.file().distance(from.file()))
+            && (sq.rank().distance(to.rank()) == sq.file().distance(to.file()))
+            && (from.rank().distance(to.rank()) == from.file().distance(to.file()))
         {
             bb |= sq;
         }
@@ -432,9 +488,6 @@ pub trait Mover {
     fn pseudo_legal_moves(from: Square, pos: &Position) -> Bitboard;
 
     fn legal_moves<T: CheckType>(pos: &Position, movelist: &mut MoveList) {
-        if pos.our_king() == Bitboard::EMPTY {
-            panic!("No king");
-        }
         let ksq = Square::from(pos.our_king());
         let pinned = pos.board.pinned();
         let checkers = pos.board.checkers();
@@ -450,7 +503,11 @@ pub trait Mover {
 
             if moves != Bitboard::EMPTY {
                 unsafe {
-                    movelist.push_unchecked(FromAndMoves { from: sq, moves });
+                    movelist.push_unchecked(FromAndMoves {
+                        from: sq,
+                        moves,
+                        is_promotion: false,
+                    })
                 }
             }
         }
@@ -460,7 +517,11 @@ pub trait Mover {
                 let moves = Self::pseudo_legal_moves(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
-                        movelist.push_unchecked(FromAndMoves { from: sq, moves });
+                        movelist.push_unchecked(FromAndMoves {
+                            from: sq,
+                            moves,
+                            is_promotion: false,
+                        });
                     }
                 }
             }
@@ -476,21 +537,20 @@ impl Mover for PawnType {
     #[inline]
     fn pseudo_legal_moves(from: Square, pos: &Position) -> Bitboard {
         let mut bb = Bitboard::EMPTY;
-        let single = get_pawn_single_moves(from, pos);
-        let double = get_pawn_double_moves(from, pos);
+        // add single moves
+        if from
+            .up(pos.side)
+            .is_some_and(|s| pos.board.occupancy() & s == Bitboard::EMPTY)
+        {
+            bb |= get_pawn_moves(from, pos.side);
+            bb &= !pos.board.occupancy();
+        }
 
-        bb |= single & !pos.board.occupancy();
-        bb |= double & !pos.board.occupancy() & !pos.board.occupancy().down(pos.side);
-
-        bb |= get_pawn_attacks(from, pos.side, pos.them());
+        bb |= get_pawn_attacks(from, pos.side) & pos.them();
         bb
     }
 
     fn legal_moves<T: CheckType>(pos: &Position, movelist: &mut MoveList) {
-        if pos.our_king() == Bitboard::EMPTY {
-            println!("{:?}", pos);
-            panic!("No king");
-        };
         let ksq = Square::from(pos.our_king());
         let pinned = pos.board.pinned();
         let checkers = pos.board.checkers();
@@ -503,10 +563,13 @@ impl Mover for PawnType {
 
         for sq in pos.our(Self::into_piece()) & !pinned {
             let moves = Self::pseudo_legal_moves(sq, pos) & check_mask;
-
             if moves != Bitboard::EMPTY {
                 unsafe {
-                    movelist.push_unchecked(FromAndMoves { from: sq, moves });
+                    movelist.push_unchecked(FromAndMoves {
+                        from: sq,
+                        moves,
+                        is_promotion: sq.rank() == pos.side.opponent().home_rank(),
+                    });
                 }
             }
         }
@@ -516,19 +579,27 @@ impl Mover for PawnType {
                 let moves = Self::pseudo_legal_moves(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
-                        movelist.push_unchecked(FromAndMoves { from: sq, moves });
+                        movelist.push_unchecked(FromAndMoves {
+                            from: sq,
+                            moves,
+                            is_promotion: sq.rank() == pos.side.opponent().home_rank(),
+                        });
                     }
                 }
             }
         }
 
         if let Some(ep) = pos.ep_square {
-            for sq in get_ep_srcs(ep, pos) {
+            // en passant source squares are the same as the squares that any
+            // enemy pawn could attack from the en passant square
+            let ep_source_squares = get_pawn_attacks(ep, pos.side.opponent()) & pos.our(Role::Pawn);
+            for sq in ep_source_squares {
                 if Self::legal_ep_move(sq, ep, pos) {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves {
                             from: sq,
                             moves: Bitboard::from(ep),
+                            is_promotion: false,
                         });
                     }
                 }
@@ -550,8 +621,8 @@ impl PawnType {
         let bishops = pos.their(Role::Bishop) | pos.their(Role::Queen);
 
         let mut attackers = Bitboard::EMPTY;
-        attackers |= get_rook_moves(ksq, pos, mask) & rooks;
-        attackers |= get_bishop_moves(ksq, pos, mask) & bishops;
+        attackers |= get_rook_moves(ksq, mask) & rooks;
+        attackers |= get_bishop_moves(ksq, mask) & bishops;
         attackers == Bitboard::EMPTY
     }
 }
@@ -572,7 +643,7 @@ impl Mover for BishopType {
     }
 
     fn pseudo_legal_moves(from: Square, pos: &Position) -> Bitboard {
-        get_bishop_moves(from, pos, pos.board.occupancy())
+        get_bishop_moves(from, pos.board.occupancy()) & !pos.us()
     }
 }
 
@@ -582,7 +653,7 @@ impl Mover for RookType {
     }
 
     fn pseudo_legal_moves(from: Square, pos: &Position) -> Bitboard {
-        get_rook_moves(from, pos, pos.board.occupancy())
+        get_rook_moves(from, pos.board.occupancy()) & !pos.us()
     }
 }
 
@@ -608,9 +679,6 @@ impl Mover for KingType {
     }
 
     fn legal_moves<T: CheckType>(pos: &Position, movelist: &mut MoveList) {
-        if pos.our_king() == Bitboard::EMPTY {
-            panic!("No king");
-        }
         let ksq = Square::from(pos.our_king());
 
         let mut moves = Self::pseudo_legal_moves(ksq, pos);
@@ -620,9 +688,39 @@ impl Mover for KingType {
             }
         }
 
+        if !T::IN_CHECK {
+            if pos.castling.can_castle_kingside(pos.side)
+                && (get_kingside_castle_through_squares(pos.side) & pos.board.occupancy()).none()
+            {
+                let middle = ksq.east().unwrap();
+                let end = middle.east().unwrap();
+
+                if KingType::legal_king_move(pos, middle) && KingType::legal_king_move(pos, end) {
+                    moves ^= Bitboard::from(end);
+                }
+            }
+
+            if pos.castling.can_castle_queenside(pos.side)
+                && (get_queenside_castle_throught_squares(pos.side) & pos.board.occupancy()).none()
+            {
+                let middle = ksq.west().unwrap();
+                let end = middle.west().unwrap();
+                if KingType::legal_king_move(pos, middle)
+                    && KingType::legal_king_move(pos, middle)
+                    && KingType::legal_king_move(pos, end)
+                {
+                    moves ^= Bitboard::from(end);
+                }
+            }
+        }
+
         if moves != Bitboard::EMPTY {
             unsafe {
-                movelist.push_unchecked(FromAndMoves { from: ksq, moves });
+                movelist.push_unchecked(FromAndMoves {
+                    from: ksq,
+                    moves,
+                    is_promotion: false,
+                });
             }
         }
     }
@@ -635,23 +733,23 @@ impl KingType {
         let mut attackers = Bitboard::EMPTY;
         let rooks = pos.their(Role::Rook) | pos.their(Role::Queen);
 
-        attackers |= get_rook_moves(sq, pos, mask) & rooks;
+        attackers |= get_rook_moves(sq, mask) & rooks;
         if attackers != Bitboard::EMPTY {
             return false;
         }
 
         let bishops = pos.their(Role::Bishop) | pos.their(Role::Queen);
-        attackers |= get_bishop_moves(sq, pos, mask) & bishops;
+        attackers |= get_bishop_moves(sq, mask) & bishops;
         if attackers != Bitboard::EMPTY {
             return false;
         }
 
-        attackers |= KnightType::pseudo_legal_moves(sq, pos) & pos.their(Role::Knight);
+        attackers |= get_knight_moves(sq) & pos.their(Role::Knight);
         if attackers != Bitboard::EMPTY {
             return false;
         }
 
-        attackers |= PawnType::pseudo_legal_moves(sq, pos) & pos.their(Role::Pawn);
+        attackers |= get_pawn_attacks(sq, pos.side) & pos.their(Role::Pawn);
         if attackers != Bitboard::EMPTY {
             return false;
         }
@@ -661,115 +759,137 @@ impl KingType {
 }
 
 #[inline]
-fn get_pawn_single_moves(sq: Square, pos: &Position) -> Bitboard {
-    unsafe { PAWN_MOVES[pos.side as usize][sq as usize] & !pos.board.occupancy() }
+fn get_pawn_moves(sq: Square, color: Color) -> Bitboard {
+    unsafe {
+        *PAWN_MOVES
+            .get_unchecked(color as usize)
+            .get_unchecked(sq as usize)
+    }
 }
 
 #[inline]
-fn get_pawn_double_moves(sq: Square, pos: &Position) -> Bitboard {
-    unsafe { PAWN_DOUBLES[pos.side as usize][sq as usize] & !pos.board.occupancy() }
+pub fn get_pawn_attacks(sq: Square, color: Color) -> Bitboard {
+    unsafe {
+        *PAWN_ATTACKS
+            .get_unchecked(color as usize)
+            .get_unchecked(sq as usize)
+    }
 }
 
 #[inline]
-pub fn get_ep_srcs(sq: Square, pos: &Position) -> Bitboard {
-    let color = pos.side.opponent();
-    unsafe { PAWN_ATTACKS[color as usize][sq as usize] & pos.our(Role::Pawn) }
+pub fn get_rook_moves(sq: Square, occ: Bitboard) -> Bitboard {
+    unsafe {
+        let magic = ROOK_MAGICS.get_unchecked(sq as usize);
+        let occ = occ & magic.mask;
+        *ROOK_ATTACKS.get_unchecked(magic.index(occ))
+    }
 }
 
 #[inline]
-pub fn get_pawn_attacks(sq: Square, color: Color, them: Bitboard) -> Bitboard {
-    unsafe { PAWN_ATTACKS[color as usize][sq as usize] & them }
-}
-
-#[inline]
-pub fn get_rook_moves(sq: Square, pos: &Position, occ: Bitboard) -> Bitboard {
-    let magic = ROOK_MAGICS[sq as usize];
-    let occ = occ & magic.mask;
-    ROOK_ATTACKS[magic.index(occ)] & !pos.us()
-}
-
-#[inline]
-pub fn get_bishop_moves(sq: Square, pos: &Position, occ: Bitboard) -> Bitboard {
-    let magic = BISHOP_MAGICS[sq as usize];
-    let occ = occ & magic.mask;
-    BISHOP_ATTACKS[magic.index(occ)] & !pos.us()
+pub fn get_bishop_moves(sq: Square, occ: Bitboard) -> Bitboard {
+    unsafe {
+        let magic = BISHOP_MAGICS.get_unchecked(sq as usize);
+        let occ = occ & magic.mask;
+        *BISHOP_ATTACKS.get_unchecked(magic.index(occ))
+    }
 }
 
 #[inline]
 pub fn get_knight_moves(sq: Square) -> Bitboard {
-    unsafe { KNIGHT_MOVES[sq as usize] }
+    unsafe { *KNIGHT_MOVES.get_unchecked(sq as usize) }
 }
 
 #[inline]
 pub fn between(from: Square, to: Square) -> Bitboard {
-    unsafe { BETWEEN[from as usize][to as usize] }
+    unsafe {
+        *BETWEEN
+            .get_unchecked(from as usize)
+            .get_unchecked(to as usize)
+    }
 }
 
 #[inline]
 pub fn line(from: Square, to: Square) -> Bitboard {
-    unsafe { LINE[from as usize][to as usize] }
+    unsafe { *LINE.get_unchecked(from as usize).get_unchecked(to as usize) }
 }
 
 #[inline]
 pub fn bishop_rays(sq: Square) -> Bitboard {
-    unsafe { BISHOP_RAYS[sq as usize] }
+    unsafe { *BISHOP_RAYS.get_unchecked(sq as usize) }
 }
 
 #[inline]
 pub fn rook_rays(sq: Square) -> Bitboard {
-    unsafe { ROOK_RAYS[sq as usize] }
+    unsafe { *ROOK_RAYS.get_unchecked(sq as usize) }
 }
 
-pub fn perft(pos: &mut Position, depth: u8) -> u64 {
+#[inline]
+pub fn get_kingside_castle_through_squares(color: Color) -> Bitboard {
+    unsafe { *KINGSIDE_CASTLE.get_unchecked(color as usize) }
+}
+
+pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
+    unsafe { *QUEENSIDE_CASTLE.get_unchecked(color as usize) }
+}
+
+pub fn perft(pos: Position, depth: u8) -> u64 {
     let mut total = 0;
-    let mut mg = MoveGen::new(pos);
+    let mut mg = MoveGen::new(&pos);
+
+    if depth == 0 {
+        return 1;
+    }
 
     if depth == 1 {
         return mg.len() as u64;
     }
 
     for m in &mut mg {
-        pos.make_move(m);
-        total += perft(pos, depth - 1);
-        pos.unmake_move(m)
+        let mut p_new = pos;
+        p_new.make_move(m);
+        total += perft(p_new, depth - 1);
+        // pos.unmake_move(m)
     }
     total
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::fen::Fen;
 
-    use super::*;
+    const NORMAL_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const KIWIPETE_FEN: &str =
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -  0 1";
+    const POSITION_5_FEN: &str = "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8";
 
     #[test]
-    fn pawns() {
+    fn perft_normal() {
         gen_all_tables();
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        let Fen(position) = Fen::parse(fen).unwrap();
-
-        let mut mg = MoveGen::new(&position);
-        assert_eq!(mg.len(), 20);
+        let Fen(position) = Fen::parse(NORMAL_FEN).unwrap();
+        assert_eq!(perft(position, 2), 400);
+        assert_eq!(perft(position, 3), 8902);
+        assert_eq!(perft(position, 4), 197_281);
+        assert_eq!(perft(position, 5), 4_865_609);
     }
 
     #[test]
-    fn perft_2() {
+    fn perft_kiwipete() {
         gen_all_tables();
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        let Fen(mut position) = Fen::parse(fen).unwrap();
-
-        let nodes = perft(&mut position, 4);
-        assert_eq!(nodes, (400, 0));
+        let Fen(position) = Fen::parse(KIWIPETE_FEN).unwrap();
+        assert_eq!(perft(position, 1), 48);
+        assert_eq!(perft(position, 2), 2_039);
+        assert_eq!(perft(position, 3), 97_862);
+        assert_eq!(perft(position, 4), 4_085_603);
     }
 
     #[test]
-    fn perft_3() {
+    fn perft_pos_5() {
         gen_all_tables();
-        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-        let Fen(mut position) = Fen::parse(fen).unwrap();
-        position.make_move(Move::new(Square::B2, Square::B4, None));
-
-        let nodes = perft(&mut position, 2);
-        assert_eq!(nodes, (400, 0));
+        let Fen(position) = Fen::parse(POSITION_5_FEN).unwrap();
+        assert_eq!(perft(position, 1), 44);
+        assert_eq!(perft(position, 2), 1_486);
+        assert_eq!(perft(position, 3), 62_379);
+        assert_eq!(perft(position, 4), 2_103_487);
     }
 }
