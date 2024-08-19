@@ -92,6 +92,24 @@ impl FromStr for Fen {
     }
 }
 
+impl Display for Fen {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let Fen(position) = self;
+        write!(
+            f,
+            "{} {} {} {} {} {}",
+            position.board.to_fen(),
+            position.side.to_fen(),
+            position.castling.to_fen(),
+            position
+                .ep_square
+                .map_or_else(|| "-".to_string(), |s| s.to_string()),
+            position.halfmove_clock,
+            position.fullmove_number
+        )
+    }
+}
+
 fn parse_board_part(board_str: &str) -> Result<Board, ParseFenError> {
     let iter = board_str.chars();
     let mut file = File::A;
@@ -163,6 +181,69 @@ fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32, P
     fullmove_number_str
         .parse()
         .map_err(|_| ParseFenError::InvalidFullmoveNumber)
+}
+
+impl Board {
+    fn to_fen(&self) -> String {
+        let mut fen = String::new();
+        for rank in Rank::ALL.iter().rev() {
+            let mut empty = 0;
+            for file in File::ALL.iter() {
+                let square = Square::make(*file, *rank);
+                match self.piece_at(square) {
+                    Some(piece) => {
+                        if empty > 0 {
+                            fen.push_str(&empty.to_string());
+                            empty = 0;
+                        }
+                        fen.push(piece.to_char());
+                    }
+                    None => {
+                        empty += 1;
+                    }
+                }
+            }
+            if empty > 0 {
+                fen.push_str(&empty.to_string());
+            }
+            if *rank != Rank::R1 {
+                fen.push('/');
+            }
+        }
+        fen
+    }
+}
+
+impl Color {
+    fn to_fen(&self) -> &str {
+        match self {
+            Color::White => "w",
+            Color::Black => "b",
+        }
+    }
+}
+
+impl CastleRights {
+    fn to_fen(&self) -> String {
+        if self.is_empty() {
+            "-".to_string()
+        } else {
+            let mut s = String::new();
+            if self.contains(CastleRights::WHITE_KING_SIDE) {
+                s.push('K');
+            }
+            if self.contains(CastleRights::WHITE_QUEEN_SIDE) {
+                s.push('Q');
+            }
+            if self.contains(CastleRights::BLACK_KING_SIDE) {
+                s.push('k');
+            }
+            if self.contains(CastleRights::BLACK_QUEEN_SIDE) {
+                s.push('q');
+            }
+            s
+        }
+    }
 }
 
 #[cfg(test)]

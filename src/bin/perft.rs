@@ -5,7 +5,6 @@ use flichess::{
         between, bishop_rays, gen_all_tables, line as move_line, perft, rook_rays, MoveGen,
         PAWN_MOVES,
     },
-    moves::Move,
     position::Position,
 };
 use rustyline::error::ReadlineError;
@@ -54,8 +53,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
 
-                        println!("{:?}, args: {:?}", args[1..7].join(" "), args);
                         let f = Fen::parse(args[1..7].join(" ").as_str()).unwrap();
+                        println!("{}", f);
                         pos = f.0;
                     }
                     "print" => println!("{:?}", pos),

@@ -454,6 +454,23 @@ impl Piece {
         };
         Some(Piece { color, role })
     }
+
+    pub fn to_char(&self) -> char {
+        match (self.role, self.color) {
+            (Role::Pawn, Color::White) => 'P',
+            (Role::Knight, Color::White) => 'N',
+            (Role::Bishop, Color::White) => 'B',
+            (Role::Rook, Color::White) => 'R',
+            (Role::Queen, Color::White) => 'Q',
+            (Role::King, Color::White) => 'K',
+            (Role::Pawn, Color::Black) => 'p',
+            (Role::Knight, Color::Black) => 'n',
+            (Role::Bishop, Color::Black) => 'b',
+            (Role::Rook, Color::Black) => 'r',
+            (Role::Queen, Color::Black) => 'q',
+            (Role::King, Color::Black) => 'k',
+        }
+    }
 }
 
 bitflags! {
