@@ -533,8 +533,9 @@ pub trait Mover {
     fn pseudo_legal_moves<CO: ColorType>(from: Square, pos: &Position) -> Bitboard;
 
     fn legal_moves<CH: CheckType, CO: ColorType>(pos: &Position, movelist: &mut MoveList) {
-        let ksq = Square::from(pos.our_king());
-        let pieces = pos.our(Self::into_piece());
+        let side = CO::COLOR;
+        let ksq = Square::from(pos.board.king_of(side));
+        let pieces = pos.board.by_color_role(side, Self::into_piece());
         let pinned = pos.board.pinned();
         let checkers = pos.board.checkers();
 
@@ -586,7 +587,7 @@ impl Mover for PawnType {
         let side = CO::COLOR;
         // add single moves
         if from
-            .up(pos.side)
+            .up(side)
             .is_some_and(|s| pos.board.occupancy() & s == Bitboard::EMPTY)
         {
             bb |= get_pawn_moves(from, side);
@@ -644,9 +645,9 @@ impl Mover for PawnType {
         if let Some(ep) = pos.ep_square {
             // en passant source squares are the same as the squares that any
             // enemy pawn could attack from the en passant square
-            let ep_source_squares = get_pawn_attacks(ep, pos.side.opponent()) & pos.our(Role::Pawn);
+            let ep_source_squares = get_pawn_attacks(ep, side.opponent()) & pos.our(Role::Pawn);
             for sq in ep_source_squares {
-                if Self::legal_ep_move(sq, ep, pos) {
+                if Self::legal_ep_move::<CO>(sq, ep, pos) {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves {
                             from: sq,
@@ -661,16 +662,18 @@ impl Mover for PawnType {
 }
 
 impl PawnType {
-    fn legal_ep_move(from: Square, to: Square, pos: &Position) -> bool {
-        let color = pos.side;
-        let ksq = Square::from(pos.our_king());
+    fn legal_ep_move<CO: ColorType>(from: Square, to: Square, pos: &Position) -> bool {
+        let side = CO::COLOR;
+        let ksq = Square::from(pos.board.king_of(side));
         let mask = pos.board.occupancy()
             ^ Bitboard::from(from) // unset the from square
             ^ Bitboard::from(to) // set the to square
-            ^ Bitboard::from(to.down(color).unwrap()); // unset the captured pawn
+            ^ Bitboard::from(to.down(side).unwrap()); // unset the captured pawn
 
-        let rooks = pos.their(Role::Rook) | pos.their(Role::Queen);
-        let bishops = pos.their(Role::Bishop) | pos.their(Role::Queen);
+        let rooks = (pos.board.by_role(Role::Rook) | pos.board.by_role(Role::Queen))
+            & pos.board.by_color(side.opponent());
+        let bishops = (pos.board.by_role(Role::Bishop) | pos.board.by_role(Role::Queen))
+            & pos.board.by_color(side.opponent());
 
         let mut attackers = Bitboard::EMPTY;
         attackers |= get_rook_moves(ksq, mask) & rooks;
@@ -808,7 +811,7 @@ impl KingType {
         }
 
         attackers |=
-            get_pawn_attacks(sq, pos.side) & pos.board.by_color_role(side.opponent(), Role::Pawn);
+            get_pawn_attacks(sq, side) & pos.board.by_color_role(side.opponent(), Role::Pawn);
         if attackers != Bitboard::EMPTY {
             return false;
         }
