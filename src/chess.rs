@@ -1,9 +1,10 @@
-use bitflags::bitflags;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
+
+use bitflags::bitflags;
 
 use crate::bitboard::Bitboard;
 
@@ -94,6 +95,8 @@ impl Rank {
         Rank::R7,
         Rank::R8,
     ];
+
+    pub const NUM: usize = 8;
 }
 
 // A file is a column on the chess board
@@ -278,6 +281,8 @@ impl Square {
         Square::A7, Square::B7, Square::C7, Square::D7, Square::E7, Square::F7, Square::G7, Square::H7,
         Square::A8, Square::B8, Square::C8, Square::D8, Square::E8, Square::F8, Square::G8, Square::H8,
     ];
+
+    pub const NUM: usize = 64;
 }
 
 #[derive(Debug)]
@@ -321,11 +326,19 @@ impl From<Bitboard> for Square {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
 pub enum Color {
-    White,
+    #[default]
+    White = 0,
     Black,
+}
+
+impl Color {
+    pub const fn new(color: u8) -> Color {
+        assert!(color < 2);
+        unsafe { std::mem::transmute(color) }
+    }
 }
 
 impl Color {
@@ -360,6 +373,9 @@ impl Color {
             Color::Black => Color::White,
         }
     }
+
+    pub const ALL: [Color; 2] = [Color::White, Color::Black];
+    pub const NUM: usize = 2;
 }
 
 #[derive(Debug)]
@@ -383,15 +399,36 @@ impl FromStr for Color {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
 pub enum Role {
-    Pawn = 1,
+    #[default]
+    Pawn,
     Knight,
     Bishop,
     Rook,
     Queen,
     King,
+}
+
+impl Role {
+    pub const fn new(role: u8) -> Role {
+        assert!(role < 6);
+        unsafe { std::mem::transmute(role) }
+    }
+}
+
+impl Role {
+    pub const ALL: [Role; 6] = [
+        Role::Pawn,
+        Role::Knight,
+        Role::Bishop,
+        Role::Rook,
+        Role::Queen,
+        Role::King,
+    ];
+
+    pub const NUM: usize = 6;
 }
 
 impl Display for Role {

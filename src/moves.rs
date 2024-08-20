@@ -1,6 +1,6 @@
-use std::fmt;
 use std::{
     error::Error,
+    fmt,
     fmt::{Display, Formatter},
     str::FromStr,
 };
@@ -15,7 +15,9 @@ impl Move {
     pub fn new(from: Square, to: Square, promotion: Option<Role>) -> Move {
         let from = from as u16;
         let to = to as u16;
-        let promotion = promotion.map(|role| role as u16).unwrap_or(0);
+        let promotion = promotion
+            .map(|role| role as u16)
+            .unwrap_or(Role::NUM as u16);
         Move(from | (to << 6) | (promotion << 12))
     }
 

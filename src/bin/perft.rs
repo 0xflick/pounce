@@ -2,13 +2,12 @@ use flichess::{
     chess::{Color, Square},
     fen::Fen,
     movegen::{
-        between, bishop_rays, gen_all_tables, line as move_line, perft, rook_rays, MoveGen,
-        PAWN_MOVES,
+        between, bishop_rays, gen_all_tables, get_pawn_moves, line as move_line, perft, rook_rays,
+        MoveGen,
     },
     position::Position,
 };
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::{error::ReadlineError, DefaultEditor};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     gen_all_tables();
@@ -126,9 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let color: Color = args[1].parse().unwrap();
                         let square = args[2].parse::<Square>().unwrap();
-                        unsafe {
-                            println!("{:?}", PAWN_MOVES[color as usize][square as usize]);
-                        }
+                        println!("{:?}", get_pawn_moves(square, color));
                     }
                     "exit" => break,
                     _ => println!("Unknown command"),

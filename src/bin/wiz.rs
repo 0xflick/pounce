@@ -1,7 +1,10 @@
-use clap::Parser;
-use flichess::chess::Square;
-use flichess::magic_finder::{bishop_mask, rook_mask, Wizard};
 use std::io::Write;
+
+use clap::Parser;
+use flichess::{
+    chess::Square,
+    movegen::magic_finder::{bishop_mask, rook_mask, Wizard},
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct Magic {

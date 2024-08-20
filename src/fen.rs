@@ -6,7 +6,6 @@ use std::{
 };
 
 use crate::{
-    board::Board,
     chess::{CastleRights, Color, File, Piece, Rank, Square},
     position::Position,
 };
@@ -71,8 +70,7 @@ impl Fen {
         let halfmove_clock_str = parts[4];
         let fullmove_number_str = parts[5];
 
-        let mut position = Position::new();
-        position.board = parse_board_part(board_str)?;
+        let mut position = parse_board_part(board_str)?;
         position.side = parse_side_part(side_str)?;
         position.castling = parse_castle_part(castling_str)?;
         position.ep_square = parse_ep_part(ep_square_str)?;
@@ -95,27 +93,16 @@ impl FromStr for Fen {
 impl Display for Fen {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let Fen(position) = self;
-        write!(
-            f,
-            "{} {} {} {} {} {}",
-            position.board.to_fen(),
-            position.side.to_fen(),
-            position.castling.to_fen(),
-            position
-                .ep_square
-                .map_or_else(|| "-".to_string(), |s| s.to_string()),
-            position.halfmove_clock,
-            position.fullmove_number
-        )
+        write!(f, "{}", position.to_fen())
     }
 }
 
-fn parse_board_part(board_str: &str) -> Result<Board, ParseFenError> {
+fn parse_board_part(board_str: &str) -> Result<Position, ParseFenError> {
     let iter = board_str.chars();
     let mut file = File::A;
     let mut rank = Rank::R8;
 
-    let mut board = Board::new();
+    let mut position = Position::new();
 
     for c in iter {
         match c {
@@ -130,13 +117,13 @@ fn parse_board_part(board_str: &str) -> Result<Board, ParseFenError> {
             }
             _ => {
                 let piece = Piece::from_char(c).ok_or(ParseFenError::CouldNotParsePiece(c))?;
-                board.set(Square::make(file, rank), piece);
+                position.set(Square::make(file, rank), piece);
                 file = file.east_wrapped();
             }
         }
     }
 
-    Ok(board)
+    Ok(position)
 }
 
 fn parse_side_part(side_str: &str) -> Result<Color, ParseFenError> {
@@ -183,8 +170,8 @@ fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32, P
         .map_err(|_| ParseFenError::InvalidFullmoveNumber)
 }
 
-impl Board {
-    fn to_fen(&self) -> String {
+impl Position {
+    fn to_fen(self) -> String {
         let mut fen = String::new();
         for rank in Rank::ALL.iter().rev() {
             let mut empty = 0;
@@ -210,12 +197,21 @@ impl Board {
                 fen.push('/');
             }
         }
-        fen
+        format!(
+            "{} {} {} {} {} {}",
+            fen,
+            self.side.to_fen(),
+            self.castling.to_fen(),
+            self.ep_square
+                .map_or_else(|| "-".to_string(), |s| s.to_string()),
+            self.halfmove_clock,
+            self.fullmove_number
+        )
     }
 }
 
 impl Color {
-    fn to_fen(&self) -> &str {
+    fn to_fen(self) -> &'static str {
         match self {
             Color::White => "w",
             Color::Black => "b",
@@ -224,7 +220,7 @@ impl Color {
 }
 
 impl CastleRights {
-    fn to_fen(&self) -> String {
+    fn to_fen(self) -> String {
         if self.is_empty() {
             "-".to_string()
         } else {

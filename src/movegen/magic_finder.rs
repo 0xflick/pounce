@@ -1,8 +1,7 @@
-use crate::bitboard::Bitboard;
-use crate::chess::Square;
-use crate::magic::{bishop_attacks, occupancy_bb, rook_attacks};
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use magic::{bishop_attacks, occupancy_bb, rook_attacks};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
+
+use crate::{bitboard::Bitboard, chess::Square, movegen::*};
 
 pub struct Wizard {
     rng: SmallRng,

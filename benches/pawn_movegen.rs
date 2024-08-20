@@ -1,9 +1,10 @@
+use std::{hint::black_box, time::Duration};
+
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use flichess::{
     fen::Fen,
     movegen::{gen_all_tables, MoveList, Mover, NotCheck, PawnType, WhiteType},
 };
-use std::{hint::black_box, time::Duration};
 
 fn bench_pawn_movegen(c: &mut Criterion) {
     gen_all_tables();
