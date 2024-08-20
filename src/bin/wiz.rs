@@ -1,6 +1,10 @@
-use flichess::{chess::Square, magic::find_magic};
-use std::env;
 use std::io::Write;
+
+use clap::Parser;
+use pounce::{
+    chess::Square,
+    movegen::magic_finder::{bishop_mask, rook_mask, Wizard},
+};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct Magic {
@@ -8,18 +12,17 @@ struct Magic {
     magic: Option<u64>,
 }
 
+#[derive(Parser)]
+struct Cli {
+    // Output file for generated magics
+    output_file: String,
+
+    // Number of iteration rounds
+    rounds: usize,
+}
+
 fn main() {
-    // Generate magic numbers. We continue to generate magic numbers for all
-    // sliding pieces until the program quits
-
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() != 2 {
-        eprintln!("Usage: {} <output_file>", args[0]);
-        std::process::exit(1);
-    }
-
-    let output_file = &args[1];
+    let args = Cli::parse();
 
     let mut bishop_magics = [Magic {
         shift: 0,
@@ -31,9 +34,11 @@ fn main() {
     }; 64];
 
     let num_tries = 100_000;
-    let first_shift = 14;
+    let first_shift = 12;
 
-    loop {
+    let mut wizard = Wizard::new();
+
+    for _ in 0..args.rounds {
         for sq in Square::ALL.into_iter() {
             let bishop_shift = if bishop_magics[sq as usize].magic.is_none() {
                 first_shift
@@ -47,7 +52,7 @@ fn main() {
                 rook_magics[sq as usize].shift - 1
             };
 
-            let bishop = find_magic(sq, bishop_shift, true, num_tries);
+            let bishop = wizard.find_magic(sq, bishop_shift, true, num_tries);
             if bishop.is_some() {
                 bishop_magics[sq as usize] = Magic {
                     shift: bishop_shift,
@@ -55,7 +60,7 @@ fn main() {
                 };
             }
 
-            let rook = find_magic(sq, rook_shift, false, num_tries);
+            let rook = wizard.find_magic(sq, rook_shift, false, num_tries);
             if rook.is_some() {
                 rook_magics[sq as usize] = Magic {
                     shift: rook_shift,
@@ -126,20 +131,51 @@ fn main() {
 
         if bishop_found == bishop_total && rook_found == rook_total {
             // write magics to file
-            let mut file = std::fs::File::create(output_file).unwrap();
+            let mut file = std::fs::File::create(&args.output_file).unwrap();
+            writeln!(file, "use crate::bitboard::Bitboard;").unwrap();
+            writeln!(file, "use crate::magic::Magic;").unwrap();
+            writeln!(file).unwrap();
+
+            writeln!(file, "#[rustfmt::skip]").unwrap();
+            writeln!(file, "pub const BISHOP_MAGICS: [Magic; 64] = [").unwrap();
+            let mut offset = 0;
             for sq in Square::ALL.into_iter() {
                 let bishop = bishop_magics[sq as usize];
-                let rook = rook_magics[sq as usize];
+                let mask = bishop_mask(sq);
                 writeln!(
                     file,
-                    "{} 0x{:x} {} 0x{:x}",
+                    "    Magic {{ mask: Bitboard(0x{:x}), shift: 0x{:x}, magic: 0x{:x}, offset: 0x{:x} }},",
+                    mask,
                     bishop.shift,
                     bishop.magic.unwrap(),
-                    rook.shift,
-                    rook.magic.unwrap()
+                    offset,
                 )
                 .unwrap();
+
+                offset += 1 << bishop.shift;
             }
+            writeln!(file, "];").unwrap();
+            writeln!(file).unwrap();
+
+            writeln!(file, "#[rustfmt::skip]").unwrap();
+            writeln!(file, "pub const ROOK_MAGICS: [Magic; 64] = [").unwrap();
+            let mut offset = 0;
+            for sq in Square::ALL.into_iter() {
+                let rook = rook_magics[sq as usize];
+                let mask = rook_mask(sq);
+                writeln!(
+                    file,
+                    "    Magic {{ mask: Bitboard(0x{:x}), shift: 0x{:x}, magic: 0x{:x}, offset: 0x{:x} }},",
+                    mask,
+                    rook.shift,
+                    rook.magic.unwrap(),
+                    offset,
+                )
+                .unwrap();
+
+                offset += 1 << rook.shift;
+            }
+            writeln!(file, "];").unwrap();
         }
     }
 }

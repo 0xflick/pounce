@@ -1,3 +1,11 @@
+use std::{
+    error::Error,
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
+
+use bitflags::bitflags;
+
 use crate::bitboard::Bitboard;
 
 // A rank is a row on the chess board
@@ -24,6 +32,59 @@ impl Rank {
         unsafe { std::mem::transmute(rank) }
     }
 
+    pub const fn up(&self) -> Option<Rank> {
+        if (*self as u8) < 7 {
+            Some(Rank::new_unchecked(*self as u8 + 1))
+        } else {
+            None
+        }
+    }
+
+    pub const fn down(&self) -> Option<Rank> {
+        if (*self as u8) > 0 {
+            Some(Rank::new_unchecked(*self as u8 - 1))
+        } else {
+            None
+        }
+    }
+
+    pub fn distance(&self, other: Rank) -> u8 {
+        let a = *self as u8;
+        let b = other as u8;
+        if a > b {
+            a - b
+        } else {
+            b - a
+        }
+    }
+
+    pub const fn from_char(c: char) -> Option<Rank> {
+        match c {
+            '1' => Some(Rank::R1),
+            '2' => Some(Rank::R2),
+            '3' => Some(Rank::R3),
+            '4' => Some(Rank::R4),
+            '5' => Some(Rank::R5),
+            '6' => Some(Rank::R6),
+            '7' => Some(Rank::R7),
+            '8' => Some(Rank::R8),
+            _ => None,
+        }
+    }
+
+    pub const fn char(&self) -> char {
+        match self {
+            Rank::R1 => '1',
+            Rank::R2 => '2',
+            Rank::R3 => '3',
+            Rank::R4 => '4',
+            Rank::R5 => '5',
+            Rank::R6 => '6',
+            Rank::R7 => '7',
+            Rank::R8 => '8',
+        }
+    }
+
     pub const ALL: [Rank; 8] = [
         Rank::R1,
         Rank::R2,
@@ -34,6 +95,8 @@ impl Rank {
         Rank::R7,
         Rank::R8,
     ];
+
+    pub const NUM: usize = 8;
 }
 
 // A file is a column on the chess board
@@ -59,6 +122,70 @@ impl File {
     pub const fn new_unchecked(file: u8) -> File {
         unsafe { std::mem::transmute(file) }
     }
+
+    pub fn east(&self) -> Option<File> {
+        if (*self as u8) < 7 {
+            Some(File::new_unchecked((*self as u8 + 1) % 8))
+        } else {
+            None
+        }
+    }
+
+    pub fn east_wrapped(&self) -> File {
+        File::new_unchecked((*self as u8 + 1) % 8)
+    }
+
+    pub fn west(&self) -> Option<File> {
+        if (*self as u8) > 0 {
+            Some(File::new_unchecked((*self as u8 - 1) % 8))
+        } else {
+            None
+        }
+    }
+
+    pub fn distance(&self, other: File) -> u8 {
+        let a = *self as u8;
+        let b = other as u8;
+        if a > b {
+            a - b
+        } else {
+            b - a
+        }
+    }
+
+    pub fn direction(&self, other: File) -> i8 {
+        let a = *self as i8;
+        let b = other as i8;
+        b - a
+    }
+
+    pub const fn from_char(c: char) -> Option<File> {
+        match c {
+            'a' | 'A' => Some(File::A),
+            'b' | 'B' => Some(File::B),
+            'c' | 'C' => Some(File::C),
+            'd' | 'D' => Some(File::D),
+            'e' | 'E' => Some(File::E),
+            'f' | 'F' => Some(File::F),
+            'g' | 'G' => Some(File::G),
+            'h' | 'H' => Some(File::H),
+            _ => None,
+        }
+    }
+
+    pub const fn char(&self) -> char {
+        match self {
+            File::A => 'a',
+            File::B => 'b',
+            File::C => 'c',
+            File::D => 'd',
+            File::E => 'e',
+            File::F => 'f',
+            File::G => 'g',
+            File::H => 'h',
+        }
+    }
+
     pub const ALL: [File; 8] = [
         File::A,
         File::B,
@@ -108,8 +235,39 @@ impl Square {
         Bitboard(1 << (*self as u8))
     }
 
-    pub const fn make_square(file: File, rank: Rank) -> Square {
+    pub const fn make(file: File, rank: Rank) -> Square {
         Square::new_unchecked((rank as u8 * 8) + file as u8)
+    }
+
+    pub fn north(&self) -> Option<Square> {
+        self.rank().up().map(|r| Square::make(self.file(), r))
+    }
+
+    pub fn south(&self) -> Option<Square> {
+        self.rank().down().map(|r| Square::make(self.file(), r))
+    }
+
+    pub fn east(&self) -> Option<Square> {
+        self.file().east().map(|f| Square::make(f, self.rank()))
+    }
+
+    pub fn west(&self) -> Option<Square> {
+        self.file().west().map(|f| Square::make(f, self.rank()))
+    }
+
+    #[inline]
+    pub fn up(&self, color: Color) -> Option<Square> {
+        match color {
+            Color::White => self.north(),
+            Color::Black => self.south(),
+        }
+    }
+
+    pub fn down(&self, color: Color) -> Option<Square> {
+        match color {
+            Color::White => self.south(),
+            Color::Black => self.north(),
+        }
     }
 
     #[rustfmt::skip]
@@ -123,19 +281,128 @@ impl Square {
         Square::A7, Square::B7, Square::C7, Square::D7, Square::E7, Square::F7, Square::G7, Square::H7,
         Square::A8, Square::B8, Square::C8, Square::D8, Square::E8, Square::F8, Square::G8, Square::H8,
     ];
+
+    pub const NUM: usize = 64;
 }
 
+#[derive(Debug)]
+pub struct ParseSquareError;
+
+impl std::fmt::Display for ParseSquareError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid square name")
+    }
+}
+
+impl Error for ParseSquareError {}
+
+impl std::str::FromStr for Square {
+    type Err = ParseSquareError;
+    fn from_str(s: &str) -> Result<Square, ParseSquareError> {
+        if s.len() != 2 {
+            return Err(ParseSquareError);
+        }
+
+        match (
+            File::from_char(s.chars().nth(0).unwrap()),
+            Rank::from_char(s.chars().nth(1).unwrap()),
+        ) {
+            (Some(file), Some(rank)) => Ok(Square::make(file, rank)),
+            _ => Err(ParseSquareError),
+        }
+    }
+}
+
+impl Display for Square {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}{}", self.file().char(), self.rank().char())
+    }
+}
+
+impl From<Bitboard> for Square {
+    fn from(bb: Bitboard) -> Square {
+        debug_assert_ne!(bb, Bitboard::EMPTY);
+        Square::new(bb.0.trailing_zeros() as u8)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
 pub enum Color {
-    White,
+    #[default]
+    White = 0,
     Black,
-    None,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+impl Color {
+    pub const fn new(color: u8) -> Color {
+        assert!(color < 2);
+        unsafe { std::mem::transmute(color) }
+    }
+}
+
+impl Color {
+    #[inline]
+    pub fn home_rank(&self) -> Rank {
+        match self {
+            Color::White => Rank::R2,
+            Color::Black => Rank::R7,
+        }
+    }
+
+    #[inline]
+    pub fn back_rank(&self) -> Rank {
+        match self {
+            Color::White => Rank::R1,
+            Color::Black => Rank::R8,
+        }
+    }
+
+    #[inline]
+    pub fn double_pawn_rank(&self) -> Rank {
+        match self {
+            Color::White => Rank::R4,
+            Color::Black => Rank::R5,
+        }
+    }
+
+    #[inline]
+    pub fn opponent(&self) -> Color {
+        match self {
+            Color::White => Color::Black,
+            Color::Black => Color::White,
+        }
+    }
+
+    pub const ALL: [Color; 2] = [Color::White, Color::Black];
+    pub const NUM: usize = 2;
+}
+
+#[derive(Debug)]
+pub struct ParseColorError;
+impl std::error::Error for ParseColorError {}
+
+impl std::fmt::Display for ParseColorError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("invalid color")
+    }
+}
+
+impl FromStr for Color {
+    type Err = ParseColorError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "w" => Ok(Color::White),
+            "b" => Ok(Color::Black),
+            _ => Err(ParseColorError),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
-pub enum PieceType {
-    None,
+pub enum Role {
+    #[default]
     Pawn,
     Knight,
     Bishop,
@@ -144,52 +411,187 @@ pub enum PieceType {
     King,
 }
 
+impl Role {
+    pub const fn new(role: u8) -> Role {
+        assert!(role < 6);
+        unsafe { std::mem::transmute(role) }
+    }
+}
+
+impl Role {
+    pub const ALL: [Role; 6] = [
+        Role::Pawn,
+        Role::Knight,
+        Role::Bishop,
+        Role::Rook,
+        Role::Queen,
+        Role::King,
+    ];
+
+    pub const NUM: usize = 6;
+}
+
+impl Display for Role {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let c = match self {
+            Role::Pawn => 'P',
+            Role::Knight => 'N',
+            Role::Bishop => 'B',
+            Role::Rook => 'R',
+            Role::Queen => 'Q',
+            Role::King => 'K',
+        };
+        write!(f, "{}", c)
+    }
+}
+
+impl FromStr for Role {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "P" => Ok(Role::Pawn),
+            "N" => Ok(Role::Knight),
+            "B" => Ok(Role::Bishop),
+            "R" => Ok(Role::Rook),
+            "Q" => Ok(Role::Queen),
+            "K" => Ok(Role::King),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-#[repr(u8)]
-pub enum Piece {
-    None,
-    WPawn,
-    WKnight,
-    WBishop,
-    WRook,
-    WQueen,
-    WKing,
-    BPawn,
-    BKnight,
-    BBishop,
-    BRook,
-    BQueen,
-    BKing,
+pub struct Piece {
+    pub color: Color,
+    pub role: Role,
 }
 
 impl Piece {
-    pub fn color(&self) -> Color {
-        match self {
-            Piece::None => Color::None,
-            Piece::WPawn
-            | Piece::WKnight
-            | Piece::WBishop
-            | Piece::WRook
-            | Piece::WQueen
-            | Piece::WKing => Color::White,
-            Piece::BPawn
-            | Piece::BKnight
-            | Piece::BBishop
-            | Piece::BRook
-            | Piece::BQueen
-            | Piece::BKing => Color::Black,
+    pub fn new(color: Color, role: Role) -> Piece {
+        Piece { color, role }
+    }
+}
+
+impl Piece {
+    pub fn from_char(c: char) -> Option<Piece> {
+        let (role, color) = match c {
+            'P' => (Role::Pawn, Color::White),
+            'N' => (Role::Knight, Color::White),
+            'B' => (Role::Bishop, Color::White),
+            'R' => (Role::Rook, Color::White),
+            'Q' => (Role::Queen, Color::White),
+            'K' => (Role::King, Color::White),
+            'p' => (Role::Pawn, Color::Black),
+            'n' => (Role::Knight, Color::Black),
+            'b' => (Role::Bishop, Color::Black),
+            'r' => (Role::Rook, Color::Black),
+            'q' => (Role::Queen, Color::Black),
+            'k' => (Role::King, Color::Black),
+            _ => return None,
+        };
+        Some(Piece { color, role })
+    }
+
+    pub fn to_char(&self) -> char {
+        match (self.role, self.color) {
+            (Role::Pawn, Color::White) => 'P',
+            (Role::Knight, Color::White) => 'N',
+            (Role::Bishop, Color::White) => 'B',
+            (Role::Rook, Color::White) => 'R',
+            (Role::Queen, Color::White) => 'Q',
+            (Role::King, Color::White) => 'K',
+            (Role::Pawn, Color::Black) => 'p',
+            (Role::Knight, Color::Black) => 'n',
+            (Role::Bishop, Color::Black) => 'b',
+            (Role::Rook, Color::Black) => 'r',
+            (Role::Queen, Color::Black) => 'q',
+            (Role::King, Color::Black) => 'k',
+        }
+    }
+}
+
+bitflags! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+    pub struct CastleRights: u8 {
+        const WHITE_KING_SIDE = 0b0001;
+        const WHITE_QUEEN_SIDE = 0b0010;
+        const BLACK_KING_SIDE = 0b0100;
+        const BLACK_QUEEN_SIDE = 0b1000;
+    }
+}
+
+impl CastleRights {
+    pub fn new() -> CastleRights {
+        CastleRights::all()
+    }
+}
+
+impl Default for CastleRights {
+    fn default() -> CastleRights {
+        CastleRights::new()
+    }
+}
+
+impl CastleRights {
+    pub fn discard_color(&mut self, color: Color) {
+        match color {
+            Color::White => {
+                self.remove(CastleRights::WHITE_KING_SIDE | CastleRights::WHITE_QUEEN_SIDE);
+            }
+            Color::Black => {
+                self.remove(CastleRights::BLACK_KING_SIDE | CastleRights::BLACK_QUEEN_SIDE);
+            }
         }
     }
 
-    pub fn piece_type(&self) -> PieceType {
-        match self {
-            Piece::None => PieceType::None,
-            Piece::WPawn | Piece::BPawn => PieceType::Pawn,
-            Piece::WKnight | Piece::BKnight => PieceType::Knight,
-            Piece::WBishop | Piece::BBishop => PieceType::Bishop,
-            Piece::WRook | Piece::BRook => PieceType::Rook,
-            Piece::WQueen | Piece::BQueen => PieceType::Queen,
-            Piece::WKing | Piece::BKing => PieceType::King,
+    pub fn discard_square(&mut self, square: Square) {
+        match square {
+            Square::A1 => self.remove(CastleRights::WHITE_QUEEN_SIDE),
+            Square::H1 => self.remove(CastleRights::WHITE_KING_SIDE),
+            Square::A8 => self.remove(CastleRights::BLACK_QUEEN_SIDE),
+            Square::H8 => self.remove(CastleRights::BLACK_KING_SIDE),
+            _ => {}
         }
+    }
+
+    pub fn can_castle_kingside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_KING_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_KING_SIDE),
+        }
+    }
+
+    pub fn can_castle_queenside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_QUEEN_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_QUEEN_SIDE),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::bitboard::Bitboard;
+
+    #[test]
+    fn from_sq_a1() {
+        let sq = super::Square::A1;
+        assert_eq!(sq.rank(), super::Rank::R1);
+        assert_eq!(sq.file(), super::File::A);
+
+        let bb = Bitboard::from(sq);
+        assert_eq!(bb, Bitboard(1));
+        assert_eq!(super::Square::from(bb), sq);
+    }
+
+    #[test]
+    fn from_sq_h8() {
+        let sq = super::Square::H8;
+        assert_eq!(sq.rank(), super::Rank::R8);
+        assert_eq!(sq.file(), super::File::H);
+
+        let bb = Bitboard::from(sq);
+        assert_eq!(bb, Bitboard(1 << 63));
+        assert_eq!(super::Square::from(bb), sq);
     }
 }

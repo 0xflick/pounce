@@ -1,30 +1,27 @@
 [package]
-name = "flichess"
+name = "pounce"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
+default-run = "pounce"
 
 [profile.release]
 lto = true
 debug = true
 
 [dependencies]
-rand = { version = "0.8.5", features = ["small_rng"] }
 arrayvec = "0.7.4"
-colored = "2.1.0"
-lazy_static = "1.4.0"
-log = "0.4.21"
-log-panics = { version = "2.1.0", features = ["with-backtrace"] }
+bitflags = "2.6.0"
+clap = { version = "4.5.15", features = ["derive"] }
+rand = { version = "0.8.5", features = ["small_rng"] }
 rustyline = "14.0.0"
-simple-logging = "2.0.2"
-uuid = { version = "1.8.0", features = ["v4"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[build-dependencies]
+vergen-git2 = { version = "1.0.0", features = ["build", "cargo"] }
 
 [[bench]]
-name = "perft"
-harness = false
-
-[[bench]]
-name = "search"
+name = "pawn_movegen"
 harness = false
