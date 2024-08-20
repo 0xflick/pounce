@@ -427,19 +427,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flichess"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "bitflags",
- "clap",
- "criterion",
- "rand",
- "rustyline",
- "vergen-git2",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -730,6 +717,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81b30686a7d9c3e010b84284bdd26a29f2138574f52f5eb6f794fc0ad924e705"
 dependencies = [
  "plotters-backend",
+]
+
+[[package]]
+name = "pounce"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "bitflags",
+ "clap",
+ "criterion",
+ "rand",
+ "rustyline",
+ "vergen-git2",
 ]
 
 [[package]]

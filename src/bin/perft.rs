@@ -1,4 +1,4 @@
-use flichess::{
+use pounce::{
     chess::{Color, Square},
     fen::Fen,
     movegen::{

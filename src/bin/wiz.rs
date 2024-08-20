@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use clap::Parser;
-use flichess::{
+use pounce::{
     chess::Square,
     movegen::magic_finder::{bishop_mask, rook_mask, Wizard},
 };

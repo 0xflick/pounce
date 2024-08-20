@@ -1,9 +1,9 @@
 [package]
-name = "flichess"
+name = "pounce"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
-default-run = "flichess"
+default-run = "pounce"
 
 [profile.release]
 lto = true
