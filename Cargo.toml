@@ -1,6 +1,6 @@
 [package]
 name = "pounce"
-version = "0.1.0"
+authors = ["alex flick"]
 edition = "2021"
 build = "build.rs"
 default-run = "pounce"
