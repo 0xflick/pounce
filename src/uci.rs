@@ -4,8 +4,8 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Result};
-use rustyline::DefaultEditor;
+use anyhow::{anyhow, Context, Result};
+use rustyline::{error::ReadlineError, DefaultEditor};
 
 use crate::{
     eval,
@@ -53,23 +53,31 @@ impl Uci {
         let mut rl = DefaultEditor::new()?;
 
         loop {
-            let line = rl.readline("")?;
-            rl.add_history_entry(&line)?;
+            match rl.readline("") {
+                Ok(line) => {
+                    rl.add_history_entry(&line)?;
 
-            let mut tokens = line.split_whitespace();
-            let cmd = tokens.next().map(|s| s.to_string());
-            let rest = tokens.collect::<Vec<&str>>();
+                    let mut tokens = line.split_whitespace();
+                    let cmd = tokens.next().map(|s| s.to_string());
+                    let rest = tokens.collect::<Vec<&str>>();
 
-            match self.handle_cmd(cmd.as_deref(), &rest) {
-                Ok(UciState::Continue) => {}
-                Ok(UciState::Quit) => {
+                    match self.handle_cmd(cmd.as_deref(), &rest) {
+                        Ok(UciState::Continue) => {}
+                        Ok(UciState::Quit) => {
+                            break;
+                        }
+                        Err(e) => {
+                            eprintln!("Error: {:?}", e);
+                        }
+                    }
+                }
+                Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                     break;
                 }
-                Err(e) => {
-                    eprintln!("Error: {:?}", e);
-                }
+                Err(e) => return Err(e).context("Error reading input"),
             }
         }
+        println!("Exiting...");
         Ok(())
     }
 
