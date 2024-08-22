@@ -1,5 +1,7 @@
+use std::{borrow::Borrow, io};
+
+use anyhow::Result;
 use rand::seq::SliceRandom;
-use std::{borrow::Borrow, error::Error, fmt::Display, io, result::Result};
 
 use crate::{
     fen::Fen,
@@ -8,16 +10,6 @@ use crate::{
     position::Position,
     util::engine_name,
 };
-
-#[derive(Debug)]
-pub struct UciError;
-impl Error for UciError {}
-
-impl Display for UciError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "UCI Error")
-    }
-}
 
 pub struct Uci {
     position: Position,
@@ -38,46 +30,65 @@ impl Default for Uci {
     }
 }
 
+enum UciState {
+    Continue,
+    Quit,
+}
+
 impl Uci {
-    pub fn run_loop(&mut self) -> Result<(), UciError> {
+    pub fn run_loop(&mut self) -> Result<()> {
         println!("{}", engine_name());
-        for line in io::stdin().lines() {
-            let (cmd, tokens) = match line {
-                Ok(line) => {
-                    let mut tokens = line.split_whitespace();
-                    let cmd = tokens.next().map(|s| s.to_string());
-                    (cmd, tokens.map(|s| s.to_string()).collect::<Vec<String>>())
-                }
-                Err(_) => {
-                    println!("Error reading line");
-                    return Err(UciError);
-                }
-            };
-            match cmd.as_deref() {
-                Some("uci") => {
-                    println!("id name {}", engine_name());
-                    println!("id author alex flick");
-                    println!("uciok");
-                }
-                Some("isready") => {
-                    println!("readyok");
-                }
-                Some("quit") => {
+        for maybe_line in io::stdin().lines() {
+            let line = maybe_line?;
+
+            let mut tokens = line.split_whitespace();
+            let cmd = tokens.next().map(|s| s.to_string());
+            let rest = tokens.collect::<Vec<&str>>();
+
+            match self.handle_cmd(cmd.as_deref(), &rest) {
+                Ok(UciState::Continue) => {}
+                Ok(UciState::Quit) => {
                     break;
                 }
-                Some("position") => {
-                    self.cmd_position(&tokens);
+                Err(e) => {
+                    eprintln!("Error: {:?}", e);
                 }
-                Some("go") => {
-                    self.cmd_go(&tokens);
-                }
-                Some(_) | None => {}
             }
         }
         Ok(())
     }
 
-    fn cmd_position<T>(&mut self, tokens: &[T])
+    fn handle_cmd<T>(&mut self, cmd: Option<&str>, rest: &[T]) -> Result<UciState>
+    where
+        T: AsRef<str> + Borrow<str>,
+    {
+        match cmd {
+            Some("uci") => {
+                println!("id name {}", engine_name());
+                println!("id author alex flick");
+                println!("uciok");
+            }
+            Some("isready") => {
+                println!("readyok");
+            }
+            Some("quit") => {
+                return Ok(UciState::Quit);
+            }
+            Some("position") => {
+                self.cmd_position(rest)?;
+            }
+            Some("go") => {
+                self.cmd_go(rest);
+            }
+            Some(val) => {
+                eprintln!("Unknown command: {}", val);
+            }
+            None => {}
+        }
+        Ok(UciState::Continue)
+    }
+
+    fn cmd_position<T>(&mut self, tokens: &[T]) -> Result<()>
     where
         T: AsRef<str> + Borrow<str>,
     {
@@ -108,9 +119,7 @@ impl Uci {
                         fen.push(token.borrow());
                     }
                     ParseStage::Moves => {
-                        if let Ok(mv) = token.borrow().parse::<Move>() {
-                            moves.push(mv);
-                        }
+                        moves.push(token.borrow().parse::<Move>()?);
                     }
                     _ => {}
                 },
@@ -119,9 +128,8 @@ impl Uci {
 
         if !fen.is_empty() {
             let fen_str = fen.join(" ");
-            if let Ok(Fen(position)) = Fen::parse(fen_str.as_str()) {
-                self.position = position;
-            }
+            let Fen(position) = Fen::parse(fen_str.as_str())?;
+            self.position = position;
         } else {
             let Fen(position) = Uci::STARTPOS.parse().unwrap();
             self.position = position;
@@ -130,6 +138,7 @@ impl Uci {
         for mv in moves {
             self.position.make_move(mv);
         }
+        Ok(())
     }
 
     fn cmd_go<T>(&mut self, tokens: &[T])

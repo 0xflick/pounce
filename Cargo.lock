@@ -723,12 +723,14 @@ dependencies = [
 name = "pounce"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "arrayvec",
  "bitflags",
  "clap",
  "criterion",
  "rand",
  "rustyline",
+ "thiserror",
  "vergen-git2",
 ]
 

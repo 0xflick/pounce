@@ -10,11 +10,13 @@ lto = true
 debug = true
 
 [dependencies]
+anyhow = "1.0.86"
 arrayvec = "0.7.4"
 bitflags = "2.6.0"
 clap = { version = "4.5.15", features = ["derive"] }
 rand = { version = "0.8.5", features = ["small_rng"] }
 rustyline = "14.0.0"
+thiserror = "1.0.63"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

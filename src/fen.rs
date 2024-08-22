@@ -1,67 +1,49 @@
 use std::{
-    error::Error,
     fmt::{self, Display, Formatter},
     num::NonZeroU32,
     str::FromStr,
 };
 
+use thiserror::Error;
+
 use crate::{
-    chess::{CastleRights, Color, File, Piece, Rank, Square},
+    chess::{CastleRights, Color, File, ParsePieceError, Rank, Square},
     position::Position,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ParseFenError {
-    InvalidPartCount,
+    #[error("found `{0}` parts in FEN string, expected 6")]
+    InvalidPartCount(usize),
+    #[error("too many slashes")]
     TooManySlashesInBoard,
-    CouldNotParsePiece(char),
+    #[error("could not parse piece character: '{0}'")]
+    CouldNotParsePiece(#[from] ParsePieceError),
+    #[error("could not parse color: '{0}'")]
     CouldNotParseColor(String),
+    #[error("could not parse castling rights: '{0}'")]
     CouldNotParseCastle(String),
+    #[error("invalid color")]
     InvalidColor,
+    #[error("invalid castling")]
     InvalidCastle,
+    #[error("invalid en passant square")]
     InvalidEpSquare,
+    #[error("invalid halfmove clock")]
     InvalidHalfmoveClock,
+    #[error("invalid fullmove number")]
     InvalidFullmoveNumber,
 }
 
-impl Error for ParseFenError {}
-
-impl Display for ParseFenError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match self {
-            ParseFenError::InvalidPartCount => {
-                write!(f, "FEN string must contain 6 parts separated by whitespace")
-            }
-            ParseFenError::TooManySlashesInBoard => {
-                write!(f, "too many slashes in board part of FEN")
-            }
-            ParseFenError::CouldNotParsePiece(c) => {
-                write!(f, "could not parse piece character in FEN: '{}'", c)
-            }
-            ParseFenError::CouldNotParseColor(s) => {
-                write!(f, "could not parse color in FEN: '{}'", s)
-            }
-            ParseFenError::CouldNotParseCastle(s) => {
-                write!(f, "could not parse castling rights in FEN: '{}'", s)
-            }
-            ParseFenError::InvalidColor => write!(f, "invalid color part of FEN"),
-            ParseFenError::InvalidCastle => write!(f, "invalid castling part of FEN"),
-            ParseFenError::InvalidEpSquare => write!(f, "invalid en passant square part of FEN"),
-            ParseFenError::InvalidHalfmoveClock => write!(f, "invalid halfmove clock part of FEN"),
-            ParseFenError::InvalidFullmoveNumber => {
-                write!(f, "invalid fullmove number part of FEN")
-            }
-        }
-    }
-}
+type Result<T, E = ParseFenError> = std::result::Result<T, E>;
 
 pub struct Fen(pub Position);
 
 impl Fen {
-    pub fn parse(fen: &str) -> Result<Fen, ParseFenError> {
+    pub fn parse(fen: &str) -> Result<Fen> {
         let parts: Vec<&str> = fen.split_whitespace().collect();
         if parts.len() != 6 {
-            return Err(ParseFenError::InvalidPartCount);
+            return Err(ParseFenError::InvalidPartCount(parts.len()));
         }
         let board_str = parts[0];
         let side_str = parts[1];
@@ -97,7 +79,7 @@ impl Display for Fen {
     }
 }
 
-fn parse_board_part(board_str: &str) -> Result<Position, ParseFenError> {
+fn parse_board_part(board_str: &str) -> Result<Position> {
     let iter = board_str.chars();
     let mut file = File::A;
     let mut rank = Rank::R8;
@@ -116,7 +98,7 @@ fn parse_board_part(board_str: &str) -> Result<Position, ParseFenError> {
                 }
             }
             _ => {
-                let piece = Piece::from_char(c).ok_or(ParseFenError::CouldNotParsePiece(c))?;
+                let piece = c.to_string().parse()?;
                 position.set(Square::make(file, rank), piece);
                 file = file.east_wrapped();
             }
@@ -126,7 +108,7 @@ fn parse_board_part(board_str: &str) -> Result<Position, ParseFenError> {
     Ok(position)
 }
 
-fn parse_side_part(side_str: &str) -> Result<Color, ParseFenError> {
+fn parse_side_part(side_str: &str) -> Result<Color> {
     match side_str {
         "w" => Ok(Color::White),
         "b" => Ok(Color::Black),
@@ -134,7 +116,7 @@ fn parse_side_part(side_str: &str) -> Result<Color, ParseFenError> {
     }
 }
 
-fn parse_castle_part(castle_str: &str) -> Result<CastleRights, ParseFenError> {
+fn parse_castle_part(castle_str: &str) -> Result<CastleRights> {
     let mut castling = CastleRights::empty();
     for c in castle_str.chars() {
         match c {
@@ -149,7 +131,7 @@ fn parse_castle_part(castle_str: &str) -> Result<CastleRights, ParseFenError> {
     Ok(castling)
 }
 
-fn parse_ep_part(ep_str: &str) -> Result<Option<Square>, ParseFenError> {
+fn parse_ep_part(ep_str: &str) -> Result<Option<Square>> {
     if ep_str == "-" {
         Ok(None)
     } else {
@@ -158,13 +140,13 @@ fn parse_ep_part(ep_str: &str) -> Result<Option<Square>, ParseFenError> {
     }
 }
 
-fn parse_halfmove_clock_part(halfmove_clock_str: &str) -> Result<u16, ParseFenError> {
+fn parse_halfmove_clock_part(halfmove_clock_str: &str) -> Result<u16> {
     halfmove_clock_str
         .parse()
         .map_err(|_| ParseFenError::InvalidHalfmoveClock)
 }
 
-fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32, ParseFenError> {
+fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32> {
     fullmove_number_str
         .parse()
         .map_err(|_| ParseFenError::InvalidFullmoveNumber)
@@ -183,7 +165,7 @@ impl Position {
                             fen.push_str(&empty.to_string());
                             empty = 0;
                         }
-                        fen.push(piece.to_char());
+                        fen.push_str(&piece.to_string())
                     }
                     None => {
                         empty += 1;

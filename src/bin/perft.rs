@@ -1,3 +1,4 @@
+use anyhow::Result;
 use pounce::{
     chess::{Color, Square},
     fen::Fen,
@@ -9,7 +10,7 @@ use pounce::{
 };
 use rustyline::{error::ReadlineError, DefaultEditor};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     gen_all_tables();
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let Fen(mut pos) = Fen::parse(fen).unwrap();

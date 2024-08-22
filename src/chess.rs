@@ -1,10 +1,10 @@
 use std::{
-    error::Error,
     fmt::{self, Display, Formatter},
     str::FromStr,
 };
 
 use bitflags::bitflags;
+use thiserror::Error;
 
 use crate::bitboard::Bitboard;
 
@@ -285,22 +285,21 @@ impl Square {
     pub const NUM: usize = 64;
 }
 
-#[derive(Debug)]
-pub struct ParseSquareError;
-
-impl std::fmt::Display for ParseSquareError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("invalid square name")
-    }
+#[derive(Error, Debug)]
+pub enum ParseSquareError {
+    #[error("expected 2 characters, got {0}")]
+    InvalidLength(usize),
+    #[error("invalid file")]
+    InvalidFile,
+    #[error("invalid rank")]
+    InvalidRank,
 }
-
-impl Error for ParseSquareError {}
 
 impl std::str::FromStr for Square {
     type Err = ParseSquareError;
     fn from_str(s: &str) -> Result<Square, ParseSquareError> {
         if s.len() != 2 {
-            return Err(ParseSquareError);
+            return Err(ParseSquareError::InvalidLength(s.len()));
         }
 
         match (
@@ -308,7 +307,8 @@ impl std::str::FromStr for Square {
             Rank::from_char(s.chars().nth(1).unwrap()),
         ) {
             (Some(file), Some(rank)) => Ok(Square::make(file, rank)),
-            _ => Err(ParseSquareError),
+            (None, _) => Err(ParseSquareError::InvalidFile),
+            (_, None) => Err(ParseSquareError::InvalidRank),
         }
     }
 }
@@ -378,15 +378,9 @@ impl Color {
     pub const NUM: usize = 2;
 }
 
-#[derive(Debug)]
-pub struct ParseColorError;
-impl std::error::Error for ParseColorError {}
-
-impl std::fmt::Display for ParseColorError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("invalid color")
-    }
-}
+#[derive(Error, Debug)]
+#[error("invalid color: {0}")]
+pub struct ParseColorError(String);
 
 impl FromStr for Color {
     type Err = ParseColorError;
@@ -394,7 +388,7 @@ impl FromStr for Color {
         match s {
             "w" => Ok(Color::White),
             "b" => Ok(Color::Black),
-            _ => Err(ParseColorError),
+            _ => Err(ParseColorError(s.to_string())),
         }
     }
 }
@@ -445,17 +439,21 @@ impl Display for Role {
     }
 }
 
+#[derive(Error, Debug)]
+#[error("invalid role: {0}")]
+pub struct ParseRoleError(String);
+
 impl FromStr for Role {
-    type Err = ();
+    type Err = ParseRoleError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "P" => Ok(Role::Pawn),
-            "N" => Ok(Role::Knight),
-            "B" => Ok(Role::Bishop),
-            "R" => Ok(Role::Rook),
-            "Q" => Ok(Role::Queen),
-            "K" => Ok(Role::King),
-            _ => Err(()),
+            "P" | "p" => Ok(Role::Pawn),
+            "N" | "n" => Ok(Role::Knight),
+            "B" | "b" => Ok(Role::Bishop),
+            "R" | "r" => Ok(Role::Rook),
+            "Q" | "q" => Ok(Role::Queen),
+            "K" | "k" => Ok(Role::King),
+            _ => Err(ParseRoleError(s.to_string())),
         }
     }
 }
@@ -472,40 +470,46 @@ impl Piece {
     }
 }
 
-impl Piece {
-    pub fn from_char(c: char) -> Option<Piece> {
-        let (role, color) = match c {
-            'P' => (Role::Pawn, Color::White),
-            'N' => (Role::Knight, Color::White),
-            'B' => (Role::Bishop, Color::White),
-            'R' => (Role::Rook, Color::White),
-            'Q' => (Role::Queen, Color::White),
-            'K' => (Role::King, Color::White),
-            'p' => (Role::Pawn, Color::Black),
-            'n' => (Role::Knight, Color::Black),
-            'b' => (Role::Bishop, Color::Black),
-            'r' => (Role::Rook, Color::Black),
-            'q' => (Role::Queen, Color::Black),
-            'k' => (Role::King, Color::Black),
-            _ => return None,
-        };
-        Some(Piece { color, role })
-    }
-
-    pub fn to_char(&self) -> char {
+impl Display for Piece {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match (self.role, self.color) {
-            (Role::Pawn, Color::White) => 'P',
-            (Role::Knight, Color::White) => 'N',
-            (Role::Bishop, Color::White) => 'B',
-            (Role::Rook, Color::White) => 'R',
-            (Role::Queen, Color::White) => 'Q',
-            (Role::King, Color::White) => 'K',
-            (Role::Pawn, Color::Black) => 'p',
-            (Role::Knight, Color::Black) => 'n',
-            (Role::Bishop, Color::Black) => 'b',
-            (Role::Rook, Color::Black) => 'r',
-            (Role::Queen, Color::Black) => 'q',
-            (Role::King, Color::Black) => 'k',
+            (Role::Pawn, Color::White) => write!(f, "P"),
+            (Role::Knight, Color::White) => write!(f, "N"),
+            (Role::Bishop, Color::White) => write!(f, "B"),
+            (Role::Rook, Color::White) => write!(f, "R"),
+            (Role::Queen, Color::White) => write!(f, "Q"),
+            (Role::King, Color::White) => write!(f, "K"),
+            (Role::Pawn, Color::Black) => write!(f, "p"),
+            (Role::Knight, Color::Black) => write!(f, "n"),
+            (Role::Bishop, Color::Black) => write!(f, "b"),
+            (Role::Rook, Color::Black) => write!(f, "r"),
+            (Role::Queen, Color::Black) => write!(f, "q"),
+            (Role::King, Color::Black) => write!(f, "k"),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("invalid piece: {0}")]
+pub struct ParsePieceError(String);
+
+impl FromStr for Piece {
+    type Err = ParsePieceError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "P" => Ok(Piece::new(Color::White, Role::Pawn)),
+            "N" => Ok(Piece::new(Color::White, Role::Knight)),
+            "B" => Ok(Piece::new(Color::White, Role::Bishop)),
+            "R" => Ok(Piece::new(Color::White, Role::Rook)),
+            "Q" => Ok(Piece::new(Color::White, Role::Queen)),
+            "K" => Ok(Piece::new(Color::White, Role::King)),
+            "p" => Ok(Piece::new(Color::Black, Role::Pawn)),
+            "n" => Ok(Piece::new(Color::Black, Role::Knight)),
+            "b" => Ok(Piece::new(Color::Black, Role::Bishop)),
+            "r" => Ok(Piece::new(Color::Black, Role::Rook)),
+            "q" => Ok(Piece::new(Color::Black, Role::Queen)),
+            "k" => Ok(Piece::new(Color::Black, Role::King)),
+            _ => Err(ParsePieceError(s.to_string())),
         }
     }
 }

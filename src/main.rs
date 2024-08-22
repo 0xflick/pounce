@@ -1,9 +1,10 @@
+use anyhow::Result;
 use pounce::{movegen::gen_all_tables, uci::Uci};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     gen_all_tables();
 
     let mut uci = Uci::new();
 
-    Ok((uci.run_loop())?)
+    uci.run_loop()
 }

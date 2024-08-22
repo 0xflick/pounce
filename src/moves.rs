@@ -1,11 +1,12 @@
 use std::{
-    error::Error,
     fmt,
     fmt::{Display, Formatter},
     str::FromStr,
 };
 
-use crate::chess::{Role, Square};
+use thiserror::Error;
+
+use crate::chess::{ParseRoleError, ParseSquareError, Role, Square};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Move(u16);
@@ -58,31 +59,32 @@ impl From<Move> for u16 {
     }
 }
 
-#[derive(Debug)]
-pub struct ParseMoveError;
-
-impl Error for ParseMoveError {}
-
-impl Display for ParseMoveError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "invalid move format")
-    }
+#[derive(Debug, Error)]
+pub enum ParseMoveError {
+    #[error("expected 4 or 5 characters, found {0}")]
+    InvalidLength(usize),
+    #[error("invalid square")]
+    InvalidSquare(#[from] ParseSquareError),
+    #[error("invalid role")]
+    InvalidRole(#[from] ParseRoleError),
 }
 
 impl FromStr for Move {
     type Err = ParseMoveError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() == 4 {
-            let from = Square::from_str(&s[0..2]).map_err(|_| ParseMoveError {})?;
-            let to = Square::from_str(&s[2..4]).map_err(|_| ParseMoveError {})?;
-            Ok(Move::new(from, to, None))
-        } else if s.len() == 5 {
-            let from = Square::from_str(&s[0..2]).map_err(|_| ParseMoveError {})?;
-            let to = Square::from_str(&s[2..4]).map_err(|_| ParseMoveError {})?;
-            let promotion = Role::from_str(&s[4..5]).map_err(|_| ParseMoveError {})?;
-            Ok(Move::new(from, to, Some(promotion)))
-        } else {
-            Err(ParseMoveError {})
+        match s.len() {
+            4 => {
+                let from = Square::from_str(&s[0..2])?;
+                let to = Square::from_str(&s[2..4])?;
+                Ok(Move::new(from, to, None))
+            }
+            5 => {
+                let from = Square::from_str(&s[0..2])?;
+                let to = Square::from_str(&s[2..4])?;
+                let promotion = Role::from_str(&s[4..5])?;
+                Ok(Move::new(from, to, Some(promotion)))
+            }
+            _ => Err(ParseMoveError::InvalidLength(s.len())),
         }
     }
 }
