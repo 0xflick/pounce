@@ -195,9 +195,9 @@ impl Uci {
                 println!("{}: nodes: {}", mv, count);
             }
         }
-        println!();
 
         let elapsed = now.elapsed();
+        println!();
         println!(
             "Nodes: {}, Time: {}s {}ms, Nodes/s: {:.2}M",
             nodes,
