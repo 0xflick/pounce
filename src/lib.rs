@@ -1,6 +1,7 @@
 mod eval;
 mod limits;
 mod search;
+mod tt;
 mod util;
 
 pub mod bitboard;

@@ -29,8 +29,8 @@ pub struct Position {
     pub halfmove_clock: u16,
     pub fullmove_number: NonZeroU32,
 
-    pub psqt_mg: i32,
-    pub psqt_eg: i32,
+    pub psqt_mg: i16,
+    pub psqt_eg: i16,
 }
 
 impl Position {

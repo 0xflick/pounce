@@ -4,7 +4,12 @@ use std::{
 };
 
 use crate::{
-    chess::Color, eval::eval, limits::Limits, movegen::MoveGen, moves::Move, position::Position,
+    chess::Color,
+    eval::{self, eval},
+    limits::Limits,
+    movegen::MoveGen,
+    moves::Move,
+    position::Position,
 };
 
 pub struct SearchCop {
@@ -65,7 +70,7 @@ impl Search {
         self.start_time = Instant::now();
 
         let mut best_move = None;
-        let mut best_score = i32::MIN;
+        let mut best_score = -eval::INFINITY;
         for mv in MoveGen::new(&self.position) {
             let mut next_pos = self.position;
             next_pos.make_move(mv);
@@ -76,6 +81,7 @@ impl Search {
             }
         }
 
+        println!("info score cp {} depth {}", best_score, 0);
         best_move.unwrap()
     }
 

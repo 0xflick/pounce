@@ -4,10 +4,11 @@ use std::{
     thread,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use rustyline::DefaultEditor;
 
 use crate::{
+    eval,
     fen::Fen,
     limits::Limits,
     movegen::{perft, MoveGen},
@@ -94,6 +95,10 @@ impl Uci {
             Some("go") => {
                 self.cmd_go(rest)?;
             }
+            Some("eval") => {
+                let eval = eval::eval(&self.position);
+                println!("Eval: {}", eval);
+            }
             Some("stop") => {
                 self.cmd_stop();
             }
@@ -162,7 +167,11 @@ impl Uci {
     where
         T: AsRef<str> + Borrow<str>,
     {
-        let depth = tokens[0].as_ref().parse::<u8>()?;
+        let depth = tokens
+            .first()
+            .ok_or(anyhow!("No depth provided"))?
+            .as_ref()
+            .parse::<u8>()?;
 
         let mut nodes = 0;
         let now = std::time::Instant::now();
