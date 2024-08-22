@@ -1,7 +1,8 @@
-use std::{borrow::Borrow, io};
+use std::borrow::Borrow;
 
 use anyhow::Result;
 use rand::seq::SliceRandom;
+use rustyline::DefaultEditor;
 
 use crate::{
     fen::Fen,
@@ -38,8 +39,12 @@ enum UciState {
 impl Uci {
     pub fn run_loop(&mut self) -> Result<()> {
         println!("{}", engine_name());
-        for maybe_line in io::stdin().lines() {
-            let line = maybe_line?;
+
+        let mut rl = DefaultEditor::new()?;
+
+        loop {
+            let line = rl.readline("")?;
+            rl.add_history_entry(&line)?;
 
             let mut tokens = line.split_whitespace();
             let cmd = tokens.next().map(|s| s.to_string());

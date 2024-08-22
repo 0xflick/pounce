@@ -7,7 +7,7 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    chess::{CastleRights, Color, File, ParsePieceError, Rank, Square},
+    chess::{CastleRights, Color, File, ParsePieceError, ParseSquareError, Rank, Square},
     position::Position,
 };
 
@@ -17,22 +17,18 @@ pub enum ParseFenError {
     InvalidPartCount(usize),
     #[error("too many slashes")]
     TooManySlashesInBoard,
-    #[error("could not parse piece character: '{0}'")]
+    #[error("could not parse piece character")]
     CouldNotParsePiece(#[from] ParsePieceError),
     #[error("could not parse color: '{0}'")]
     CouldNotParseColor(String),
     #[error("could not parse castling rights: '{0}'")]
     CouldNotParseCastle(String),
-    #[error("invalid color")]
-    InvalidColor,
-    #[error("invalid castling")]
-    InvalidCastle,
-    #[error("invalid en passant square")]
-    InvalidEpSquare,
+    #[error("invalid en-passant square")]
+    InvalidEpSquare(#[from] ParseSquareError),
     #[error("invalid halfmove clock")]
-    InvalidHalfmoveClock,
+    InvalidHalfmoveClock(#[source] std::num::ParseIntError),
     #[error("invalid fullmove number")]
-    InvalidFullmoveNumber,
+    InvalidFullmoveNumber(#[source] std::num::ParseIntError),
 }
 
 type Result<T, E = ParseFenError> = std::result::Result<T, E>;
@@ -135,7 +131,7 @@ fn parse_ep_part(ep_str: &str) -> Result<Option<Square>> {
     if ep_str == "-" {
         Ok(None)
     } else {
-        let ep_square = ep_str.parse().map_err(|_| ParseFenError::InvalidEpSquare)?;
+        let ep_square = ep_str.parse()?;
         Ok(Some(ep_square))
     }
 }
@@ -143,13 +139,13 @@ fn parse_ep_part(ep_str: &str) -> Result<Option<Square>> {
 fn parse_halfmove_clock_part(halfmove_clock_str: &str) -> Result<u16> {
     halfmove_clock_str
         .parse()
-        .map_err(|_| ParseFenError::InvalidHalfmoveClock)
+        .map_err(ParseFenError::InvalidHalfmoveClock)
 }
 
 fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32> {
     fullmove_number_str
         .parse()
-        .map_err(|_| ParseFenError::InvalidFullmoveNumber)
+        .map_err(ParseFenError::InvalidFullmoveNumber)
 }
 
 impl Position {
