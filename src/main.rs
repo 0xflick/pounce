@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-
 use pounce::{
     fen::Fen,
     movegen::{gen_all_tables, perft},
