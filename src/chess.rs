@@ -1,5 +1,6 @@
 use std::{
     fmt::{self, Display, Formatter},
+    ops::{BitXor, Index, IndexMut},
     str::FromStr,
 };
 
@@ -99,6 +100,19 @@ impl Rank {
     pub const NUM: usize = 8;
 }
 
+impl<T> Index<Rank> for [T; Rank::NUM] {
+    type Output = T;
+    fn index(&self, index: Rank) -> &Self::Output {
+        unsafe { self.get_unchecked(index as usize) }
+    }
+}
+
+impl<T> IndexMut<Rank> for [T; Rank::NUM] {
+    fn index_mut(&mut self, index: Rank) -> &mut Self::Output {
+        unsafe { self.get_unchecked_mut(index as usize) }
+    }
+}
+
 // A file is a column on the chess board
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[repr(u8)]
@@ -196,6 +210,21 @@ impl File {
         File::G,
         File::H,
     ];
+
+    pub const NUM: usize = 8;
+}
+
+impl<T> Index<File> for [T; File::NUM] {
+    type Output = T;
+    fn index(&self, index: File) -> &Self::Output {
+        unsafe { self.get_unchecked(index as usize) }
+    }
+}
+
+impl<T> IndexMut<File> for [T; File::NUM] {
+    fn index_mut(&mut self, index: File) -> &mut Self::Output {
+        unsafe { self.get_unchecked_mut(index as usize) }
+    }
 }
 
 // A square is a position on the chess board
@@ -326,6 +355,37 @@ impl From<Bitboard> for Square {
     }
 }
 
+impl From<u8> for Square {
+    fn from(sq: u8) -> Square {
+        Square::new(sq)
+    }
+}
+
+impl<T> Index<Square> for [T; Square::NUM] {
+    type Output = T;
+    fn index(&self, index: Square) -> &Self::Output {
+        unsafe { self.get_unchecked(index as usize) }
+    }
+}
+
+impl<T> IndexMut<Square> for [T; Square::NUM] {
+    fn index_mut(&mut self, index: Square) -> &mut Self::Output {
+        unsafe { self.get_unchecked_mut(index as usize) }
+    }
+}
+
+impl<T> BitXor<T> for Square
+where
+    T: Into<Square>,
+{
+    type Output = Self;
+    #[inline]
+    fn bitxor(self, rhs: T) -> Self {
+        let rhs = rhs.into();
+        Square::new_unchecked(self as u8 ^ rhs as u8)
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
 pub enum Color {
@@ -339,9 +399,7 @@ impl Color {
         assert!(color < 2);
         unsafe { std::mem::transmute(color) }
     }
-}
 
-impl Color {
     #[inline]
     pub fn home_rank(&self) -> Rank {
         match self {
@@ -393,6 +451,19 @@ impl FromStr for Color {
     }
 }
 
+impl<T> Index<Color> for [T; Color::NUM] {
+    type Output = T;
+    fn index(&self, index: Color) -> &Self::Output {
+        unsafe { self.get_unchecked(index as usize) }
+    }
+}
+
+impl<T> IndexMut<Color> for [T; Color::NUM] {
+    fn index_mut(&mut self, index: Color) -> &mut Self::Output {
+        unsafe { self.get_unchecked_mut(index as usize) }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
 pub enum Role {
@@ -436,6 +507,19 @@ impl Display for Role {
             Role::King => 'K',
         };
         write!(f, "{}", c)
+    }
+}
+
+impl<T> Index<Role> for [T; Role::NUM] {
+    type Output = T;
+    fn index(&self, index: Role) -> &Self::Output {
+        unsafe { self.get_unchecked(index as usize) }
+    }
+}
+
+impl<T> IndexMut<Role> for [T; Role::NUM] {
+    fn index_mut(&mut self, index: Role) -> &mut Self::Output {
+        unsafe { self.get_unchecked_mut(index as usize) }
     }
 }
 

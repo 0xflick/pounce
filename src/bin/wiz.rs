@@ -40,21 +40,21 @@ fn main() {
 
     for _ in 0..args.rounds {
         for sq in Square::ALL.into_iter() {
-            let bishop_shift = if bishop_magics[sq as usize].magic.is_none() {
+            let bishop_shift = if bishop_magics[sq].magic.is_none() {
                 first_shift
             } else {
-                bishop_magics[sq as usize].shift - 1
+                bishop_magics[sq].shift - 1
             };
 
-            let rook_shift = if rook_magics[sq as usize].magic.is_none() {
+            let rook_shift = if rook_magics[sq].magic.is_none() {
                 first_shift
             } else {
-                rook_magics[sq as usize].shift - 1
+                rook_magics[sq].shift - 1
             };
 
             let bishop = wizard.find_magic(sq, bishop_shift, true, num_tries);
             if bishop.is_some() {
-                bishop_magics[sq as usize] = Magic {
+                bishop_magics[sq] = Magic {
                     shift: bishop_shift,
                     magic: bishop,
                 };
@@ -62,7 +62,7 @@ fn main() {
 
             let rook = wizard.find_magic(sq, rook_shift, false, num_tries);
             if rook.is_some() {
-                rook_magics[sq as usize] = Magic {
+                rook_magics[sq] = Magic {
                     shift: rook_shift,
                     magic: rook,
                 };
@@ -84,8 +84,8 @@ fn main() {
         let mut rook_worst_shift = 0;
 
         for sq in Square::ALL.into_iter() {
-            if bishop_magics[sq as usize].magic.is_some() {
-                let shift = bishop_magics[sq as usize].shift;
+            if bishop_magics[sq].magic.is_some() {
+                let shift = bishop_magics[sq].shift;
                 let entry_size = 1 << shift;
                 bishop_size += entry_size * 8;
 
@@ -96,8 +96,8 @@ fn main() {
                     bishop_best_shift = shift;
                 }
             }
-            if rook_magics[sq as usize].magic.is_some() {
-                let shift = rook_magics[sq as usize].shift;
+            if rook_magics[sq].magic.is_some() {
+                let shift = rook_magics[sq].shift;
                 let entry_size = 1 << shift;
                 rook_size += entry_size * 8;
 
@@ -140,7 +140,7 @@ fn main() {
             writeln!(file, "pub const BISHOP_MAGICS: [Magic; 64] = [").unwrap();
             let mut offset = 0;
             for sq in Square::ALL.into_iter() {
-                let bishop = bishop_magics[sq as usize];
+                let bishop = bishop_magics[sq];
                 let mask = bishop_mask(sq);
                 writeln!(
                     file,
@@ -161,7 +161,7 @@ fn main() {
             writeln!(file, "pub const ROOK_MAGICS: [Magic; 64] = [").unwrap();
             let mut offset = 0;
             for sq in Square::ALL.into_iter() {
-                let rook = rook_magics[sq as usize];
+                let rook = rook_magics[sq];
                 let mask = rook_mask(sq);
                 writeln!(
                     file,

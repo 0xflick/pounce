@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use crate::{
     bitboard::Bitboard,
     chess::{CastleRights, Color, File, Piece, Role, Square},
+    eval::{PSQT_EG, PSQT_MG},
     movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
     moves::Move,
 };
@@ -17,25 +18,24 @@ pub struct State {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
-    // pub board: Board,
     pub by_color: [Bitboard; Color::NUM],
     pub by_role: [Bitboard; Role::NUM],
     pub occupancy: Bitboard,
     pub checkers: Bitboard,
     pub pinned: Bitboard,
-
     pub side: Color,
     pub castling: CastleRights,
     pub ep_square: Option<Square>,
     pub halfmove_clock: u16,
     pub fullmove_number: NonZeroU32,
-    // pub history: Vec<State>,
+
+    pub psqt_mg: i32,
+    pub psqt_eg: i32,
 }
 
 impl Position {
     pub fn new() -> Position {
         Position {
-            // board: Board::new(),
             by_color: [Bitboard::EMPTY; Color::NUM],
             by_role: [Bitboard::EMPTY; Role::NUM],
             occupancy: Bitboard::EMPTY,
@@ -46,7 +46,8 @@ impl Position {
             ep_square: None,
             halfmove_clock: 0,
             fullmove_number: NonZeroU32::new(1).unwrap(),
-            // history: Vec::new(),
+            psqt_mg: 0,
+            psqt_eg: 0,
         }
     }
 }
@@ -88,7 +89,7 @@ impl Position {
 
     #[inline]
     pub fn by_color_role(&self, color: Color, role: Role) -> Bitboard {
-        self.by_color[color as usize] & self.by_role[role as usize]
+        self.by_color[color] & self.by_role[role]
     }
 
     #[inline]
@@ -98,12 +99,12 @@ impl Position {
 
     #[inline]
     pub fn us(&self) -> Bitboard {
-        self.by_color[self.side as usize]
+        self.by_color[self.side]
     }
 
     #[inline]
     pub fn them(&self) -> Bitboard {
-        self.by_color[self.side.opponent() as usize]
+        self.by_color[self.side.opponent()]
     }
 
     #[inline]
@@ -127,17 +128,28 @@ impl Position {
     }
 
     #[inline]
-    pub fn discard(&mut self, sq: Square) {
+    pub fn discard(&mut self, sq: Square, piece: Piece) {
+        match piece.color {
+            Color::White => {
+                self.psqt_mg -= PSQT_MG[piece.role][sq ^ 56];
+                self.psqt_eg -= PSQT_EG[piece.role][sq ^ 56];
+            }
+            Color::Black => {
+                self.psqt_mg += PSQT_MG[piece.role][sq];
+                self.psqt_eg += PSQT_EG[piece.role][sq];
+            }
+        };
+
         self.by_color.iter_mut().for_each(|bb| bb.clear(sq));
         self.by_role.iter_mut().for_each(|bb| bb.clear(sq));
         self.occupancy.clear(sq);
     }
 
     #[inline]
-    pub fn set(&mut self, sq: Square, Piece { color, role }: Piece) {
-        self.discard(sq);
-        self.by_color[color as usize].set(sq);
-        self.by_role[role as usize].set(sq);
+    pub fn set(&mut self, sq: Square, piece: Piece) {
+        self.discard(sq, piece);
+        self.by_color[piece.color].set(sq);
+        self.by_role[piece.role].set(sq);
         self.occupancy.set(sq);
     }
 
@@ -153,13 +165,13 @@ impl Position {
             // unwrapping is safe here because we know ep_square is never at the edge of the board
             let captured_pawn_square = to.down(self.side).unwrap();
             let captured = self.piece_at(captured_pawn_square);
-            self.discard(from);
-            self.discard(captured_pawn_square);
+            self.discard(from, piece);
+            self.discard(captured_pawn_square, captured.unwrap());
             self.set(to, piece);
             captured
         } else {
             let captured = self.piece_at(to);
-            self.discard(from);
+            self.discard(from, piece);
             self.set(to, piece);
             captured
         };
@@ -174,13 +186,13 @@ impl Position {
             let rook_from = Square::make(File::H, self.side.back_rank());
             let rook_to = Square::make(File::F, self.side.back_rank());
             let rook = self.piece_at(rook_from).unwrap();
-            self.discard(rook_from);
+            self.discard(rook_from, rook);
             self.set(rook_to, rook);
         } else if piece.role == Role::King && from.file().direction(to.file()) == -2 {
             let rook_from = Square::make(File::A, self.side.back_rank());
             let rook_to = Square::make(File::D, self.side.back_rank());
             let rook = self.piece_at(rook_from).unwrap();
-            self.discard(rook_from);
+            self.discard(rook_from, rook);
             self.set(rook_to, rook);
         }
 
@@ -221,28 +233,6 @@ impl Position {
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
         self.halfmove_clock += 1;
     }
-
-    // pub fn unmake_move(&mut self, mv: Move) {
-    //     self.side = self.side.opponent();
-    //
-    //     let past = self.history.pop().unwrap();
-    //     self.castling = past.castling;
-    //     self.ep_square = past.ep_square;
-    //     self.halfmove_clock = past.halfmove_clock;
-    //     self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
-    //
-    //     let from = mv.from();
-    //     let to = mv.to();
-    //     let piece = self.board.piece_at(to).unwrap();
-    //
-    //     self.board.discard(to);
-    //     self.board.set(from, piece);
-    //     if let Some(captured) = past.captured {
-    //         self.board.set(to, captured);
-    //     }
-    //
-    //     self.update_checks_and_pins(mv.reverse(), piece.role);
-    // }
 
     #[inline]
     fn update_checks_and_pins(&mut self, mv: Move, piece: Role) {

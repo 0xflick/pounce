@@ -14,6 +14,6 @@ impl Mover for RookType {
 
     #[inline]
     fn pseudo_legal_moves<CO: ColorType>(from: Square, pos: &Position) -> Bitboard {
-        get_rook_moves(from, pos.occupancy) & !pos.by_color[CO::COLOR as usize]
+        get_rook_moves(from, pos.occupancy) & !pos.by_color[CO::COLOR]
     }
 }

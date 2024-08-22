@@ -26,7 +26,7 @@ impl Mover for PawnType {
             bb &= !pos.occupancy;
         }
 
-        bb |= get_pawn_attacks(from, side) & pos.by_color[side.opponent() as usize];
+        bb |= get_pawn_attacks(from, side) & pos.by_color[side.opponent()];
         bb
     }
 
@@ -101,10 +101,10 @@ impl PawnType {
 
         // be careful about the parentheses here, the & operator has higher
         // precedence than the | operator
-        let rooks = (pos.by_role[Role::Rook as usize] | pos.by_role[Role::Queen as usize])
-            & pos.by_color[side.opponent() as usize];
-        let bishops = (pos.by_role[Role::Bishop as usize] | pos.by_role[Role::Queen as usize])
-            & pos.by_color[side.opponent() as usize];
+        let rooks =
+            (pos.by_role[Role::Rook] | pos.by_role[Role::Queen]) & pos.by_color[side.opponent()];
+        let bishops =
+            (pos.by_role[Role::Bishop] | pos.by_role[Role::Queen]) & pos.by_color[side.opponent()];
 
         let mut attackers = Bitboard::EMPTY;
         attackers |= get_rook_moves(ksq, mask) & rooks;

@@ -26,16 +26,16 @@ impl Wizard {
             let r_mask = rook_mask(sq);
             for i in 0..1 << r_mask.count() {
                 let occupancy = occupancy_bb(&r_mask, i as usize);
-                r_attacks[sq as usize][i as usize] = rook_attacks(sq, occupancy);
+                r_attacks[sq as usize][i] = rook_attacks(sq, occupancy);
             }
-            r_masks[sq as usize] = r_mask;
+            r_masks[sq] = r_mask;
 
             let b_mask = bishop_mask(sq);
             for i in 0..1 << b_mask.count() {
                 let occupancy = occupancy_bb(&b_mask, i as usize);
-                b_attacks[sq as usize][i as usize] = bishop_attacks(sq, occupancy);
+                b_attacks[sq as usize][i] = bishop_attacks(sq, occupancy);
             }
-            b_masks[sq as usize] = b_mask;
+            b_masks[sq] = b_mask;
         }
 
         Wizard {
@@ -55,9 +55,9 @@ impl Wizard {
         num_tries: usize,
     ) -> Option<u64> {
         let mask = if bishop {
-            self.b_masks[sq as usize]
+            self.b_masks[sq]
         } else {
-            self.r_masks[sq as usize]
+            self.r_masks[sq]
         };
 
         let attacks = if bishop {

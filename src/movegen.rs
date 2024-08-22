@@ -25,6 +25,7 @@ mod rook;
 
 pub mod magic_finder;
 
+#[inline]
 pub fn perft(pos: Position, depth: u8) -> u64 {
     let mut total = 0;
     let mut mg = MoveGen::new(&pos);

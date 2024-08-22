@@ -115,8 +115,8 @@ fn gen_pawn_move_table() {
 
     for color in [Color::White, Color::Black].into_iter() {
         for sq in Square::ALL {
-            let move_bb = &mut moves[color as usize][sq as usize];
-            let attack_bb = &mut attacks[color as usize][sq as usize];
+            let move_bb = &mut moves[color][sq];
+            let attack_bb = &mut attacks[color][sq];
             if let Some(s) = sq.up(color) {
                 move_bb.set(s);
                 if let Some(l) = s.east() {
@@ -161,7 +161,7 @@ fn gen_knight_move_table() {
         // SSW, SWW
         sq.south().and_then(|s| s.south().and_then(|s| s.west().map(|s| bb.set(s))));
         sq.south().and_then(|s| s.west().and_then(|s| s.west().map(|s| bb.set(s))));
-        moves[sq as usize] = bb;
+        moves[sq] = bb;
     }
     unsafe {
         KNIGHT_MOVES = moves;
@@ -188,7 +188,7 @@ fn gen_king_move_table() {
         sq.north().and_then(|s| s.west().map(|s| bb.set(s)));
         sq.south().and_then(|s| s.east().map(|s| bb.set(s)));
         sq.south().and_then(|s| s.west().map(|s| bb.set(s)));
-        moves[sq as usize] = bb;
+        moves[sq] = bb;
     }
     unsafe {
         KING_MOVES = moves;
@@ -200,12 +200,12 @@ fn gen_castle_table() {
     let mut queenside = [Bitboard::EMPTY; 2];
     for color in [Color::White, Color::Black].into_iter() {
         let back_rank = color.back_rank();
-        kingside[color as usize].set(Square::make(File::F, back_rank));
-        kingside[color as usize].set(Square::make(File::G, back_rank));
+        kingside[color].set(Square::make(File::F, back_rank));
+        kingside[color].set(Square::make(File::G, back_rank));
 
-        queenside[color as usize].set(Square::make(File::B, back_rank));
-        queenside[color as usize].set(Square::make(File::C, back_rank));
-        queenside[color as usize].set(Square::make(File::D, back_rank));
+        queenside[color].set(Square::make(File::B, back_rank));
+        queenside[color].set(Square::make(File::C, back_rank));
+        queenside[color].set(Square::make(File::D, back_rank));
     }
     unsafe {
         KINGSIDE_CASTLE = kingside;
@@ -217,7 +217,7 @@ fn gen_between_table() {
     let mut between = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
-            between[from as usize][to as usize] = gen_between(from, to)
+            between[from][to] = gen_between(from, to)
         }
     }
     unsafe {
@@ -272,7 +272,7 @@ fn gen_line_table() {
     let mut line = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
-            line[from as usize][to as usize] = if from == to {
+            line[from][to] = if from == to {
                 Bitboard::EMPTY
             } else {
                 gen_line(from, to)
@@ -371,7 +371,7 @@ fn gen_bishop_ray(sq: Square) -> Bitboard {
 fn gen_bishop_rays() {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
-        rays[sq as usize] = gen_bishop_ray(sq);
+        rays[sq] = gen_bishop_ray(sq);
     }
     unsafe {
         BISHOP_RAYS = rays;
@@ -381,7 +381,7 @@ fn gen_bishop_rays() {
 fn gen_rook_rays() {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
-        rays[sq as usize] = gen_rook_ray(sq);
+        rays[sq] = gen_rook_ray(sq);
     }
     unsafe {
         ROOK_RAYS = rays;

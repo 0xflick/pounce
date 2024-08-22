@@ -1,25 +1,34 @@
-use std::borrow::Borrow;
+use std::{
+    borrow::Borrow,
+    sync::{atomic::AtomicBool, Arc},
+    thread,
+};
 
 use anyhow::Result;
-use rand::seq::SliceRandom;
 use rustyline::DefaultEditor;
 
 use crate::{
     fen::Fen,
+    limits::Limits,
     movegen::{perft, MoveGen},
     moves::Move,
     position::Position,
+    search::Search,
     util::engine_name,
 };
 
 pub struct Uci {
     position: Position,
+    stop: Arc<AtomicBool>,
 }
 
 impl Uci {
     pub fn new() -> Self {
         let Fen(position) = Uci::STARTPOS.parse().unwrap();
-        Uci { position }
+        Uci {
+            position,
+            stop: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     const STARTPOS: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -83,7 +92,10 @@ impl Uci {
                 self.cmd_position(rest)?;
             }
             Some("go") => {
-                self.cmd_go(rest);
+                self.cmd_go(rest)?;
+            }
+            Some("stop") => {
+                self.cmd_stop();
             }
             Some(val) => {
                 eprintln!("Unknown command: {}", val);
@@ -146,64 +158,66 @@ impl Uci {
         Ok(())
     }
 
-    fn cmd_go<T>(&mut self, tokens: &[T])
+    fn cmd_perft<T>(&mut self, tokens: &[T]) -> Result<()>
     where
         T: AsRef<str> + Borrow<str>,
     {
-        enum ParseStage {
-            Pre,
-            Perft, // Depth,
-                   // Movetime,
-                   // Nodes,
-                   // Infinite,
-        }
+        let depth = tokens[0].as_ref().parse::<u8>()?;
 
-        let mut parse_stage = ParseStage::Pre;
-        let mut perft_depth = 0;
+        let mut nodes = 0;
+        let now = std::time::Instant::now();
 
-        for token in tokens {
-            match token.as_ref() {
-                "perft" => {
-                    parse_stage = ParseStage::Perft;
-                }
-                _ => match parse_stage {
-                    ParseStage::Perft => {
-                        if let Ok(depth) = token.as_ref().parse::<u8>() {
-                            perft_depth = depth;
-                            parse_stage = ParseStage::Pre;
-                        }
-                    }
-                    _ => {}
-                },
-            }
-        }
-
-        if perft_depth > 0 {
+        if depth > 0 {
             let mg = MoveGen::new(&self.position);
-            let mut nodes = 0;
 
             for mv in mg {
                 let mut new_pos = self.position;
                 new_pos.make_move(mv);
-                let count = perft(new_pos, perft_depth - 1);
+                let count = perft(new_pos, depth - 1);
                 nodes += count;
                 println!("{}: nodes: {}", mv, count);
             }
+        }
+        println!();
 
-            println!("Total: {}", nodes);
-            return;
+        let elapsed = now.elapsed();
+        println!(
+            "Nodes: {}, Time: {}s {}ms, Nodes/s: {:.2}M",
+            nodes,
+            elapsed.as_secs(),
+            elapsed.subsec_millis(),
+            (nodes as f64 / elapsed.as_secs_f64() / 1_000_000.0)
+        );
+        Ok(())
+    }
+
+    fn cmd_go<T>(&mut self, tokens: &[T]) -> Result<()>
+    where
+        T: AsRef<str> + Borrow<str>,
+    {
+        if !tokens.is_empty() && tokens[0].as_ref() == "perft" {
+            self.cmd_perft(&tokens[1..])?;
+            return Ok(());
         }
 
-        // random best move
-        let bm = MoveGen::new(&self.position)
-            .collect::<Vec<Move>>()
-            .choose(&mut rand::thread_rng())
-            .cloned();
+        let limits = if tokens.len() > 1 {
+            Limits::from_tokens(&tokens[1..])?
+        } else {
+            Limits::new()
+        };
 
-        println!("info score cp 0 depth 1");
+        let stop = Arc::new(AtomicBool::new(false));
+        let position = self.position;
 
-        if let Some(bm) = bm {
-            println!("bestmove {}", bm);
-        }
+        thread::spawn(move || {
+            let mut search = Search::new(position, limits, stop.clone());
+            let best_move = search.think();
+            println!("bestmove {}", best_move);
+        });
+        Ok(())
+    }
+
+    fn cmd_stop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }

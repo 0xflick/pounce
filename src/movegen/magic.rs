@@ -41,10 +41,10 @@ const fn init_rook_magics() -> [Bitboard; ROOK_TABLE_SIZE] {
 
     let mut sq = 0;
     while sq < 64 {
-        let magic = ROOK_MAGICS[sq as usize];
+        let magic = ROOK_MAGICS[sq];
         let mut occ = Bitboard(0);
         loop {
-            let attack = rook_attacks(Square::new(sq), occ);
+            let attack = rook_attacks(Square::new(sq as u8), occ);
             let idx = magic.index(occ);
 
             if table[idx].0 == Bitboard(0).0 {
@@ -66,10 +66,10 @@ const fn init_bishop_magics() -> [Bitboard; BISHOP_TABLE_SIZE] {
 
     let mut sq = 0;
     while sq < 64 {
-        let magic = BISHOP_MAGICS[sq as usize];
+        let magic = BISHOP_MAGICS[sq];
         let mut occ = Bitboard(0);
         loop {
-            let attack = bishop_attacks(Square::new(sq), occ);
+            let attack = bishop_attacks(Square::new(sq as u8), occ);
             let idx = magic.index(occ);
 
             if table[idx].0 == Bitboard(0).0 {
