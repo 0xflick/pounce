@@ -729,6 +729,7 @@ dependencies = [
  "clap",
  "criterion",
  "rand",
+ "rand_core",
  "rustyline",
  "thiserror",
  "vergen-git2",

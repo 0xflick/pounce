@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use pounce::{
     fen::Fen,
-    movegen::{gen_all_tables, perft},
+    movegen::{init_tables, perft},
     uci::Uci,
 };
 
@@ -14,7 +14,7 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
-    gen_all_tables();
+    init_tables();
 
     let args = Cli::parse();
     if let Some(depth) = args.perft {

@@ -18,15 +18,15 @@ static mut LINE: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
 static mut BISHOP_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
 static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
 
-pub fn gen_all_tables() {
-    gen_pawn_move_table();
-    gen_knight_move_table();
-    gen_king_move_table();
-    gen_castle_table();
-    gen_between_table();
-    gen_line_table();
-    gen_bishop_rays();
-    gen_rook_rays();
+pub fn init_tables() {
+    init_pawn_move_table();
+    init_knight_move_table();
+    init_king_move_table();
+    init_castle_table();
+    init_between_table();
+    init_line_table();
+    init_bishop_rays();
+    init_rook_rays();
 }
 
 #[inline(always)]
@@ -109,7 +109,7 @@ pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
     unsafe { *QUEENSIDE_CASTLE.get_unchecked(color as usize) }
 }
 
-fn gen_pawn_move_table() {
+fn init_pawn_move_table() {
     let mut moves = [[Bitboard::EMPTY; 64]; 2];
     let mut attacks = [[Bitboard::EMPTY; 64]; 2];
 
@@ -142,7 +142,7 @@ fn gen_pawn_move_table() {
 }
 
 #[rustfmt::skip]
-fn gen_knight_move_table() {
+fn init_knight_move_table() {
     let mut moves = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         let mut bb = Bitboard::EMPTY;
@@ -168,7 +168,7 @@ fn gen_knight_move_table() {
     }
 }
 
-fn gen_king_move_table() {
+fn init_king_move_table() {
     let mut moves = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         let mut bb = Bitboard::EMPTY;
@@ -195,7 +195,7 @@ fn gen_king_move_table() {
     }
 }
 
-fn gen_castle_table() {
+fn init_castle_table() {
     let mut kingside = [Bitboard::EMPTY; 2];
     let mut queenside = [Bitboard::EMPTY; 2];
     for color in [Color::White, Color::Black].into_iter() {
@@ -213,7 +213,7 @@ fn gen_castle_table() {
     }
 }
 
-fn gen_between_table() {
+fn init_between_table() {
     let mut between = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
@@ -268,7 +268,7 @@ fn gen_between(from: Square, to: Square) -> Bitboard {
     bb
 }
 
-fn gen_line_table() {
+fn init_line_table() {
     let mut line = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
@@ -368,7 +368,7 @@ fn gen_bishop_ray(sq: Square) -> Bitboard {
     bb
 }
 
-fn gen_bishop_rays() {
+fn init_bishop_rays() {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         rays[sq] = gen_bishop_ray(sq);
@@ -378,7 +378,7 @@ fn gen_bishop_rays() {
     }
 }
 
-fn gen_rook_rays() {
+fn init_rook_rays() {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         rays[sq] = gen_rook_ray(sq);

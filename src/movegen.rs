@@ -1,8 +1,8 @@
 use magic::Magic;
 pub use tables::{
-    between, bishop_rays, gen_all_tables, get_bishop_moves, get_king_moves,
-    get_kingside_castle_through_squares, get_knight_moves, get_pawn_attacks, get_pawn_moves,
-    get_queenside_castle_throught_squares, get_rook_moves, line, rook_rays,
+    between, bishop_rays, get_bishop_moves, get_king_moves, get_kingside_castle_through_squares,
+    get_knight_moves, get_pawn_attacks, get_pawn_moves, get_queenside_castle_throught_squares,
+    get_rook_moves, init_tables, line, rook_rays,
 };
 pub use types::{
     BishopType, BlackType, InCheck, KingType, KnightType, MoveGen, MoveList, Mover, NotCheck,
@@ -73,7 +73,7 @@ mod test {
     use super::*;
     use crate::fen::Fen;
 
-    const NORMAL_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const KIWIPETE_FEN: &str =
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";
     const POSITTION_3_FEN: &str = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
@@ -84,8 +84,8 @@ mod test {
 
     #[test]
     fn perft_normal() {
-        gen_all_tables();
-        let Fen(position) = Fen::parse(NORMAL_FEN).unwrap();
+        init_tables();
+        let Fen(position) = Fen::parse(STARTPOS).unwrap();
         assert_eq!(perft(&mut position.clone(), 2), 400);
         assert_eq!(perft(&mut position.clone(), 3), 8902);
         assert_eq!(perft(&mut position.clone(), 4), 197_281);
@@ -95,7 +95,7 @@ mod test {
 
     #[test]
     fn perft_kiwipete() {
-        gen_all_tables();
+        init_tables();
         let Fen(position) = Fen::parse(KIWIPETE_FEN).unwrap();
         assert_eq!(perft(&mut position.clone(), 1), 48);
         assert_eq!(perft(&mut position.clone(), 2), 2_039);
@@ -106,7 +106,7 @@ mod test {
 
     #[test]
     fn perft_pos_3() {
-        gen_all_tables();
+        init_tables();
         let Fen(position) = Fen::parse(POSITTION_3_FEN).unwrap();
         assert_eq!(perft(&mut position.clone(), 1), 14);
         assert_eq!(perft(&mut position.clone(), 2), 191);
@@ -119,7 +119,7 @@ mod test {
 
     #[test]
     fn perft_pos_4() {
-        gen_all_tables();
+        init_tables();
         let Fen(position) = Fen::parse(POSITION_4_FEN).unwrap();
         assert_eq!(perft(&mut position.clone(), 1), 6);
         assert_eq!(perft(&mut position.clone(), 2), 264);
@@ -130,7 +130,7 @@ mod test {
 
     #[test]
     fn perft_pos_5() {
-        gen_all_tables();
+        init_tables();
         let Fen(position) = Fen::parse(POSITION_5_FEN).unwrap();
         assert_eq!(perft(&mut position.clone(), 1), 44);
         assert_eq!(perft(&mut position.clone(), 2), 1_486);
@@ -141,7 +141,7 @@ mod test {
 
     #[test]
     fn perft_pos_6() {
-        gen_all_tables();
+        init_tables();
         let Fen(position) = Fen::parse(POSITION_6_FEN).unwrap();
         assert_eq!(perft(&mut position.clone(), 1), 46);
         assert_eq!(perft(&mut position.clone(), 2), 2_079);

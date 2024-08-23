@@ -56,6 +56,7 @@ impl Fen {
         position.fullmove_number = parse_fullmove_number_part(fullmove_number_str)?;
 
         position.refresh_checks_and_pins();
+        position.key = position.zobrist_hash();
 
         Ok(Fen(position))
     }

@@ -3,6 +3,7 @@ mod limits;
 mod search;
 mod tt;
 mod util;
+mod zobrist;
 
 pub mod bitboard;
 pub mod chess;

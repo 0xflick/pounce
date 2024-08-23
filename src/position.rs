@@ -6,6 +6,7 @@ use crate::{
     eval::{PSQT_EG, PSQT_MG},
     movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
     moves::{Move, MoveType},
+    zobrist::ZobristHash,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +17,7 @@ pub struct State {
     pub captured: Option<Piece>,
     pub checkers: Bitboard,
     pub pinned: Bitboard,
+    pub key: ZobristHash,
 }
 
 #[derive(Debug, Clone)]
@@ -25,11 +27,16 @@ pub struct Position {
     pub occupancy: Bitboard,
     pub checkers: Bitboard,
     pub pinned: Bitboard,
-    pub side: Color,
+
     pub castling: CastleRights,
     pub ep_square: Option<Square>,
+
+    pub side: Color,
+
     pub halfmove_clock: u16,
     pub fullmove_number: NonZeroU32,
+
+    pub key: ZobristHash,
 
     pub history: Vec<State>,
 
@@ -45,11 +52,12 @@ impl Position {
             occupancy: Bitboard::EMPTY,
             checkers: Bitboard::EMPTY,
             pinned: Bitboard::EMPTY,
-            side: Color::White,
             castling: CastleRights::all(),
             ep_square: None,
+            side: Color::White,
             halfmove_clock: 0,
             fullmove_number: NonZeroU32::new(1).unwrap(),
+            key: ZobristHash::new(),
             history: Vec::new(),
             psqt_mg: 0,
             psqt_eg: 0,
@@ -148,14 +156,18 @@ impl Position {
         self.by_color.iter_mut().for_each(|bb| bb.clear(sq));
         self.by_role.iter_mut().for_each(|bb| bb.clear(sq));
         self.occupancy.clear(sq);
+        self.key.toggle_piece(sq, piece);
     }
 
     #[inline]
     pub fn set(&mut self, sq: Square, piece: Piece) {
-        self.discard(sq, piece);
+        if let Some(prev) = self.piece_at(sq) {
+            self.discard(sq, prev);
+        }
         self.by_color[piece.color as usize].set(sq);
         self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
+        self.key.toggle_piece(sq, piece);
     }
 
     #[inline]
@@ -171,21 +183,28 @@ impl Position {
             captured: None,
             checkers: self.checkers,
             pinned: self.pinned,
+            key: self.key,
         };
+
+        let prev_ep_square = self.ep_square;
+
+        self.key.toggle_ep(self.ep_square);
+        self.ep_square = None;
 
         // reset the en passant square
 
-        match mv.move_type(piece.role, self.ep_square) {
+        match mv.move_type(piece.role, prev_ep_square) {
             MoveType::Normal => {
                 state.captured = self.piece_at(to);
                 self.discard(from, piece);
                 self.set(to, piece);
-                self.ep_square = None;
             }
             MoveType::DoublePawnPush => {
-                self.ep_square = Some(from.up(self.side).unwrap());
                 self.discard(from, piece);
                 self.set(to, piece);
+
+                self.ep_square = Some(from.up(self.side).unwrap());
+                self.key.toggle_ep(self.ep_square);
             }
             MoveType::EnPassant => {
                 // unwrapping is safe here because we know ep_square is never at the edge of the board
@@ -199,7 +218,6 @@ impl Position {
                 self.discard(from, piece);
                 self.discard(captured_pawn_square, state.captured.unwrap());
                 self.set(to, piece);
-                self.ep_square = None;
             }
             MoveType::Castle => {
                 if from.file().direction(to.file()) == 2 {
@@ -217,49 +235,62 @@ impl Position {
                 }
                 self.discard(from, piece);
                 self.set(to, piece);
-                self.ep_square = None;
             }
             MoveType::Promotion => {
                 state.captured = self.piece_at(to);
                 let promoted = Piece::new(self.side, mv.promotion().unwrap());
                 self.discard(from, piece);
                 self.set(to, promoted);
-                self.ep_square = None;
             }
         }
 
         // update our castling rights
         if piece.role == Role::King {
+            self.key.toggle_castling(self.castling);
             self.castling.discard_color(self.side);
+            self.key.toggle_castling(self.castling);
         } else if piece.role == Role::Rook {
+            self.key.toggle_castling(self.castling);
             self.castling.discard_square(from);
+            self.key.toggle_castling(self.castling);
         }
 
         // update their castling rights
         if let Some(captured) = state.captured {
             if captured.role == Role::Rook {
+                self.key.toggle_castling(self.castling);
                 self.castling.discard_square(to);
+                self.key.toggle_castling(self.castling);
             }
         }
 
         self.update_checks_and_pins(mv, mv.promotion().unwrap_or(piece.role));
 
         self.history.push(state);
-        self.side = self.side.opponent();
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
         self.halfmove_clock += 1;
+
+        self.side = self.side.opponent();
+        self.key.toggle_side();
     }
 
     pub fn unmake_move(&mut self, mv: Move) {
         self.side = self.side.opponent();
+        self.key.toggle_side();
 
         let past = self
             .history
             .pop()
             .expect("unmake called without a past state");
 
+        self.key.toggle_castling(self.castling);
         self.castling = past.castling;
+        self.key.toggle_castling(self.castling);
+
+        self.key.toggle_ep(self.ep_square);
         self.ep_square = past.ep_square;
+        self.key.toggle_ep(self.ep_square);
+
         self.halfmove_clock = past.halfmove_clock;
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
         self.pinned = past.pinned;
@@ -287,7 +318,6 @@ impl Position {
                     .captured
                     .expect("en passant moves always have a capture");
                 self.discard(to, piece);
-                self.discard(captured_pawn_square, captured_pawn);
                 self.set(from, piece);
                 self.set(captured_pawn_square, captured_pawn);
             }
