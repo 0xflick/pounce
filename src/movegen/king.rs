@@ -97,6 +97,11 @@ impl KingType {
             return false;
         }
 
+        attackers |= get_king_moves(sq) & pos.by_color_role(side.opponent(), Role::King);
+        if attackers != Bitboard::EMPTY {
+            return false;
+        }
+
         true
     }
 }
