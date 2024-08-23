@@ -67,6 +67,8 @@ impl Move {
             MoveType::Normal
         }
     }
+
+    pub const NULL: Move = Move(0);
 }
 
 impl Display for Move {

@@ -20,6 +20,7 @@ fn zobrist_init() {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct ZobristHash(u64);
 
 impl ZobristHash {
@@ -53,6 +54,18 @@ impl ZobristHash {
                 Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + castling.bits() as usize,
             )
         };
+    }
+}
+
+impl From<ZobristHash> for u64 {
+    fn from(hash: ZobristHash) -> u64 {
+        hash.0
+    }
+}
+
+impl From<ZobristHash> for usize {
+    fn from(hash: ZobristHash) -> usize {
+        hash.0 as usize
     }
 }
 

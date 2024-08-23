@@ -15,6 +15,7 @@ use crate::{
     moves::Move,
     position::Position,
     search::Search,
+    tt::Table,
     util::engine_name,
 };
 
@@ -225,9 +226,10 @@ impl Uci {
 
         let stop = Arc::new(AtomicBool::new(false));
         let position = self.position.clone();
+        let tt = Table::new_mb(64);
 
         thread::spawn(move || {
-            let mut search = Search::new(position, limits, stop.clone());
+            let mut search = Search::new(position, limits, tt, stop.clone());
             let best_move = search.think();
             println!("bestmove {}", best_move);
         });

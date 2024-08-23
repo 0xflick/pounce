@@ -4,7 +4,7 @@ use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
-    pub depth: Option<u32>,
+    pub depth: Option<u8>,
     pub nodes: Option<u64>,
     pub wtime: Option<u64>,
     pub btime: Option<u64>,

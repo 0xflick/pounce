@@ -126,7 +126,7 @@ impl ExactSizeIterator for MoveGen {
     fn len(&self) -> usize {
         let mut res = 0;
         for i in self.index..self.moves.len() {
-            let move_count = self.moves[i].moves.count();
+            let move_count = (self.moves[i].moves & self.iter_mask).count();
             if self.moves[i].is_promotion {
                 res += move_count * 4;
             } else {

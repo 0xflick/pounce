@@ -9,7 +9,7 @@ pub use types::{
     PawnType, QueenType, RookType, WhiteType,
 };
 
-use crate::position::Position;
+use crate::{bitboard::Bitboard, position::Position};
 
 mod magic;
 mod magic_gen;
@@ -26,7 +26,7 @@ mod rook;
 pub mod magic_finder;
 
 #[inline]
-pub fn perft(pos: &mut Position, depth: u8) -> u64 {
+pub fn perft(pos: &mut Position, depth: u8) -> usize {
     let mut total = 0;
     let mut mg = MoveGen::new(pos);
 
@@ -35,7 +35,7 @@ pub fn perft(pos: &mut Position, depth: u8) -> u64 {
     }
 
     if depth == 1 {
-        return mg.len() as u64;
+        return mg.len();
     }
 
     for m in &mut mg {
@@ -46,25 +46,31 @@ pub fn perft(pos: &mut Position, depth: u8) -> u64 {
     total
 }
 
-#[inline]
-pub fn slow_perft(pos: &mut Position, depth: u8) -> u64 {
-    let mut total = 0;
-    let mut mg = MoveGen::new(pos);
-
+#[cfg(test)]
+fn masked_perft(pos: &mut Position, depth: u8) -> usize {
     if depth == 0 {
         return 1;
     }
 
-    if depth == 1 {
-        return mg.len() as u64;
-    }
+    let mut total = 0;
+    let mask = pos.occupancy;
+
+    let mut mg = MoveGen::new(pos);
+    mg.set_mask(mask);
 
     for m in &mut mg {
-        let mut new_pos = pos.clone();
-        new_pos.make_move(m);
-        total += slow_perft(&mut new_pos, depth - 1);
-        // pos.unmake_move(m)
+        pos.make_move(m);
+        total += masked_perft(pos, depth - 1);
+        pos.unmake_move(m)
     }
+
+    mg.set_mask(Bitboard::FULL);
+    for m in &mut mg {
+        pos.make_move(m);
+        total += masked_perft(pos, depth - 1);
+        pos.unmake_move(m)
+    }
+
     total
 }
 
@@ -91,6 +97,16 @@ mod test {
         assert_eq!(perft(&mut position.clone(), 4), 197_281);
         assert_eq!(perft(&mut position.clone(), 5), 4_865_609);
         assert_eq!(perft(&mut position.clone(), 6), 119_060_324);
+    }
+
+    #[test]
+    fn masked_perft_normal() {
+        init_tables();
+        let Fen(position) = Fen::parse(STARTPOS).unwrap();
+        assert_eq!(masked_perft(&mut position.clone(), 2), 400);
+        assert_eq!(masked_perft(&mut position.clone(), 3), 8902);
+        assert_eq!(masked_perft(&mut position.clone(), 4), 197_281);
+        assert_eq!(masked_perft(&mut position.clone(), 5), 4_865_609);
     }
 
     #[test]
@@ -137,6 +153,16 @@ mod test {
         assert_eq!(perft(&mut position.clone(), 3), 62_379);
         assert_eq!(perft(&mut position.clone(), 4), 2_103_487);
         assert_eq!(perft(&mut position.clone(), 5), 89_941_194);
+    }
+
+    #[test]
+    fn masked_perft_pos_5() {
+        init_tables();
+        let Fen(position) = Fen::parse(POSITION_5_FEN).unwrap();
+        assert_eq!(masked_perft(&mut position.clone(), 1), 44);
+        assert_eq!(masked_perft(&mut position.clone(), 2), 1_486);
+        assert_eq!(masked_perft(&mut position.clone(), 3), 62_379);
+        assert_eq!(masked_perft(&mut position.clone(), 4), 2_103_487);
     }
 
     #[test]
