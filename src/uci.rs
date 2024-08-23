@@ -188,11 +188,11 @@ impl Uci {
             let mg = MoveGen::new(&self.position);
 
             for mv in mg {
-                let mut new_pos = self.position;
-                new_pos.make_move(mv);
-                let count = perft(new_pos, depth - 1);
+                self.position.make_move(mv);
+                let count = perft(&mut self.position, depth - 1);
                 nodes += count;
-                println!("{}: nodes: {}", mv, count);
+                self.position.unmake_move(mv);
+                println!("{}: {}", mv, count);
             }
         }
 
@@ -224,7 +224,7 @@ impl Uci {
         };
 
         let stop = Arc::new(AtomicBool::new(false));
-        let position = self.position;
+        let position = self.position.clone();
 
         thread::spawn(move || {
             let mut search = Search::new(position, limits, stop.clone());

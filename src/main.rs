@@ -18,9 +18,9 @@ fn main() -> Result<()> {
 
     let args = Cli::parse();
     if let Some(depth) = args.perft {
-        let Fen(pos) = Uci::STARTPOS.parse()?;
+        let Fen(mut pos) = Uci::STARTPOS.parse()?;
         let now = std::time::Instant::now();
-        let nodes = perft(pos, depth);
+        let nodes = perft(&mut pos, depth);
         let elapsed = now.elapsed();
         println!(
             "Nodes: {}, Time: {}s {}ms, Nodes/s: {:.2}M",

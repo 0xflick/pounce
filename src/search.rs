@@ -72,9 +72,8 @@ impl Search {
         let mut best_move = None;
         let mut best_score = -eval::INFINITY;
         for mv in MoveGen::new(&self.position) {
-            let mut next_pos = self.position;
-            next_pos.make_move(mv);
-            let score = eval(&next_pos);
+            self.position.make_move(mv);
+            let score = eval(&self.position);
             if score > best_score {
                 best_move = Some(mv);
                 best_score = score;

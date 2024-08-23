@@ -5,7 +5,7 @@ use crate::{
     chess::{CastleRights, Color, File, Piece, Role, Square},
     eval::{PSQT_EG, PSQT_MG},
     movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
-    moves::Move,
+    moves::{Move, MoveType},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -14,9 +14,11 @@ pub struct State {
     pub ep_square: Option<Square>,
     pub halfmove_clock: u16,
     pub captured: Option<Piece>,
+    pub checkers: Bitboard,
+    pub pinned: Bitboard,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Position {
     pub by_color: [Bitboard; Color::NUM],
     pub by_role: [Bitboard; Role::NUM],
@@ -29,8 +31,10 @@ pub struct Position {
     pub halfmove_clock: u16,
     pub fullmove_number: NonZeroU32,
 
-    pub psqt_mg: i16,
-    pub psqt_eg: i16,
+    pub history: Vec<State>,
+
+    pub psqt_mg: i32,
+    pub psqt_eg: i32,
 }
 
 impl Position {
@@ -46,6 +50,7 @@ impl Position {
             ep_square: None,
             halfmove_clock: 0,
             fullmove_number: NonZeroU32::new(1).unwrap(),
+            history: Vec::new(),
             psqt_mg: 0,
             psqt_eg: 0,
         }
@@ -89,7 +94,7 @@ impl Position {
 
     #[inline]
     pub fn by_color_role(&self, color: Color, role: Role) -> Bitboard {
-        self.by_color[color] & self.by_role[role]
+        self.by_color[color as usize] & self.by_role[role as usize]
     }
 
     #[inline]
@@ -99,12 +104,12 @@ impl Position {
 
     #[inline]
     pub fn us(&self) -> Bitboard {
-        self.by_color[self.side]
+        self.by_color[self.side as usize]
     }
 
     #[inline]
     pub fn them(&self) -> Bitboard {
-        self.by_color[self.side.opponent()]
+        self.by_color[self.side.opponent() as usize]
     }
 
     #[inline]
@@ -131,12 +136,12 @@ impl Position {
     pub fn discard(&mut self, sq: Square, piece: Piece) {
         match piece.color {
             Color::White => {
-                self.psqt_mg -= PSQT_MG[piece.role][sq ^ 56];
-                self.psqt_eg -= PSQT_EG[piece.role][sq ^ 56];
+                self.psqt_mg -= PSQT_MG[piece.role as usize][sq as usize ^ 56];
+                self.psqt_eg -= PSQT_EG[piece.role as usize][sq as usize ^ 56];
             }
             Color::Black => {
-                self.psqt_mg += PSQT_MG[piece.role][sq];
-                self.psqt_eg += PSQT_EG[piece.role][sq];
+                self.psqt_mg += PSQT_MG[piece.role as usize][sq as usize];
+                self.psqt_eg += PSQT_EG[piece.role as usize][sq as usize];
             }
         };
 
@@ -148,8 +153,8 @@ impl Position {
     #[inline]
     pub fn set(&mut self, sq: Square, piece: Piece) {
         self.discard(sq, piece);
-        self.by_color[piece.color].set(sq);
-        self.by_role[piece.role].set(sq);
+        self.by_color[piece.color as usize].set(sq);
+        self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
     }
 
@@ -159,51 +164,69 @@ impl Position {
         let to = mv.to();
 
         let piece = self.piece_at(from).unwrap();
-
-        // do move and capture
-        let captured = if piece.role == Role::Pawn && self.ep_square == Some(to) {
-            // unwrapping is safe here because we know ep_square is never at the edge of the board
-            let captured_pawn_square = to.down(self.side).unwrap();
-            let captured = self.piece_at(captured_pawn_square);
-            self.discard(from, piece);
-            self.discard(captured_pawn_square, captured.unwrap());
-            self.set(to, piece);
-            captured
-        } else {
-            let captured = self.piece_at(to);
-            self.discard(from, piece);
-            self.set(to, piece);
-            captured
+        let mut state = State {
+            castling: self.castling,
+            ep_square: self.ep_square,
+            halfmove_clock: self.halfmove_clock,
+            captured: None,
+            checkers: self.checkers,
+            pinned: self.pinned,
         };
 
-        if let Some(promotion) = mv.promotion() {
-            let promoted = Piece::new(self.side, promotion);
-            self.set(to, promoted);
+        // reset the en passant square
+
+        match mv.move_type(piece.role, self.ep_square) {
+            MoveType::Normal => {
+                state.captured = self.piece_at(to);
+                self.discard(from, piece);
+                self.set(to, piece);
+                self.ep_square = None;
+            }
+            MoveType::DoublePawnPush => {
+                self.ep_square = Some(from.up(self.side).unwrap());
+                self.discard(from, piece);
+                self.set(to, piece);
+            }
+            MoveType::EnPassant => {
+                // unwrapping is safe here because we know ep_square is never at the edge of the board
+                let captured_pawn_square = to
+                    .down(self.side)
+                    .expect("en passant moves are never at the edge of the board");
+                state.captured = Some(
+                    self.piece_at(captured_pawn_square)
+                        .expect("en passant moves always have a capture"),
+                );
+                self.discard(from, piece);
+                self.discard(captured_pawn_square, state.captured.unwrap());
+                self.set(to, piece);
+                self.ep_square = None;
+            }
+            MoveType::Castle => {
+                if from.file().direction(to.file()) == 2 {
+                    let rook_from = Square::make(File::H, self.side.back_rank());
+                    let rook_to = Square::make(File::F, self.side.back_rank());
+                    let rook = self.piece_at(rook_from).unwrap();
+                    self.discard(rook_from, rook);
+                    self.set(rook_to, rook);
+                } else {
+                    let rook_from = Square::make(File::A, self.side.back_rank());
+                    let rook_to = Square::make(File::D, self.side.back_rank());
+                    let rook = self.piece_at(rook_from).unwrap();
+                    self.discard(rook_from, rook);
+                    self.set(rook_to, rook);
+                }
+                self.discard(from, piece);
+                self.set(to, piece);
+                self.ep_square = None;
+            }
+            MoveType::Promotion => {
+                state.captured = self.piece_at(to);
+                let promoted = Piece::new(self.side, mv.promotion().unwrap());
+                self.discard(from, piece);
+                self.set(to, promoted);
+                self.ep_square = None;
+            }
         }
-
-        // if a castling move, move the rook
-        if piece.role == Role::King && from.file().direction(to.file()) == 2 {
-            let rook_from = Square::make(File::H, self.side.back_rank());
-            let rook_to = Square::make(File::F, self.side.back_rank());
-            let rook = self.piece_at(rook_from).unwrap();
-            self.discard(rook_from, rook);
-            self.set(rook_to, rook);
-        } else if piece.role == Role::King && from.file().direction(to.file()) == -2 {
-            let rook_from = Square::make(File::A, self.side.back_rank());
-            let rook_to = Square::make(File::D, self.side.back_rank());
-            let rook = self.piece_at(rook_from).unwrap();
-            self.discard(rook_from, rook);
-            self.set(rook_to, rook);
-        }
-
-        // self.history.push(State {
-        //     castling: self.castling,
-        //     ep_square: self.ep_square,
-        //     halfmove_clock: self.halfmove_clock,
-        //     captured,
-        // });
-
-        self.update_checks_and_pins(mv, mv.promotion().unwrap_or(piece.role));
 
         // update our castling rights
         if piece.role == Role::King {
@@ -213,32 +236,93 @@ impl Position {
         }
 
         // update their castling rights
-        if let Some(captured) = captured {
+        if let Some(captured) = state.captured {
             if captured.role == Role::Rook {
                 self.castling.discard_square(to);
             }
         }
 
-        // set ep
-        self.ep_square = if piece.role == Role::Pawn
-            && from.rank() == self.side.home_rank()
-            && to.rank() == self.side.double_pawn_rank()
-        {
-            from.up(self.side)
-        } else {
-            None
-        };
+        self.update_checks_and_pins(mv, mv.promotion().unwrap_or(piece.role));
 
+        self.history.push(state);
         self.side = self.side.opponent();
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
         self.halfmove_clock += 1;
     }
 
+    pub fn unmake_move(&mut self, mv: Move) {
+        self.side = self.side.opponent();
+
+        let past = self
+            .history
+            .pop()
+            .expect("unmake called without a past state");
+
+        self.castling = past.castling;
+        self.ep_square = past.ep_square;
+        self.halfmove_clock = past.halfmove_clock;
+        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
+        self.pinned = past.pinned;
+        self.checkers = past.checkers;
+
+        let from = mv.from();
+        let to = mv.to();
+        let piece = self
+            .piece_at(to)
+            .expect("unmake called without a piece at destination");
+
+        match mv.move_type(piece.role, self.ep_square) {
+            MoveType::Normal | MoveType::DoublePawnPush => {
+                self.discard(to, piece);
+                self.set(from, piece);
+                if let Some(captured) = past.captured {
+                    self.set(to, captured);
+                }
+            }
+            MoveType::EnPassant => {
+                let captured_pawn_square = to
+                    .down(self.side)
+                    .expect("en passant moves are never at the edge of the board");
+                let captured_pawn = past
+                    .captured
+                    .expect("en passant moves always have a capture");
+                self.discard(to, piece);
+                self.discard(captured_pawn_square, captured_pawn);
+                self.set(from, piece);
+                self.set(captured_pawn_square, captured_pawn);
+            }
+            MoveType::Castle => {
+                if from.file().direction(to.file()) == 2 {
+                    let rook_from = Square::make(File::H, self.side.back_rank());
+                    let rook_to = Square::make(File::F, self.side.back_rank());
+                    let rook = self.piece_at(rook_to).expect("castling always has a rook");
+                    self.discard(rook_to, rook);
+                    self.set(rook_from, rook);
+                } else {
+                    let rook_from = Square::make(File::A, self.side.back_rank());
+                    let rook_to = Square::make(File::D, self.side.back_rank());
+                    let rook = self.piece_at(rook_to).expect("castling always has a rook");
+                    self.discard(rook_to, rook);
+                    self.set(rook_from, rook);
+                }
+                self.discard(to, piece);
+                self.set(from, piece);
+            }
+            MoveType::Promotion => {
+                let promoted = Piece::new(self.side, mv.promotion().unwrap());
+                self.discard(to, promoted);
+                self.set(from, Piece::new(self.side, Role::Pawn));
+                if let Some(captured) = past.captured {
+                    self.set(to, captured);
+                }
+            }
+        }
+    }
+
     #[inline]
     fn update_checks_and_pins(&mut self, mv: Move, piece: Role) {
-        // we update side at the very end of make move,
-        // so we're checking agaings the opponent king
-
+        // we update side at the very end of make move, so we're looking for checks
+        // we make against the opponent
         self.checkers = Bitboard::EMPTY;
         self.pinned = Bitboard::EMPTY;
 

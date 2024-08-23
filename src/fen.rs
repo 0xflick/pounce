@@ -149,7 +149,7 @@ fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32> {
 }
 
 impl Position {
-    fn to_fen(self) -> String {
+    fn to_fen(&self) -> String {
         let mut fen = String::new();
         for rank in Rank::ALL.iter().rev() {
             let mut empty = 0;

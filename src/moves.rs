@@ -8,6 +8,15 @@ use thiserror::Error;
 
 use crate::chess::{ParseRoleError, ParseSquareError, Role, Square};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveType {
+    Normal, // Also includes captures
+    EnPassant,
+    DoublePawnPush,
+    Castle,
+    Promotion,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Move(u16);
 
@@ -37,9 +46,26 @@ impl Move {
         unsafe { std::mem::transmute((self.0 >> 12) as u8) }
     }
 
-    #[inline]
-    pub fn reverse(self) -> Move {
-        Move::new(self.to(), self.from(), None)
+    // This only works for valid moves
+    pub fn move_type(self, role: Role, ep_square: Option<Square>) -> MoveType {
+        if self.promotion().is_some() {
+            MoveType::Promotion
+        } else if role == Role::Pawn
+            && self.from().file() != self.to().file()
+            && ep_square.is_some_and(|sq| sq == self.to())
+        {
+            MoveType::EnPassant
+        } else if role == Role::Pawn && self.from().rank().distance(self.to().rank()) == 2 {
+            MoveType::DoublePawnPush
+        } else if role == Role::King && self.from().file().distance(self.to().file()) == 2 {
+            if self.from().rank() == self.to().rank() {
+                MoveType::Castle
+            } else {
+                MoveType::Normal
+            }
+        } else {
+            MoveType::Normal
+        }
     }
 }
 

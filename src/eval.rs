@@ -7,17 +7,17 @@ pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
 
 pub fn eval(position: &Position) -> i16 {
-    let wpawns = position.by_color_role(Color::White, Role::Pawn).count() as i16;
-    let wknights = position.by_color_role(Color::White, Role::Knight).count() as i16;
-    let wbishops = position.by_color_role(Color::White, Role::Bishop).count() as i16;
-    let wrooks = position.by_color_role(Color::White, Role::Rook).count() as i16;
-    let wqueens = position.by_color_role(Color::White, Role::Queen).count() as i16;
+    let wpawns = position.by_color_role(Color::White, Role::Pawn).count() as i32;
+    let wknights = position.by_color_role(Color::White, Role::Knight).count() as i32;
+    let wbishops = position.by_color_role(Color::White, Role::Bishop).count() as i32;
+    let wrooks = position.by_color_role(Color::White, Role::Rook).count() as i32;
+    let wqueens = position.by_color_role(Color::White, Role::Queen).count() as i32;
 
-    let bpawns = position.by_color_role(Color::Black, Role::Pawn).count() as i16;
-    let bknights = position.by_color_role(Color::Black, Role::Knight).count() as i16;
-    let bbishops = position.by_color_role(Color::Black, Role::Bishop).count() as i16;
-    let brooks = position.by_color_role(Color::Black, Role::Rook).count() as i16;
-    let bqueens = position.by_color_role(Color::Black, Role::Queen).count() as i16;
+    let bpawns = position.by_color_role(Color::Black, Role::Pawn).count() as i32;
+    let bknights = position.by_color_role(Color::Black, Role::Knight).count() as i32;
+    let bbishops = position.by_color_role(Color::Black, Role::Bishop).count() as i32;
+    let brooks = position.by_color_role(Color::Black, Role::Rook).count() as i32;
+    let bqueens = position.by_color_role(Color::Black, Role::Queen).count() as i32;
 
     let score_mg = (wpawns - bpawns) * PIECE_VALUES_MG[Role::Pawn]
         + (wknights - bknights) * PIECE_VALUES_MG[Role::Knight]
@@ -39,10 +39,10 @@ pub fn eval(position: &Position) -> i16 {
         + (wqueens + bqueens) * 4;
 
     let phase = 24 - phase;
-    let phase = phase as i32 * 256 / 24;
+    let phase = phase * 256 / 24;
 
-    let mg_part = ((score_mg as i32 * phase) / 256) as i16;
-    let eg_part = ((score_eg as i32 * (256 - phase)) / 256) as i16;
+    let mg_part = ((score_mg * phase) / 256) as i16;
+    let eg_part = ((score_eg * (256 - phase)) / 256) as i16;
 
     let score = mg_part + eg_part;
 
@@ -52,12 +52,12 @@ pub fn eval(position: &Position) -> i16 {
     }
 }
 
-const PIECE_VALUES_MG: [i16; Role::NUM] = [126, 781, 825, 1276, 2538, 0];
+const PIECE_VALUES_MG: [i32; Role::NUM] = [126, 781, 825, 1276, 2538, 0];
 
-const PIECE_VALUES_EG: [i16; Role::NUM] = [208, 854, 915, 1380, 2682, 0];
+const PIECE_VALUES_EG: [i32; Role::NUM] = [208, 854, 915, 1380, 2682, 0];
 
 #[rustfmt::skip]
-pub const PSQT_MG: [[i16; Square::NUM]; Role::NUM] = [
+pub const PSQT_MG: [[i32; Square::NUM]; Role::NUM] = [
     // Pawns
     [   0,   0,   0,   0,   0,   0,   0,    0,
        98, 134,  61,  95,  68, 126,  34,  -11,
@@ -115,7 +115,7 @@ pub const PSQT_MG: [[i16; Square::NUM]; Role::NUM] = [
 ];
 
 #[rustfmt::skip]
-pub const PSQT_EG: [[i16; Square::NUM]; Role::NUM] = [
+pub const PSQT_EG: [[i32; Square::NUM]; Role::NUM] = [
     // Pawns
     [   0,   0,   0,   0,   0,   0,   0,    0,
       178, 173, 158, 134, 147, 132, 165,  187,
