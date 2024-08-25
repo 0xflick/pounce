@@ -12,7 +12,7 @@ use rand_core::SeedableRng;
 const ZOBRIST_LEN: usize = Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + 16;
 static mut ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = [0; ZOBRIST_LEN];
 
-fn zobrist_init() {
+pub fn init_zobrist() {
     let mut rng = SmallRng::seed_from_u64(0xcafe);
     unsafe {
         rng.fill(ZOBRIST_KEYS.as_mut());
@@ -137,7 +137,7 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 mod test {
     use crate::{fen::Fen, movegen::init_tables, zobrist::perft_zobrist};
 
-    use super::zobrist_init;
+    use super::init_zobrist;
 
     const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const KIWIPETE_FEN: &str =
@@ -151,7 +151,7 @@ mod test {
     #[test]
     fn test_zobrist() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
 
         let Fen(mut position) = STARTPOS.parse().unwrap();
 
@@ -166,7 +166,7 @@ mod test {
     #[test]
     fn test_zobrist_kiwipete() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
         let Fen(mut position) = KIWIPETE_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -178,7 +178,7 @@ mod test {
     #[test]
     fn test_zobrist_position_3() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
         let Fen(mut position) = POSITTION_3_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -190,7 +190,7 @@ mod test {
     #[test]
     fn test_zobrist_position_4() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
         let Fen(mut position) = POSITION_4_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -202,7 +202,7 @@ mod test {
     #[test]
     fn test_zobrist_position_5() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
         let Fen(mut position) = POSITION_5_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -214,7 +214,7 @@ mod test {
     #[test]
     fn test_zobrist_position_6() {
         init_tables();
-        zobrist_init();
+        init_zobrist();
         let Fen(mut position) = POSITION_6_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);

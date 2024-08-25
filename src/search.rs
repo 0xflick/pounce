@@ -1,16 +1,17 @@
 use std::{
+    cell::RefCell,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 
 use crate::{
     chess::Color,
-    eval::{self, eval},
+    eval,
     limits::Limits,
-    movegen::MoveGen,
+    movepicker::MovePicker,
     moves::Move,
     position::Position,
-    tt::{EntryType, Table},
+    tt::{Entry, EntryType, Table},
 };
 
 pub struct SearchCop {
@@ -20,23 +21,24 @@ pub struct SearchCop {
 }
 
 const MAX_DEPTH: u8 = 64;
+const MAX_PLY: u8 = 128;
 
 impl SearchCop {
     pub fn new(
         depth: Option<u8>,
         nodes: Option<u64>,
-        time_left: Option<u64>,
-        inc: Option<u64>,
-        movestogo: Option<u64>,
+        time_left: Option<i32>,
+        inc: Option<u32>,
+        movestogo: Option<u32>,
     ) -> Self {
         let time = match time_left {
             Some(left) => {
-                let overhead = 10;
+                let overhead = 30;
 
                 let mtg = movestogo.unwrap_or(50);
-                let total = left + mtg * inc.unwrap_or(0) - mtg * overhead;
+                let total = left as u32 + (mtg - 1) * inc.unwrap_or(0) - mtg * overhead;
 
-                Duration::from_millis(total / mtg)
+                Duration::from_millis((total / mtg) as u64)
             }
             None => Duration::MAX,
         };
@@ -46,9 +48,11 @@ impl SearchCop {
 }
 
 pub struct Search {
-    position: Position,
+    position: RefCell<Position>,
     limits: SearchCop,
-    tt: Table,
+    tt: Arc<Table>,
+
+    pv: [Move; MAX_DEPTH as usize],
 
     start_time: Instant,
     stop: Arc<AtomicBool>,
@@ -56,16 +60,17 @@ pub struct Search {
 }
 
 impl Search {
-    pub fn new(position: Position, limits: Limits, tt: Table, stop: Arc<AtomicBool>) -> Self {
+    pub fn new(position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) -> Self {
         let (time_left, inc) = match position.side {
             Color::White => (limits.wtime, limits.winc),
             Color::Black => (limits.btime, limits.binc),
         };
 
         Search {
-            position,
+            position: RefCell::new(position),
             limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
             tt,
+            pv: [Move::NULL; MAX_DEPTH as usize],
             start_time: Instant::now(),
             stop,
             nodes: 0,
@@ -79,42 +84,63 @@ impl Search {
     }
 
     fn iterative_deepening(&mut self) -> Option<Move> {
-        let mut best_move = None;
-
         let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH);
+        let mut best_move = None;
+        let mut best_score = -eval::INFINITY;
+
+        let mut done_early = false;
 
         for depth in 1..=max_depth {
             if self.done_thinking() {
+                done_early = true;
                 break;
+            }
+
+            best_move = Some(self.pv[0]);
+            if depth > 1 {
+                self.uci_info(depth - 1, best_score);
             }
 
             let alpha = -eval::INFINITY;
             let beta = eval::INFINITY;
 
-            let score = self.search(depth, alpha, beta);
-            self.uci_info(depth, score);
+            let score = self.search(depth, alpha, beta, 0, true);
+            best_score = score;
+        }
+
+        if max_depth == 1 {
+            best_move = Some(self.pv[0]);
+        }
+
+        if !done_early {
+            self.uci_info(max_depth, best_score);
         }
 
         best_move
     }
 
-    fn search(&mut self, depth: u8, mut alpha: i16, mut beta: i16) -> i16 {
+    fn search(&mut self, depth: u8, mut alpha: i16, mut beta: i16, ply: u8, is_pv: bool) -> i16 {
         if self.done_thinking() {
             return 0;
         }
+        self.nodes += 1;
 
         // TODO: Implement draw detection
+        // both based on 50 move rule, repetition
+        // and insufficient material
 
-        // Extension if in check
         // TODO: Implement check extension
 
         // Go to quiescence search if depth is 0
         if depth == 0 {
-            return self.quiescence_search(0, alpha, beta);
+            // return eval::eval(&self.position);
+            return self.quiescence_search(alpha, beta, is_pv);
         }
 
         // Probe the transposition table
-        if let Some(entry) = self.tt.probe(self.position.key) {
+        let mut tt_move = Move::NULL;
+        if let Some(entry) = self.tt.probe(self.position.borrow().key) {
+            tt_move = entry.best_move;
             if entry.depth >= depth {
                 match entry.score_type {
                     // Exact score
@@ -131,16 +157,143 @@ impl Search {
             }
         }
 
-        // Null move pruning
         // TODO: Implement null move pruning
 
-        // Need movepicker
+        let mut best_move = Move::NULL;
+        let mut best = -eval::INFINITY;
+        let mut move_count = 0;
 
-        unimplemented!()
+        for mv in MovePicker::new_ab_search(self.position.clone(), tt_move) {
+            move_count += 1;
+
+            self.position.borrow_mut().make_move(mv);
+            let mut score = -eval::INFINITY;
+            if move_count > 1 || !is_pv {
+                score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false);
+            }
+
+            if is_pv && (move_count == 1 || score > alpha && score < beta) {
+                score = -self.search(depth - 1, -beta, -alpha, ply + 1, true);
+            }
+
+            self.position.borrow_mut().unmake_move(mv);
+
+            if score > best {
+                best = score;
+                best_move = mv;
+
+                self.pv[ply as usize] = best_move;
+
+                if score > alpha {
+                    alpha = score;
+                    if score >= beta {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if move_count == 0 {
+            if self.position.borrow().in_check() {
+                return -eval::MATE + ply as i16;
+            } else {
+                return 0;
+            }
+        }
+
+        let entry_type = if best <= alpha {
+            EntryType::UpperBound
+        } else if best >= beta {
+            EntryType::LowerBound
+        } else {
+            EntryType::Exact
+        };
+
+        self.tt.set(Entry::new(
+            self.position.borrow().key,
+            depth,
+            best,
+            entry_type,
+            best_move,
+        ));
+        best
     }
 
-    fn quiescence_search(&mut self, depth: u8, alpha: i16, beta: i16) -> i16 {
-        todo!()
+    fn quiescence_search(&mut self, mut alpha: i16, beta: i16, is_pv: bool) -> i16 {
+        self.nodes += 1;
+
+        if self.done_thinking() {
+            return 0;
+        }
+
+        // TODO: check for repetition or draw or 50 move rule
+
+        // Probe tt
+        // Use tt move?
+        if !is_pv {
+            if let Some(entry) = self.tt.probe(self.position.borrow().key) {
+                match entry.score_type {
+                    EntryType::Exact => return entry.score,
+                    EntryType::LowerBound => {
+                        if entry.score >= beta {
+                            return entry.score;
+                        }
+                    }
+                    EntryType::UpperBound => {
+                        if entry.score <= alpha {
+                            return entry.score;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let stand_pat = self.position.borrow().eval();
+        if stand_pat >= beta {
+            return stand_pat;
+        }
+        if stand_pat > alpha {
+            alpha = stand_pat;
+        }
+
+        let mut best = stand_pat;
+        let mut best_move = Move::NULL;
+
+        for mv in MovePicker::new_quiescence(self.position.clone()) {
+            self.position.borrow_mut().make_move(mv);
+            let score = -self.quiescence_search(-beta, -alpha, is_pv);
+            self.position.borrow_mut().unmake_move(mv);
+
+            if score > best {
+                best = score;
+                best_move = mv;
+                if score > alpha {
+                    alpha = score;
+                    if score >= beta {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let entry_type = if best <= alpha {
+            EntryType::UpperBound
+        } else if best >= beta {
+            EntryType::LowerBound
+        } else {
+            EntryType::Exact
+        };
+
+        self.tt.set(Entry::new(
+            self.position.borrow().key,
+            0,
+            best,
+            entry_type,
+            best_move,
+        ));
+
+        best
     }
 
     pub fn done_thinking(&self) -> bool {
@@ -150,11 +303,29 @@ impl Search {
     }
 
     fn uci_info(&self, depth: u8, score: i16) {
-        let elapsed = self.start_time.elapsed().as_millis();
+        let elapsed = self.start_time.elapsed().as_millis() + 1;
         let nps = (self.nodes as u128 * 1000) / elapsed;
-        println!(
-            "info depth {} score cp {} time {} nodes {} nps {}",
-            depth, score, elapsed, self.nodes, nps
-        );
+        if score.abs() > eval::MATE - MAX_PLY as i16 {
+            let ply = score.signum() * (eval::MATE - score.abs()) / 2;
+            println!(
+                "info depth {} score mate {} time {} nodes {} nps {} hashfull {}",
+                depth,
+                ply,
+                elapsed,
+                self.nodes,
+                nps,
+                self.tt.hashfull()
+            );
+        } else {
+            println!(
+                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {}",
+                depth,
+                score,
+                elapsed,
+                self.nodes,
+                nps,
+                self.tt.hashfull(),
+            );
+        }
     }
 }

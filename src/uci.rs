@@ -8,7 +8,6 @@ use anyhow::{anyhow, Context, Result};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 use crate::{
-    eval,
     fen::Fen,
     limits::Limits,
     movegen::{perft, MoveGen},
@@ -22,14 +21,17 @@ use crate::{
 pub struct Uci {
     position: Position,
     stop: Arc<AtomicBool>,
+    tt: Arc<Table>,
 }
 
 impl Uci {
     pub fn new() -> Self {
         let Fen(position) = Uci::STARTPOS.parse().unwrap();
+        let tt = Table::new_mb(512);
         Uci {
             position,
             stop: Arc::new(AtomicBool::new(false)),
+            tt: Arc::new(tt),
         }
     }
 
@@ -105,11 +107,14 @@ impl Uci {
                 self.cmd_go(rest)?;
             }
             Some("eval") => {
-                let eval = eval::eval(&self.position);
+                let eval = self.position.eval();
                 println!("Eval: {}", eval);
             }
             Some("stop") => {
                 self.cmd_stop();
+            }
+            Some("ucinewgame") => {
+                self.tt.clear();
             }
             Some(val) => {
                 eprintln!("Unknown command: {}", val);
@@ -218,15 +223,17 @@ impl Uci {
             return Ok(());
         }
 
-        let limits = if tokens.len() > 1 {
-            Limits::from_tokens(&tokens[1..])?
+        let limits = if !tokens.is_empty() {
+            Limits::from_tokens(tokens)?
         } else {
             Limits::new()
         };
 
         let stop = Arc::new(AtomicBool::new(false));
+        self.stop = stop.clone();
+        let tt = self.tt.clone();
+
         let position = self.position.clone();
-        let tt = Table::new_mb(64);
 
         thread::spawn(move || {
             let mut search = Search::new(position, limits, tt, stop.clone());

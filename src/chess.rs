@@ -284,6 +284,10 @@ impl Square {
         self.file().west().map(|f| Square::make(f, self.rank()))
     }
 
+    pub fn same_color(&self, other: Square) -> bool {
+        (9 * (*self as u16 ^ other as u16)) & 8 == 0
+    }
+
     #[inline]
     pub fn up(&self, color: Color) -> Option<Square> {
         match color {
@@ -655,6 +659,13 @@ impl CastleRights {
             Color::Black => self.contains(CastleRights::BLACK_QUEEN_SIDE),
         }
     }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum GameResult {
+    Win,
+    Loss,
+    Draw,
 }
 
 #[cfg(test)]

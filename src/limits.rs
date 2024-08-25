@@ -6,12 +6,12 @@ use thiserror::Error;
 pub struct Limits {
     pub depth: Option<u8>,
     pub nodes: Option<u64>,
-    pub wtime: Option<u64>,
-    pub btime: Option<u64>,
-    pub winc: Option<u64>,
-    pub binc: Option<u64>,
-    pub movestogo: Option<u64>,
-    pub movetime: Option<u64>,
+    pub wtime: Option<i32>,
+    pub btime: Option<i32>,
+    pub winc: Option<u32>,
+    pub binc: Option<u32>,
+    pub movestogo: Option<u32>,
+    pub movetime: Option<i32>,
     pub infinite: bool,
 }
 

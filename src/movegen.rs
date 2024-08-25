@@ -9,7 +9,7 @@ pub use types::{
     PawnType, QueenType, RookType, WhiteType,
 };
 
-use crate::{bitboard::Bitboard, position::Position};
+use crate::position::Position;
 
 mod magic;
 mod magic_gen;
@@ -48,6 +48,8 @@ pub fn perft(pos: &mut Position, depth: u8) -> usize {
 
 #[cfg(test)]
 fn masked_perft(pos: &mut Position, depth: u8) -> usize {
+    use crate::bitboard::Bitboard;
+
     if depth == 0 {
         return 1;
     }

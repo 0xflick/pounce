@@ -2,9 +2,9 @@ use std::num::NonZeroU32;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{CastleRights, Color, File, Piece, Role, Square},
+    chess::{CastleRights, Color, File, GameResult, Piece, Role, Square},
     eval::{PSQT_EG, PSQT_MG},
-    movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
+    movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays, MoveGen},
     moves::{Move, MoveType},
     zobrist::ZobristHash,
 };
@@ -141,15 +141,73 @@ impl Position {
     }
 
     #[inline]
+    pub fn in_check(&self) -> bool {
+        !self.checkers.none()
+    }
+
+    #[inline]
+    pub fn is_draw(&self) -> Option<GameResult> {
+        if self.halfmove_clock >= 100 {
+            let num_moves = MoveGen::new(self).len();
+            if num_moves > 0 && self.in_check() {
+                return Some(GameResult::Loss);
+            } else {
+                return Some(GameResult::Draw);
+            }
+        }
+
+        let num_pieces = self.occupancy.count();
+        if num_pieces == 2 {
+            return Some(GameResult::Draw);
+        }
+
+        if num_pieces == 3
+            && (self.by_role[Role::Bishop].count() > 0 || self.by_role[Role::Knight].count() > 0)
+        {
+            return Some(GameResult::Draw);
+        }
+
+        let wbishops = self.by_color_role(Color::White, Role::Bishop);
+        let bbishops = self.by_color_role(Color::Black, Role::Bishop);
+
+        if num_pieces == 4
+            && wbishops.count() == 1
+            && bbishops.count() == 1
+            && Square::from(wbishops).same_color(Square::from(bbishops))
+        {
+            return Some(GameResult::Draw);
+        }
+
+        None
+    }
+
+    pub fn is_repetition(&self, count: u32) -> bool {
+        let mut found = 0;
+        let mut idx = self.history.len() as i32 - 2;
+
+        while idx >= 0 && idx >= self.history.len() as i32 - self.halfmove_clock as i32 - 1 {
+            if self.history[idx as usize].key == self.key {
+                found += 1;
+            }
+            if found == count {
+                return true;
+            }
+            idx -= 2;
+        }
+
+        false
+    }
+
+    #[inline]
     pub fn discard(&mut self, sq: Square, piece: Piece) {
         match piece.color {
             Color::White => {
-                self.psqt_mg -= PSQT_MG[piece.role as usize][sq as usize ^ 56];
-                self.psqt_eg -= PSQT_EG[piece.role as usize][sq as usize ^ 56];
+                self.psqt_mg -= PSQT_MG[piece.role][sq as usize ^ 56];
+                self.psqt_eg -= PSQT_EG[piece.role][sq as usize ^ 56];
             }
             Color::Black => {
-                self.psqt_mg += PSQT_MG[piece.role as usize][sq as usize];
-                self.psqt_eg += PSQT_EG[piece.role as usize][sq as usize];
+                self.psqt_mg += PSQT_MG[piece.role][sq as usize];
+                self.psqt_eg += PSQT_EG[piece.role][sq as usize];
             }
         };
 
@@ -164,6 +222,16 @@ impl Position {
         if let Some(prev) = self.piece_at(sq) {
             self.discard(sq, prev);
         }
+        match piece.color {
+            Color::White => {
+                self.psqt_mg += PSQT_MG[piece.role][sq as usize ^ 56];
+                self.psqt_eg += PSQT_EG[piece.role][sq as usize ^ 56];
+            }
+            Color::Black => {
+                self.psqt_mg -= PSQT_MG[piece.role][sq as usize];
+                self.psqt_eg -= PSQT_EG[piece.role][sq as usize];
+            }
+        };
         self.by_color[piece.color as usize].set(sq);
         self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
@@ -179,7 +247,7 @@ impl Position {
         let mut state = State {
             castling: self.castling,
             ep_square: self.ep_square,
-            halfmove_clock: self.halfmove_clock,
+            halfmove_clock: self.halfmove_clock + 1,
             captured: None,
             checkers: self.checkers,
             pinned: self.pinned,
@@ -220,6 +288,7 @@ impl Position {
                 self.set(to, piece);
             }
             MoveType::Castle => {
+                state.halfmove_clock = 0;
                 if from.file().direction(to.file()) == 2 {
                     let rook_from = Square::make(File::H, self.side.back_rank());
                     let rook_to = Square::make(File::F, self.side.back_rank());
@@ -242,6 +311,12 @@ impl Position {
                 self.discard(from, piece);
                 self.set(to, promoted);
             }
+        }
+
+        // update halfmove clock
+        // castling was handled above
+        if state.captured.is_some() || piece.role == Role::Pawn {
+            state.halfmove_clock = 0;
         }
 
         // update our castling rights

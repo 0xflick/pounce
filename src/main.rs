@@ -4,6 +4,7 @@ use pounce::{
     fen::Fen,
     movegen::{init_tables, perft},
     uci::Uci,
+    zobrist::init_zobrist,
 };
 
 #[derive(Parser)]
@@ -14,7 +15,7 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
-    init_tables();
+    init();
 
     let args = Cli::parse();
     if let Some(depth) = args.perft {
@@ -35,4 +36,9 @@ fn main() -> Result<()> {
     let mut uci = Uci::new();
 
     uci.run_loop()
+}
+
+fn init() {
+    init_tables();
+    init_zobrist();
 }

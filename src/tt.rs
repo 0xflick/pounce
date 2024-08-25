@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use crate::{moves::Move, zobrist::ZobristHash};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,14 +52,14 @@ impl Default for Entry {
 }
 
 pub(crate) struct Table {
-    entries: Vec<Entry>,
+    entries: Mutex<Vec<Entry>>,
     max_size: usize,
 }
 
 impl Table {
     pub fn new(size: usize) -> Table {
         Table {
-            entries: vec![Entry::default(); size],
+            entries: Mutex::new(vec![Entry::default(); size]),
             max_size: size,
         }
     }
@@ -66,8 +68,8 @@ impl Table {
         Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<Entry>())
     }
 
-    pub fn clear(&mut self) {
-        self.entries.iter_mut().for_each(|entry| {
+    pub fn clear(&self) {
+        self.entries.lock().unwrap().iter_mut().for_each(|entry| {
             *entry = Entry::default();
         });
     }
@@ -76,22 +78,22 @@ impl Table {
         usize::from(key) % self.max_size
     }
 
-    pub fn probe(&self, key: ZobristHash) -> Option<&Entry> {
+    pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
         let idx = self.index(key);
-        if self.entries[idx].key == key {
-            Some(&self.entries[idx])
-        } else {
-            None
+        let entry = &self.entries.lock().unwrap()[idx];
+        match entry.key == key {
+            true => Some(*entry),
+            false => None,
         }
     }
 
-    pub fn set(&mut self, entry: Entry) {
+    pub fn set(&self, entry: Entry) {
         let idx = self.index(entry.key);
-        self.entries[idx] = entry;
+        self.entries.lock().unwrap()[idx] = entry;
     }
 
     pub fn hashfull(&self) -> f64 {
-        self.entries[..1000]
+        self.entries.lock().unwrap()[..1000]
             .iter()
             .filter(|entry| entry.score_type != EntryType::None)
             .count() as f64

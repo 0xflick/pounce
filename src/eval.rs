@@ -6,49 +6,51 @@ use crate::{
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
 
-pub fn eval(position: &Position) -> i16 {
-    let wpawns = position.by_color_role(Color::White, Role::Pawn).count() as i32;
-    let wknights = position.by_color_role(Color::White, Role::Knight).count() as i32;
-    let wbishops = position.by_color_role(Color::White, Role::Bishop).count() as i32;
-    let wrooks = position.by_color_role(Color::White, Role::Rook).count() as i32;
-    let wqueens = position.by_color_role(Color::White, Role::Queen).count() as i32;
+impl Position {
+    pub fn eval(&self) -> i16 {
+        let wpawns = self.by_color_role(Color::White, Role::Pawn).count() as i32;
+        let wknights = self.by_color_role(Color::White, Role::Knight).count() as i32;
+        let wbishops = self.by_color_role(Color::White, Role::Bishop).count() as i32;
+        let wrooks = self.by_color_role(Color::White, Role::Rook).count() as i32;
+        let wqueens = self.by_color_role(Color::White, Role::Queen).count() as i32;
 
-    let bpawns = position.by_color_role(Color::Black, Role::Pawn).count() as i32;
-    let bknights = position.by_color_role(Color::Black, Role::Knight).count() as i32;
-    let bbishops = position.by_color_role(Color::Black, Role::Bishop).count() as i32;
-    let brooks = position.by_color_role(Color::Black, Role::Rook).count() as i32;
-    let bqueens = position.by_color_role(Color::Black, Role::Queen).count() as i32;
+        let bpawns = self.by_color_role(Color::Black, Role::Pawn).count() as i32;
+        let bknights = self.by_color_role(Color::Black, Role::Knight).count() as i32;
+        let bbishops = self.by_color_role(Color::Black, Role::Bishop).count() as i32;
+        let brooks = self.by_color_role(Color::Black, Role::Rook).count() as i32;
+        let bqueens = self.by_color_role(Color::Black, Role::Queen).count() as i32;
 
-    let score_mg = (wpawns - bpawns) * PIECE_VALUES_MG[Role::Pawn]
-        + (wknights - bknights) * PIECE_VALUES_MG[Role::Knight]
-        + (wbishops - bbishops) * PIECE_VALUES_MG[Role::Bishop]
-        + (wrooks - brooks) * PIECE_VALUES_MG[Role::Rook]
-        + (wqueens - bqueens) * PIECE_VALUES_MG[Role::Queen]
-        + position.psqt_mg;
+        let score_mg = (wpawns - bpawns) * PIECE_VALUES_MG[Role::Pawn]
+            + (wknights - bknights) * PIECE_VALUES_MG[Role::Knight]
+            + (wbishops - bbishops) * PIECE_VALUES_MG[Role::Bishop]
+            + (wrooks - brooks) * PIECE_VALUES_MG[Role::Rook]
+            + (wqueens - bqueens) * PIECE_VALUES_MG[Role::Queen]
+            + self.psqt_mg;
 
-    let score_eg = (wpawns - bpawns) * PIECE_VALUES_EG[Role::Pawn]
-        + (wknights - bknights) * PIECE_VALUES_EG[Role::Knight]
-        + (wbishops - bbishops) * PIECE_VALUES_EG[Role::Bishop]
-        + (wrooks - brooks) * PIECE_VALUES_EG[Role::Rook]
-        + (wqueens - bqueens) * PIECE_VALUES_EG[Role::Queen]
-        + position.psqt_eg;
+        let score_eg = (wpawns - bpawns) * PIECE_VALUES_EG[Role::Pawn]
+            + (wknights - bknights) * PIECE_VALUES_EG[Role::Knight]
+            + (wbishops - bbishops) * PIECE_VALUES_EG[Role::Bishop]
+            + (wrooks - brooks) * PIECE_VALUES_EG[Role::Rook]
+            + (wqueens - bqueens) * PIECE_VALUES_EG[Role::Queen]
+            + self.psqt_eg;
 
-    let phase = (wknights + bknights)
-        + (wbishops + bbishops)
-        + (wrooks + brooks) * 2
-        + (wqueens + bqueens) * 4;
+        let phase = (wknights + bknights)
+            + (wbishops + bbishops)
+            + (wrooks + brooks) * 2
+            + (wqueens + bqueens) * 4;
 
-    let phase = 24 - phase;
-    let phase = phase * 256 / 24;
+        let phase = 24 - phase;
+        let phase = phase * 256 / 24;
 
-    let mg_part = ((score_mg * phase) / 256) as i16;
-    let eg_part = ((score_eg * (256 - phase)) / 256) as i16;
+        let mg_part = ((score_mg * phase) / 256) as i16;
+        let eg_part = ((score_eg * (256 - phase)) / 256) as i16;
 
-    let score = mg_part + eg_part;
+        let score = mg_part + eg_part;
 
-    match position.side {
-        Color::White => score,
-        Color::Black => -score,
+        match self.side {
+            Color::White => score,
+            Color::Black => -score,
+        }
     }
 }
 
