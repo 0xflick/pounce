@@ -1,5 +1,6 @@
 use std::{
     borrow::Borrow,
+    ops::ControlFlow,
     sync::{atomic::AtomicBool, Arc},
     thread,
 };
@@ -44,11 +45,6 @@ impl Default for Uci {
     }
 }
 
-enum UciState {
-    Continue,
-    Quit,
-}
-
 impl Uci {
     pub fn run_loop(&mut self) -> Result<()> {
         println!("{}", engine_name());
@@ -65,13 +61,13 @@ impl Uci {
                     let rest = tokens.collect::<Vec<&str>>();
 
                     match self.handle_cmd(cmd.as_deref(), &rest) {
-                        Ok(UciState::Continue) => {}
-                        Ok(UciState::Quit) => {
-                            break;
-                        }
                         Err(e) => {
                             eprintln!("Error: {:?}", e);
                         }
+                        Ok(ControlFlow::Break(())) => {
+                            break;
+                        }
+                        Ok(ControlFlow::Continue(())) => {}
                     }
                 }
                 Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -84,7 +80,7 @@ impl Uci {
         Ok(())
     }
 
-    fn handle_cmd<T>(&mut self, cmd: Option<&str>, rest: &[T]) -> Result<UciState>
+    fn handle_cmd<T>(&mut self, cmd: Option<&str>, rest: &[T]) -> Result<ControlFlow<()>>
     where
         T: AsRef<str> + Borrow<str>,
     {
@@ -98,7 +94,7 @@ impl Uci {
                 println!("readyok");
             }
             Some("quit") => {
-                return Ok(UciState::Quit);
+                return Ok(ControlFlow::Break(()));
             }
             Some("position") => {
                 self.cmd_position(rest)?;
@@ -121,7 +117,7 @@ impl Uci {
             }
             None => {}
         }
-        Ok(UciState::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     fn cmd_position<T>(&mut self, tokens: &[T]) -> Result<()>
