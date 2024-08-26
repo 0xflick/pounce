@@ -53,6 +53,7 @@ pub struct Search {
     tt: Arc<Table>,
 
     pv: [Move; MAX_DEPTH as usize],
+    killers: [[Move; 2]; MAX_PLY as usize],
 
     start_time: Instant,
     stop: Arc<AtomicBool>,
@@ -71,6 +72,7 @@ impl Search {
             limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
             tt,
             pv: [Move::NULL; MAX_DEPTH as usize],
+            killers: [[Move::NULL; 2]; MAX_PLY as usize],
             start_time: Instant::now(),
             stop,
             nodes: 0,
@@ -163,7 +165,9 @@ impl Search {
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
 
-        for mv in MovePicker::new_ab_search(self.position.clone(), tt_move) {
+        for mv in
+            MovePicker::new_ab_search(self.position.clone(), tt_move, self.killers[ply as usize])
+        {
             move_count += 1;
 
             self.position.borrow_mut().make_move(mv);
@@ -187,6 +191,7 @@ impl Search {
                 if score > alpha {
                     alpha = score;
                     if score >= beta {
+                        self.update_killers(mv, ply);
                         break;
                     }
                 }
@@ -294,6 +299,13 @@ impl Search {
         ));
 
         best
+    }
+
+    pub fn update_killers(&mut self, mv: Move, ply: u8) {
+        if self.position.borrow().piece_at(mv.to()).is_some() {
+            self.killers[ply as usize][1] = self.killers[ply as usize][0];
+            self.killers[ply as usize][0] = mv;
+        }
     }
 
     pub fn done_thinking(&self) -> bool {
