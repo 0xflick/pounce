@@ -97,7 +97,6 @@ impl MovePicker {
     }
 
     fn score_captures(&mut self) {
-        println!("Scoring captures");
         for i in 0..self.scored_moves.len() {
             self.scored_moves[i].score = self.mvv_lva(self.scored_moves[i].m) as i32;
         }
@@ -170,8 +169,6 @@ impl Iterator for MovePicker {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted() {
                     Some(m) => {
-                        println!("Captures: {}", m);
-
                         if m == self.tt_move {
                             return self.next();
                         }
@@ -195,8 +192,6 @@ impl Iterator for MovePicker {
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
-
-                println!("len: {}", self.scored_moves.len());
 
                 self.score_quiets();
                 self.next()
