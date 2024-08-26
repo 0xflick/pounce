@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
@@ -48,7 +47,7 @@ impl SearchCop {
 }
 
 pub struct Search {
-    position: RefCell<Position>,
+    position: Position,
     limits: SearchCop,
     tt: Arc<Table>,
 
@@ -68,7 +67,7 @@ impl Search {
         };
 
         Search {
-            position: RefCell::new(position),
+            position,
             limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
             tt,
             pv: [Move::NULL; MAX_DEPTH as usize],
@@ -136,7 +135,7 @@ impl Search {
         self.nodes += 1;
 
         if !is_root {
-            match self.position.borrow().is_draw() {
+            match self.position.is_draw() {
                 Some(GameResult::Draw) => return eval::DRAW,
                 // test if this is between alpha and beta?
                 Some(GameResult::Loss) => return -eval::MATE + ply as i16,
@@ -144,7 +143,7 @@ impl Search {
             }
 
             let repetition_count = if is_pv { 2 } else { 1 };
-            if self.position.borrow().is_repetition(repetition_count) {
+            if self.position.is_repetition(repetition_count) {
                 return eval::DRAW;
             }
         }
@@ -159,7 +158,7 @@ impl Search {
 
         // Probe the transposition table
         let mut tt_move = Move::NULL;
-        if let Some(entry) = self.tt.probe(self.position.borrow().key) {
+        if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
             if entry.depth >= depth {
                 match entry.score_type {
@@ -183,12 +182,12 @@ impl Search {
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
 
-        for mv in
-            MovePicker::new_ab_search(self.position.clone(), tt_move, self.killers[ply as usize])
-        {
+        let mut move_picker =
+            MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
+        while let Some(mv) = move_picker.next(&self.position) {
             move_count += 1;
 
-            self.position.borrow_mut().make_move(mv);
+            self.position.make_move(mv);
             let mut score = -eval::INFINITY;
             if move_count > 1 || !is_pv {
                 score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
@@ -198,7 +197,7 @@ impl Search {
                 score = -self.search(depth - 1, -beta, -alpha, ply + 1, true, false);
             }
 
-            self.position.borrow_mut().unmake_move(mv);
+            self.position.unmake_move(mv);
 
             if score > best {
                 best = score;
@@ -217,7 +216,7 @@ impl Search {
         }
 
         if move_count == 0 {
-            if self.position.borrow().in_check() {
+            if self.position.in_check() {
                 return -eval::MATE + ply as i16;
             } else {
                 return 0;
@@ -233,7 +232,7 @@ impl Search {
         };
 
         self.tt.set(Entry::new(
-            self.position.borrow().key,
+            self.position.key,
             depth,
             best,
             entry_type,
@@ -254,7 +253,7 @@ impl Search {
         // Probe tt
         // Use tt move?
         if !is_pv {
-            if let Some(entry) = self.tt.probe(self.position.borrow().key) {
+            if let Some(entry) = self.tt.probe(self.position.key) {
                 match entry.score_type {
                     EntryType::Exact => return entry.score,
                     EntryType::LowerBound => {
@@ -272,7 +271,7 @@ impl Search {
             }
         }
 
-        let stand_pat = self.position.borrow().eval();
+        let stand_pat = self.position.eval();
         if stand_pat >= beta {
             return stand_pat;
         }
@@ -283,10 +282,11 @@ impl Search {
         let mut best = stand_pat;
         let mut best_move = Move::NULL;
 
-        for mv in MovePicker::new_quiescence(self.position.clone()) {
-            self.position.borrow_mut().make_move(mv);
+        let mut move_picker = MovePicker::new_quiescence(&self.position);
+        while let Some(mv) = move_picker.next(&self.position) {
+            self.position.make_move(mv);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
-            self.position.borrow_mut().unmake_move(mv);
+            self.position.unmake_move(mv);
 
             if score > best {
                 best = score;
@@ -309,7 +309,7 @@ impl Search {
         };
 
         self.tt.set(Entry::new(
-            self.position.borrow().key,
+            self.position.key,
             0,
             best,
             entry_type,
@@ -320,7 +320,7 @@ impl Search {
     }
 
     pub fn update_killers(&mut self, mv: Move, ply: u8) {
-        if self.position.borrow().piece_at(mv.to()).is_some() {
+        if self.position.piece_at(mv.to()).is_some() {
             self.killers[ply as usize][1] = self.killers[ply as usize][0];
             self.killers[ply as usize][0] = mv;
         }

@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use arrayvec::ArrayVec;
 
 use crate::{bitboard::Bitboard, movegen::MoveGen, moves::Move, position::Position};
@@ -42,7 +40,6 @@ pub enum MovePickerMode {
 }
 
 pub struct MovePicker {
-    occ: Bitboard,
     move_generator: MoveGen,
     stage: MovePickerStage,
     mode: MovePickerMode,
@@ -51,21 +48,17 @@ pub struct MovePicker {
 
     scored_moves: MoveList,
     scored_index: usize,
-
-    pos: RefCell<Position>,
 }
 
 impl MovePicker {
     pub fn new(
-        pos: RefCell<Position>,
+        pos: &Position,
         mode: MovePickerMode,
         tt_move: Move,
         killers: [Move; 2],
     ) -> MovePicker {
-        let occ = pos.borrow().occupancy;
-        let mg = MoveGen::new(&pos.borrow());
+        let mg = MoveGen::new(pos);
         MovePicker {
-            occ,
             move_generator: mg,
             stage: MovePickerStage::TT,
             mode,
@@ -73,21 +66,20 @@ impl MovePicker {
             killers,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
-            pos,
         }
     }
 
-    pub fn new_quiescence(pos: RefCell<Position>) -> MovePicker {
+    pub fn new_quiescence(pos: &Position) -> MovePicker {
         MovePicker::new(pos, MovePickerMode::Quiescence, Move::NULL, [Move::NULL; 2])
     }
 
-    pub fn new_ab_search(pos: RefCell<Position>, tt_move: Move, killers: [Move; 2]) -> MovePicker {
+    pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
         MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers)
     }
 
-    fn mvv_lva(&self, m: Move) -> u16 {
-        let attacker = self.pos.borrow().role_at(m.from());
-        let victim = self.pos.borrow().role_at(m.to());
+    fn mvv_lva(&self, m: Move, position: &Position) -> u16 {
+        let attacker = position.role_at(m.from());
+        let victim = position.role_at(m.to());
 
         match (attacker, victim) {
             (None, _) => 0,
@@ -96,9 +88,9 @@ impl MovePicker {
         }
     }
 
-    fn score_captures(&mut self) {
+    fn score_captures(&mut self, position: &Position) {
         for i in 0..self.scored_moves.len() {
-            self.scored_moves[i].score = self.mvv_lva(self.scored_moves[i].m) as i32;
+            self.scored_moves[i].score = self.mvv_lva(self.scored_moves[i].m, position) as i32;
         }
     }
 
@@ -137,40 +129,35 @@ impl MovePicker {
 
         Some(self.scored_moves[self.scored_index - 1].m)
     }
-}
 
-impl Iterator for MovePicker {
-    type Item = Move;
-
-    // TODO: filter out tt move after making it
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next(&mut self, position: &Position) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreCaptures;
                 if self.tt_move != Move::NULL {
                     return Some(self.tt_move);
                 }
-                self.next()
+                self.next(position)
             }
             MovePickerStage::ScoreCaptures => {
                 self.stage = MovePickerStage::Captures;
                 self.scored_moves.clear();
 
-                self.move_generator.set_mask(self.occ);
+                self.move_generator.set_mask(position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_captures();
-                self.next()
+                self.score_captures(position);
+                self.next(position)
             }
             MovePickerStage::Captures => {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted() {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next();
+                            return self.next(position);
                         }
                         Some(m)
                     }
@@ -179,7 +166,7 @@ impl Iterator for MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next()
+                        self.next(position)
                     }
                 }
             }
@@ -194,12 +181,12 @@ impl Iterator for MovePicker {
                 }
 
                 self.score_quiets();
-                self.next()
+                self.next(position)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next();
+                        return self.next(position);
                     }
                     Some(m)
                 }
@@ -211,8 +198,6 @@ impl Iterator for MovePicker {
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
-
     use crate::{fen::Fen, movegen::init_tables, zobrist::init_zobrist};
 
     #[test]
@@ -224,13 +209,17 @@ mod test {
             .parse()
             .unwrap();
 
-        let mp = super::MovePicker::new_ab_search(
-            RefCell::new(pos),
+        let mut mp = super::MovePicker::new_ab_search(
+            &pos,
             "d4e5".parse().unwrap(),
             ["c1e3".parse().unwrap(), "g1f3".parse().unwrap()],
         );
 
-        let moves: Vec<_> = mp.collect();
+        let mut moves = Vec::new();
+
+        while let Some(m) = mp.next(&pos) {
+            moves.push(m);
+        }
 
         assert_eq!(moves.len(), 41);
         // queen takes pawn (tt move)
