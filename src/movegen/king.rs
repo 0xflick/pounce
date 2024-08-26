@@ -1,8 +1,8 @@
-use types::{CheckType, ColorType, FromAndMoves, KingType};
+use types::{FromAndMoves, KingType};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Role, Square},
+    chess::{Color, Role, Square},
     movegen::*,
     position::Position,
 };
@@ -14,31 +14,38 @@ impl Mover for KingType {
     }
 
     #[inline]
-    fn pseudo_legal_moves<CO: ColorType>(from: Square, pos: &Position) -> Bitboard {
-        get_king_moves(from) & !pos.by_color[CO::COLOR]
+    fn pseudo_legal_moves<const BLACK: bool>(from: Square, pos: &Position) -> Bitboard {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
+        get_king_moves(from) & !pos.by_color[side]
     }
 
     #[inline]
-    fn legal_moves<CH: CheckType, CO: ColorType>(pos: &Position, movelist: &mut MoveList) {
-        let side = CO::COLOR;
+    fn legal_moves<const CHECK: bool, const BLACK: bool>(pos: &Position, movelist: &mut MoveList) {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         let ksq = Square::from(pos.king_of(side));
 
-        let mut moves = Self::pseudo_legal_moves::<CO>(ksq, pos);
+        let mut moves = Self::pseudo_legal_moves::<BLACK>(ksq, pos);
         for m in moves {
-            if !Self::legal_king_move::<CO>(pos, m) {
+            if !Self::legal_king_move::<BLACK>(pos, m) {
                 moves ^= Bitboard::from(m);
             }
         }
 
-        if !CH::IN_CHECK {
+        if !CHECK {
             if pos.castling.can_castle_kingside(side)
                 && (get_kingside_castle_through_squares(side) & pos.occupancy).none()
             {
                 let middle = ksq.east().unwrap();
                 let end = middle.east().unwrap();
 
-                if KingType::legal_king_move::<CO>(pos, middle)
-                    && KingType::legal_king_move::<CO>(pos, end)
+                if KingType::legal_king_move::<BLACK>(pos, middle)
+                    && KingType::legal_king_move::<BLACK>(pos, end)
                 {
                     moves ^= Bitboard::from(end);
                 }
@@ -49,9 +56,9 @@ impl Mover for KingType {
             {
                 let middle = ksq.west().unwrap();
                 let end = middle.west().unwrap();
-                if KingType::legal_king_move::<CO>(pos, middle)
-                    && KingType::legal_king_move::<CO>(pos, middle)
-                    && KingType::legal_king_move::<CO>(pos, end)
+                if KingType::legal_king_move::<BLACK>(pos, middle)
+                    && KingType::legal_king_move::<BLACK>(pos, middle)
+                    && KingType::legal_king_move::<BLACK>(pos, end)
                 {
                     moves ^= Bitboard::from(end);
                 }
@@ -68,8 +75,11 @@ impl Mover for KingType {
 
 impl KingType {
     #[inline]
-    pub fn legal_king_move<CO: ColorType>(pos: &Position, sq: Square) -> bool {
-        let side = CO::COLOR;
+    pub fn legal_king_move<const BLACK: bool>(pos: &Position, sq: Square) -> bool {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         let mask = pos.occupancy ^ pos.king_of(side);
 
         let mut attackers = Bitboard::EMPTY;

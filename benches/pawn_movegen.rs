@@ -3,7 +3,7 @@ use std::{hint::black_box, time::Duration};
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use pounce::{
     fen::Fen,
-    movegen::{init_tables, MoveList, Mover, NotCheck, PawnType, WhiteType},
+    movegen::{init_tables, MoveList, Mover, PawnType},
 };
 
 fn bench_pawn_movegen(c: &mut Criterion) {
@@ -15,7 +15,7 @@ fn bench_pawn_movegen(c: &mut Criterion) {
         b.iter_batched_ref(
             || MoveList::new(),
             |moves| {
-                PawnType::legal_moves::<NotCheck, WhiteType>(black_box(&startpos), moves);
+                PawnType::legal_moves::<false, false>(black_box(&startpos), moves);
             },
             BatchSize::SmallInput,
         )

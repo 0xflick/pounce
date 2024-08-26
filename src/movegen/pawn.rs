@@ -1,8 +1,8 @@
-use types::{CheckType, ColorType, FromAndMoves, PawnType};
+use types::{FromAndMoves, PawnType};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Role, Square},
+    chess::{Color, Role, Square},
     movegen::*,
     position::Position,
 };
@@ -14,9 +14,12 @@ impl Mover for PawnType {
     }
 
     #[inline]
-    fn pseudo_legal_moves<CO: ColorType>(from: Square, pos: &Position) -> Bitboard {
+    fn pseudo_legal_moves<const BLACK: bool>(from: Square, pos: &Position) -> Bitboard {
         let mut bb = Bitboard::EMPTY;
-        let side = CO::COLOR;
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         // add single moves
         if from
             .up(side)
@@ -31,8 +34,11 @@ impl Mover for PawnType {
     }
 
     #[inline]
-    fn legal_moves<CH: CheckType, CO: ColorType>(pos: &Position, movelist: &mut MoveList) {
-        let side = CO::COLOR;
+    fn legal_moves<const CHECK: bool, const BLACK: bool>(pos: &Position, movelist: &mut MoveList) {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         let ksq = Square::from(pos.king_of(side));
         let pieces = pos.by_color_role(side, Self::into_piece());
         let pinned = pos.pinned;
@@ -40,14 +46,14 @@ impl Mover for PawnType {
 
         let promotion_bb = Bitboard::from(side.opponent().home_rank());
 
-        let check_mask = if CH::IN_CHECK {
+        let check_mask = if CHECK {
             between(Square::from(checkers), ksq) ^ checkers
         } else {
             Bitboard::FULL
         };
 
         for sq in pieces & !pinned {
-            let moves = Self::pseudo_legal_moves::<CO>(sq, pos) & check_mask;
+            let moves = Self::pseudo_legal_moves::<BLACK>(sq, pos) & check_mask;
             if moves != Bitboard::EMPTY {
                 unsafe {
                     movelist.push_unchecked(FromAndMoves::new(
@@ -59,9 +65,9 @@ impl Mover for PawnType {
             }
         }
 
-        if !CH::IN_CHECK {
+        if !CHECK {
             for sq in pieces & pinned {
-                let moves = Self::pseudo_legal_moves::<CO>(sq, pos) & line(ksq, sq);
+                let moves = Self::pseudo_legal_moves::<BLACK>(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves::new(
@@ -79,7 +85,7 @@ impl Mover for PawnType {
             // enemy pawn could attack from the en passant square
             let ep_source_squares = get_pawn_attacks(ep, side.opponent()) & pos.our(Role::Pawn);
             for sq in ep_source_squares {
-                if Self::legal_ep_move::<CO>(sq, ep, pos) {
+                if Self::legal_ep_move::<BLACK>(sq, ep, pos) {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves::new(sq, Bitboard::from(ep), false));
                     }
@@ -91,8 +97,11 @@ impl Mover for PawnType {
 
 impl PawnType {
     #[inline]
-    fn legal_ep_move<CO: ColorType>(from: Square, to: Square, pos: &Position) -> bool {
-        let side = CO::COLOR;
+    fn legal_ep_move<const BLACK: bool>(from: Square, to: Square, pos: &Position) -> bool {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         let ksq = Square::from(pos.king_of(side));
         let mask = pos.occupancy
             ^ Bitboard::from(from) // unset the from square

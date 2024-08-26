@@ -62,48 +62,48 @@ impl MoveGen {
         if checkers == Bitboard::EMPTY {
             match pos.side {
                 Color::White => {
-                    PawnType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
-                    KnightType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
-                    BishopType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
-                    RookType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
-                    QueenType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
-                    KingType::legal_moves::<NotCheck, WhiteType>(pos, &mut moves);
+                    PawnType::legal_moves::<false, false>(pos, &mut moves);
+                    KnightType::legal_moves::<false, false>(pos, &mut moves);
+                    BishopType::legal_moves::<false, false>(pos, &mut moves);
+                    RookType::legal_moves::<false, false>(pos, &mut moves);
+                    QueenType::legal_moves::<false, false>(pos, &mut moves);
+                    KingType::legal_moves::<false, false>(pos, &mut moves);
                 }
                 Color::Black => {
-                    PawnType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
-                    KnightType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
-                    BishopType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
-                    RookType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
-                    QueenType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
-                    KingType::legal_moves::<NotCheck, BlackType>(pos, &mut moves);
+                    PawnType::legal_moves::<false, true>(pos, &mut moves);
+                    KnightType::legal_moves::<false, true>(pos, &mut moves);
+                    BishopType::legal_moves::<false, true>(pos, &mut moves);
+                    RookType::legal_moves::<false, true>(pos, &mut moves);
+                    QueenType::legal_moves::<false, true>(pos, &mut moves);
+                    KingType::legal_moves::<false, true>(pos, &mut moves);
                 }
             }
         } else if checkers.count() == 1 {
             match pos.side {
                 Color::White => {
-                    PawnType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
-                    KnightType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
-                    BishopType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
-                    RookType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
-                    QueenType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
-                    KingType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
+                    PawnType::legal_moves::<true, false>(pos, &mut moves);
+                    KnightType::legal_moves::<true, false>(pos, &mut moves);
+                    BishopType::legal_moves::<true, false>(pos, &mut moves);
+                    RookType::legal_moves::<true, false>(pos, &mut moves);
+                    QueenType::legal_moves::<true, false>(pos, &mut moves);
+                    KingType::legal_moves::<true, false>(pos, &mut moves);
                 }
                 Color::Black => {
-                    PawnType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
-                    KnightType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
-                    BishopType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
-                    RookType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
-                    QueenType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
-                    KingType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
+                    PawnType::legal_moves::<true, true>(pos, &mut moves);
+                    KnightType::legal_moves::<true, true>(pos, &mut moves);
+                    BishopType::legal_moves::<true, true>(pos, &mut moves);
+                    RookType::legal_moves::<true, true>(pos, &mut moves);
+                    QueenType::legal_moves::<true, true>(pos, &mut moves);
+                    KingType::legal_moves::<true, true>(pos, &mut moves);
                 }
             }
         } else {
             match pos.side {
                 Color::White => {
-                    KingType::legal_moves::<InCheck, WhiteType>(pos, &mut moves);
+                    KingType::legal_moves::<true, false>(pos, &mut moves);
                 }
                 Color::Black => {
-                    KingType::legal_moves::<InCheck, BlackType>(pos, &mut moves);
+                    KingType::legal_moves::<true, true>(pos, &mut moves);
                 }
             }
         }
@@ -199,35 +199,6 @@ impl Iterator for MoveGen {
         }
     }
 }
-pub trait CheckType {
-    const IN_CHECK: bool;
-}
-
-pub struct InCheck;
-pub struct NotCheck;
-
-impl CheckType for InCheck {
-    const IN_CHECK: bool = true;
-}
-
-impl CheckType for NotCheck {
-    const IN_CHECK: bool = false;
-}
-
-pub trait ColorType {
-    const COLOR: Color;
-}
-
-pub struct WhiteType;
-pub struct BlackType;
-
-impl ColorType for WhiteType {
-    const COLOR: Color = Color::White;
-}
-
-impl ColorType for BlackType {
-    const COLOR: Color = Color::Black;
-}
 
 pub struct PawnType;
 pub struct KnightType;
@@ -239,24 +210,27 @@ pub struct KingType;
 pub trait Mover {
     fn into_piece() -> Role;
 
-    fn pseudo_legal_moves<CO: ColorType>(from: Square, pos: &Position) -> Bitboard;
+    fn pseudo_legal_moves<const BLACK: bool>(from: Square, pos: &Position) -> Bitboard;
 
     #[inline]
-    fn legal_moves<CH: CheckType, CO: ColorType>(pos: &Position, movelist: &mut MoveList) {
-        let side = CO::COLOR;
+    fn legal_moves<const CHECK: bool, const BLACK: bool>(pos: &Position, movelist: &mut MoveList) {
+        let side = match BLACK {
+            true => Color::Black,
+            false => Color::White,
+        };
         let ksq = Square::from(pos.king_of(side));
         let pieces = pos.by_color_role(side, Self::into_piece());
         let pinned = pos.pinned;
         let checkers = pos.checkers;
 
-        let check_mask = if CH::IN_CHECK {
+        let check_mask = if CHECK {
             between(Square::from(checkers), ksq) ^ checkers
         } else {
             Bitboard::FULL
         };
 
         for sq in pieces & !pinned {
-            let moves = Self::pseudo_legal_moves::<CO>(sq, pos) & check_mask;
+            let moves = Self::pseudo_legal_moves::<BLACK>(sq, pos) & check_mask;
 
             if moves != Bitboard::EMPTY {
                 unsafe {
@@ -269,9 +243,9 @@ pub trait Mover {
             }
         }
 
-        if !CH::IN_CHECK {
+        if !CHECK {
             for sq in pieces & pinned {
-                let moves = Self::pseudo_legal_moves::<CO>(sq, pos) & line(ksq, sq);
+                let moves = Self::pseudo_legal_moves::<BLACK>(sq, pos) & line(ksq, sq);
                 if moves != Bitboard::EMPTY {
                     unsafe {
                         movelist.push_unchecked(FromAndMoves {

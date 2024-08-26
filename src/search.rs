@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    chess::Color,
+    chess::{Color, GameResult},
     eval,
     limits::Limits,
     movepicker::MovePicker,
@@ -106,7 +106,7 @@ impl Search {
             let alpha = -eval::INFINITY;
             let beta = eval::INFINITY;
 
-            let score = self.search(depth, alpha, beta, 0, true);
+            let score = self.search(depth, alpha, beta, 0, true, true);
             best_score = score;
         }
 
@@ -121,15 +121,33 @@ impl Search {
         best_move
     }
 
-    fn search(&mut self, depth: u8, mut alpha: i16, mut beta: i16, ply: u8, is_pv: bool) -> i16 {
+    fn search(
+        &mut self,
+        depth: u8,
+        mut alpha: i16,
+        mut beta: i16,
+        ply: u8,
+        is_pv: bool,
+        is_root: bool,
+    ) -> i16 {
         if self.done_thinking() {
             return 0;
         }
         self.nodes += 1;
 
-        // TODO: Implement draw detection
-        // both based on 50 move rule, repetition
-        // and insufficient material
+        if !is_root {
+            match self.position.borrow().is_draw() {
+                Some(GameResult::Draw) => return eval::DRAW,
+                // test if this is between alpha and beta?
+                Some(GameResult::Loss) => return -eval::MATE + ply as i16,
+                _ => {}
+            }
+
+            let repetition_count = if is_pv { 2 } else { 1 };
+            if self.position.borrow().is_repetition(repetition_count) {
+                return eval::DRAW;
+            }
+        }
 
         // TODO: Implement check extension
 
@@ -173,11 +191,11 @@ impl Search {
             self.position.borrow_mut().make_move(mv);
             let mut score = -eval::INFINITY;
             if move_count > 1 || !is_pv {
-                score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false);
+                score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
 
             if is_pv && (move_count == 1 || score > alpha && score < beta) {
-                score = -self.search(depth - 1, -beta, -alpha, ply + 1, true);
+                score = -self.search(depth - 1, -beta, -alpha, ply + 1, true, false);
             }
 
             self.position.borrow_mut().unmake_move(mv);

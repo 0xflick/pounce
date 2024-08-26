@@ -5,6 +5,7 @@ use crate::{
 
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
+pub const DRAW: i16 = 0;
 
 impl Position {
     pub fn eval(&self) -> i16 {

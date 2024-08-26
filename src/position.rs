@@ -247,7 +247,7 @@ impl Position {
         let mut state = State {
             castling: self.castling,
             ep_square: self.ep_square,
-            halfmove_clock: self.halfmove_clock + 1,
+            halfmove_clock: self.halfmove_clock,
             captured: None,
             checkers: self.checkers,
             pinned: self.pinned,
@@ -258,6 +258,7 @@ impl Position {
 
         self.key.toggle_ep(self.ep_square);
         self.ep_square = None;
+        self.halfmove_clock += 1;
 
         // reset the en passant square
 
@@ -288,7 +289,7 @@ impl Position {
                 self.set(to, piece);
             }
             MoveType::Castle => {
-                state.halfmove_clock = 0;
+                self.halfmove_clock = 0;
                 if from.file().direction(to.file()) == 2 {
                     let rook_from = Square::make(File::H, self.side.back_rank());
                     let rook_to = Square::make(File::F, self.side.back_rank());
@@ -316,7 +317,7 @@ impl Position {
         // update halfmove clock
         // castling was handled above
         if state.captured.is_some() || piece.role == Role::Pawn {
-            state.halfmove_clock = 0;
+            self.halfmove_clock = 0;
         }
 
         // update our castling rights
@@ -343,7 +344,6 @@ impl Position {
 
         self.history.push(state);
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
-        self.halfmove_clock += 1;
 
         self.side = self.side.opponent();
         self.key.toggle_side();

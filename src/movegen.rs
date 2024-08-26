@@ -5,8 +5,7 @@ pub use tables::{
     get_rook_moves, init_tables, line, rook_rays,
 };
 pub use types::{
-    BishopType, BlackType, InCheck, KingType, KnightType, MoveGen, MoveList, Mover, NotCheck,
-    PawnType, QueenType, RookType, WhiteType,
+    BishopType, KingType, KnightType, MoveGen, MoveList, Mover, PawnType, QueenType, RookType,
 };
 
 use crate::position::Position;
