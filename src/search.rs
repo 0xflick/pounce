@@ -134,6 +134,9 @@ impl Search {
         }
         self.nodes += 1;
 
+        debug_assert!(alpha < beta);
+        debug_assert_eq!(self.position.key, self.position.zobrist_hash());
+
         if !is_root {
             match self.position.is_draw() {
                 Some(GameResult::Draw) => return eval::DRAW,

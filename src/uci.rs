@@ -104,13 +104,25 @@ impl Uci {
             }
             Some("eval") => {
                 let eval = self.position.eval();
-                println!("Eval: {}", eval);
+                let psqt_mg = self.position.psqt_mg;
+                let psqt_eg = self.position.psqt_eg;
+                let psqt_mg_calc = self.position.psqt_mg();
+                let psqt_eg_calc = self.position.psqt_eg();
+                println!(
+                    "Eval: {}, PSQT MG: {} - {}, PSQT EG: {} - {}",
+                    eval, psqt_mg, psqt_mg_calc, psqt_eg, psqt_eg_calc
+                );
             }
             Some("stop") => {
                 self.cmd_stop();
             }
             Some("ucinewgame") => {
                 self.tt.clear();
+            }
+            Some("zobrist") => {
+                let hash = self.position.zobrist_hash();
+                println!("Zobrist hash: {:x}", u64::from(hash));
+                println!("Zobrist hash: {:x}", u64::from(self.position.key));
             }
             Some(val) => {
                 eprintln!("Unknown command: {}", val);

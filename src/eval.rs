@@ -9,6 +9,9 @@ pub const DRAW: i16 = 0;
 
 impl Position {
     pub fn eval(&self) -> i16 {
+        debug_assert_eq!(self.psqt_mg(), self.psqt_mg);
+        debug_assert_eq!(self.psqt_eg(), self.psqt_eg);
+
         let wpawns = self.by_color_role(Color::White, Role::Pawn).count() as i32;
         let wknights = self.by_color_role(Color::White, Role::Knight).count() as i32;
         let wbishops = self.by_color_role(Color::White, Role::Bishop).count() as i32;
@@ -41,17 +44,44 @@ impl Position {
             + (wqueens + bqueens) * 4;
 
         let phase = 24 - phase;
-        let phase = phase * 256 / 24;
+        let phase = (phase * 256 + (24 / 2)) / 24;
 
-        let mg_part = ((score_mg * phase) / 256) as i16;
-        let eg_part = ((score_eg * (256 - phase)) / 256) as i16;
-
-        let score = mg_part + eg_part;
+        let score = (score_mg * (256 - phase) + score_eg * phase) / 256;
 
         match self.side {
-            Color::White => score,
-            Color::Black => -score,
+            Color::White => score as i16,
+            Color::Black => -score as i16,
         }
+    }
+
+    pub fn psqt_mg(&self) -> i32 {
+        let mut score = 0;
+        for color in Color::ALL {
+            for role in Role::ALL {
+                for square in self.by_color_role(color, role) {
+                    match color {
+                        Color::White => score += PSQT_MG[role][square as usize ^ 56],
+                        Color::Black => score -= PSQT_MG[role][square],
+                    }
+                }
+            }
+        }
+        score
+    }
+
+    pub fn psqt_eg(&self) -> i32 {
+        let mut score = 0;
+        for color in Color::ALL {
+            for role in Role::ALL {
+                for square in self.by_color_role(color, role) {
+                    match color {
+                        Color::White => score += PSQT_EG[role][square as usize ^ 56],
+                        Color::Black => score -= PSQT_EG[role][square],
+                    }
+                }
+            }
+        }
+        score
     }
 }
 
