@@ -198,6 +198,30 @@ impl Position {
         false
     }
 
+    pub fn non_pawn_material(&self, color: Color) -> bool {
+        if self.by_color[color].count() == 1 {
+            return false;
+        }
+
+        if self.by_color_role(color, Role::Knight).any() {
+            return true;
+        }
+
+        if self.by_color_role(color, Role::Bishop).any() {
+            return true;
+        }
+
+        if self.by_color_role(color, Role::Rook).any() {
+            return true;
+        }
+
+        if self.by_color_role(color, Role::Queen).any() {
+            return true;
+        }
+
+        false
+    }
+
     #[inline]
     pub fn discard(&mut self, sq: Square, piece: Piece) {
         match piece.color {
@@ -244,6 +268,7 @@ impl Position {
         let to = mv.to();
 
         let piece = self.piece_at(from).unwrap();
+        debug_assert!(piece.color == self.side);
         let mut state = State {
             castling: self.castling,
             ep_square: self.ep_square,
@@ -340,7 +365,7 @@ impl Position {
             }
         }
 
-        self.update_checks_and_pins(mv, mv.promotion().unwrap_or(piece.role));
+        self.update_checks_and_pins(mv, Some(mv.promotion().unwrap_or(piece.role)));
 
         self.history.push(state);
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
@@ -424,8 +449,54 @@ impl Position {
         }
     }
 
+    pub fn make_null_move(&mut self) {
+        let state = State {
+            castling: self.castling,
+            ep_square: self.ep_square,
+            halfmove_clock: self.halfmove_clock,
+            captured: None,
+            checkers: self.checkers,
+            pinned: self.pinned,
+            key: self.key,
+        };
+
+        debug_assert!(self.checkers.none());
+
+        self.checkers = Bitboard::EMPTY;
+        self.update_checks_and_pins(Move::NULL, None);
+
+        self.key.toggle_ep(self.ep_square);
+        self.ep_square = None;
+        self.key.toggle_ep(self.ep_square);
+
+        self.history.push(state);
+        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
+
+        self.key.toggle_side();
+        self.side = self.side.opponent();
+    }
+
+    pub fn unmake_null_move(&mut self) {
+        self.side = self.side.opponent();
+        self.key.toggle_side();
+
+        let past = self
+            .history
+            .pop()
+            .expect("unmake_null_move called without a past state");
+
+        self.key.toggle_ep(self.ep_square);
+        self.ep_square = past.ep_square;
+        self.key.toggle_ep(self.ep_square);
+
+        self.halfmove_clock = past.halfmove_clock;
+        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
+        self.pinned = past.pinned;
+        self.checkers = past.checkers;
+    }
+
     #[inline]
-    fn update_checks_and_pins(&mut self, mv: Move, piece: Role) {
+    fn update_checks_and_pins(&mut self, mv: Move, piece: Option<Role>) {
         // we update side at the very end of make move, so we're looking for checks
         // we make against the opponent
         self.checkers = Bitboard::EMPTY;
@@ -435,10 +506,12 @@ impl Position {
 
         let ksq = Square::new_unchecked(self.their_king().0.trailing_zeros() as u8);
 
-        if piece == Role::Knight {
-            self.checkers |= get_knight_moves(ksq) & dest_bb;
-        } else if piece == Role::Pawn {
-            self.checkers |= get_pawn_attacks(ksq, self.side.opponent()) & dest_bb;
+        if let Some(piece) = piece {
+            if piece == Role::Knight {
+                self.checkers |= get_knight_moves(ksq) & dest_bb;
+            } else if piece == Role::Pawn {
+                self.checkers |= get_pawn_attacks(ksq, self.side.opponent()) & dest_bb;
+            }
         }
 
         let bishop_attackers = (self.our(Role::Bishop) | self.our(Role::Queen)) & bishop_rays(ksq);

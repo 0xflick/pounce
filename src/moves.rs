@@ -1,6 +1,5 @@
 use std::{
-    fmt,
-    fmt::{Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     str::FromStr,
 };
 
@@ -17,7 +16,7 @@ pub enum MoveType {
     Promotion,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Move(u16);
 
 impl Move {
@@ -68,7 +67,8 @@ impl Move {
         }
     }
 
-    pub const NULL: Move = Move(0);
+    pub const NULL: Move = Move(u16::MAX);
+    pub const NONE: Move = Move(0);
 }
 
 impl Display for Move {
@@ -78,6 +78,12 @@ impl Display for Move {
             write!(f, "{}", promotion)?;
         }
         Ok(())
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

@@ -46,7 +46,7 @@ impl Default for Entry {
             depth: 0,
             score: 0,
             score_type: EntryType::None,
-            best_move: Move::NULL,
+            best_move: Move::NONE,
         }
     }
 }

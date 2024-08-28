@@ -53,7 +53,7 @@ pub struct Search {
 
     pv: [Move; MAX_DEPTH as usize],
     killers: [[Move; 2]; MAX_PLY as usize],
-
+    current_move: [Move; MAX_PLY as usize],
     start_time: Instant,
     stop: Arc<AtomicBool>,
     nodes: u64,
@@ -70,8 +70,9 @@ impl Search {
             position,
             limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
             tt,
-            pv: [Move::NULL; MAX_DEPTH as usize],
-            killers: [[Move::NULL; 2]; MAX_PLY as usize],
+            pv: [Move::NONE; MAX_DEPTH as usize],
+            killers: [[Move::NONE; 2]; MAX_PLY as usize],
+            current_move: [Move::NONE; MAX_PLY as usize],
             start_time: Instant::now(),
             stop,
             nodes: 0,
@@ -157,15 +158,14 @@ impl Search {
 
         // Go to quiescence search if depth is 0
         if depth == 0 {
-            // return eval::eval(&self.position);
             return self.quiescence_search(alpha, beta, is_pv);
         }
 
         // Probe the transposition table
-        let mut tt_move = Move::NULL;
+        let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            if entry.depth >= depth && !is_root && !is_pv {
+            if entry.depth >= depth && !is_pv && self.current_move[ply as usize - 1] != Move::NULL {
                 match entry.score_type {
                     // Exact score
                     EntryType::Exact => return entry.score,
@@ -181,9 +181,34 @@ impl Search {
             }
         }
 
-        // TODO: Implement null move pruning
+        let static_eval = self.position.eval();
 
-        let mut best_move = Move::NULL;
+        // Null move pruning
+        if !is_pv
+            && depth >= 3
+            && self.position.non_pawn_material(self.position.side)
+            && !self.position.in_check()
+            && static_eval >= beta
+            && (ply < 1 || self.current_move[(ply - 1) as usize] != Move::NULL)
+        {
+            self.position.make_null_move();
+            self.current_move[ply as usize] = Move::NULL;
+
+            let reduced_depth = depth - (3 + (depth / 6));
+            let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
+
+            self.position.unmake_null_move();
+            self.current_move[ply as usize] = Move::NONE;
+
+            if null_score >= beta {
+                if null_score >= (eval::MATE - MAX_PLY as i16) {
+                    return beta;
+                }
+                return null_score;
+            }
+        }
+
+        let mut best_move = Move::NONE;
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
 
@@ -193,6 +218,8 @@ impl Search {
             move_count += 1;
 
             self.position.make_move(mv);
+            self.current_move[ply as usize] = mv;
+
             let mut score = -eval::INFINITY;
             if move_count > 1 || !is_pv {
                 score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
@@ -203,6 +230,7 @@ impl Search {
             }
 
             self.position.unmake_move(mv);
+            self.current_move[ply as usize] = Move::NONE;
 
             if score > best {
                 best = score;
@@ -256,8 +284,7 @@ impl Search {
         // TODO: check for repetition or draw or 50 move rule
 
         // Probe tt
-        // Use tt move?
-        let mut tt_move = Move::NULL;
+        let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
             if !is_pv {
@@ -287,7 +314,7 @@ impl Search {
         }
 
         let mut best = stand_pat;
-        let mut best_move = Move::NULL;
+        let mut best_move = Move::NONE;
 
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
         while let Some(mv) = move_picker.next(&self.position) {

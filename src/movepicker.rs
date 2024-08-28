@@ -71,11 +71,11 @@ impl MovePicker {
 
     pub fn new_quiescence(pos: &Position, mut tt_move: Move) -> MovePicker {
         // If the tt move isn't a capture, we can't use it in quiescence search
-        if tt_move != Move::NULL && (pos.occupancy & tt_move.to()).none() {
-            tt_move = Move::NULL;
+        if tt_move != Move::NONE && (pos.occupancy & tt_move.to()).none() {
+            tt_move = Move::NONE;
         }
 
-        MovePicker::new(pos, MovePickerMode::Quiescence, tt_move, [Move::NULL; 2])
+        MovePicker::new(pos, MovePickerMode::Quiescence, tt_move, [Move::NONE; 2])
     }
 
     pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
@@ -139,7 +139,7 @@ impl MovePicker {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreCaptures;
-                if self.tt_move != Move::NULL {
+                if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
                 self.next(position)
