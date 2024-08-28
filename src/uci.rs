@@ -149,7 +149,7 @@ impl Uci {
         let mut options = UciOptionSet::new();
         options.add_option(UciOption::Spin {
             name: "Hash",
-            default: 512,
+            default: 64,
             min: 1,
             max: 16384,
         });
