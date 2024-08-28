@@ -1,14 +1,20 @@
 use arrayvec::ArrayVec;
 
-use crate::{bitboard::Bitboard, movegen::MoveGen, moves::Move, position::Position};
+use crate::{
+    bitboard::Bitboard,
+    chess::{Color, Square},
+    movegen::MoveGen,
+    moves::Move,
+    position::Position,
+};
 
-const CAPTURE_SCORE: u16 = 1000;
-const KILLER_1_SCORE: u16 = 900;
-const KILLER_2_SCORE: u16 = 800;
+const CAPTURE_SCORE: i16 = 30_000;
+const KILLER_1_SCORE: i16 = 29_001;
+const KILLER_2_SCORE: i16 = 29_000;
 
 const MAX_MOVES: usize = 256;
 
-const MVV_LVA: [[u16; 6]; 6] = [
+const MVV_LVA: [[i16; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
     [14, 24, 34, 44, 54, 0], // attacker knight, victim P, N, B, R, Q,  K
     [13, 23, 33, 43, 53, 0], // attacker bishop, victim P, N, B, R, Q,  K
@@ -82,7 +88,7 @@ impl MovePicker {
         MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers)
     }
 
-    fn mvv_lva(&self, m: Move, position: &Position) -> u16 {
+    fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
         let attacker = position.role_at(m.from());
         let victim = position.role_at(m.to());
 
@@ -99,7 +105,11 @@ impl MovePicker {
         }
     }
 
-    fn score_quiets(&mut self) {
+    fn score_quiets(
+        &mut self,
+        position: &Position,
+        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    ) {
         for i in 0..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
             if m == self.killers[0] {
@@ -107,7 +117,7 @@ impl MovePicker {
             } else if m == self.killers[1] {
                 self.scored_moves[i].score = KILLER_2_SCORE as i32;
             } else {
-                self.scored_moves[i].score = 0;
+                self.scored_moves[i].score = history[position.side][m.from()][m.to()] as i32;
             }
         }
     }
@@ -135,14 +145,18 @@ impl MovePicker {
         Some(self.scored_moves[self.scored_index - 1].m)
     }
 
-    pub fn next(&mut self, position: &Position) -> Option<Move> {
+    pub fn next(
+        &mut self,
+        position: &Position,
+        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    ) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreCaptures;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
-                self.next(position)
+                self.next(position, history)
             }
             MovePickerStage::ScoreCaptures => {
                 self.stage = MovePickerStage::Captures;
@@ -155,14 +169,14 @@ impl MovePicker {
                 }
 
                 self.score_captures(position);
-                self.next(position)
+                self.next(position, history)
             }
             MovePickerStage::Captures => {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted() {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next(position);
+                            return self.next(position, history);
                         }
                         Some(m)
                     }
@@ -171,7 +185,7 @@ impl MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next(position)
+                        self.next(position, history)
                     }
                 }
             }
@@ -185,13 +199,13 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets();
-                self.next(position)
+                self.score_quiets(position, history);
+                self.next(position, history)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next(position);
+                        return self.next(position, history);
                     }
                     Some(m)
                 }
@@ -222,7 +236,7 @@ mod test {
 
         let mut moves = Vec::new();
 
-        while let Some(m) = mp.next(&pos) {
+        while let Some(m) = mp.next(&pos, &[[[0; 64]; 64]; 2]) {
             moves.push(m);
         }
 

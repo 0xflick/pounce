@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    chess::{Color, GameResult},
+    chess::{Color, GameResult, Square},
     eval,
     limits::Limits,
     movepicker::MovePicker,
@@ -54,6 +54,7 @@ pub struct Search {
     pv: [Move; MAX_DEPTH as usize],
     killers: [[Move; 2]; MAX_PLY as usize],
     current_move: [Move; MAX_PLY as usize],
+    history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
     start_time: Instant,
     stop: Arc<AtomicBool>,
     nodes: u64,
@@ -73,6 +74,7 @@ impl Search {
             pv: [Move::NONE; MAX_DEPTH as usize],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
             current_move: [Move::NONE; MAX_PLY as usize],
+            history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
             start_time: Instant::now(),
             stop,
             nodes: 0,
@@ -214,7 +216,7 @@ impl Search {
 
         let mut move_picker =
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
-        while let Some(mv) = move_picker.next(&self.position) {
+        while let Some(mv) = move_picker.next(&self.position, &self.history) {
             move_count += 1;
 
             self.position.make_move(mv);
@@ -242,6 +244,7 @@ impl Search {
                     alpha = score;
                     if score >= beta {
                         self.update_killers(mv, ply);
+                        self.update_history(mv, depth);
                         break;
                     }
                 }
@@ -317,7 +320,7 @@ impl Search {
         let mut best_move = Move::NONE;
 
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
-        while let Some(mv) = move_picker.next(&self.position) {
+        while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move(mv);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move(mv);
@@ -356,6 +359,14 @@ impl Search {
             self.killers[ply as usize][1] = self.killers[ply as usize][0];
             self.killers[ply as usize][0] = mv;
         }
+    }
+
+    fn update_history(&mut self, mv: Move, depth: u8) {
+        let bonus = 2000.min(depth as i32 * 155);
+        let bonus = bonus
+            - self.history[self.position.side][mv.from()][mv.to()] as i32 * bonus.abs() / 16384;
+
+        self.history[self.position.side][mv.from()][mv.to()] += bonus as i16;
     }
 
     pub fn done_thinking(&self) -> bool {
