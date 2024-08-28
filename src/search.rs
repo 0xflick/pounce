@@ -122,7 +122,7 @@ impl Search {
 
     fn search(
         &mut self,
-        depth: u8,
+        mut depth: u8,
         mut alpha: i16,
         mut beta: i16,
         ply: u8,
@@ -151,7 +151,9 @@ impl Search {
             }
         }
 
-        // TODO: Implement check extension
+        if self.position.in_check() {
+            depth += 1;
+        }
 
         // Go to quiescence search if depth is 0
         if depth == 0 {
