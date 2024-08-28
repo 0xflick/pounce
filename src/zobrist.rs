@@ -1,10 +1,10 @@
+use rand::{rngs::SmallRng, Rng};
+use rand_core::SeedableRng;
+
 use crate::{
     chess::{CastleRights, Color, File, Piece, Role, Square},
     position::Position,
 };
-
-use rand::{rngs::SmallRng, Rng};
-use rand_core::SeedableRng;
 
 // One entry for each piece on each square, 1 for the side to move,
 // 8 for the en passant file, 16 for castling rights (don't
@@ -135,9 +135,8 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 
 #[cfg(test)]
 mod test {
-    use crate::{fen::Fen, movegen::init_tables, zobrist::perft_zobrist};
-
     use super::init_zobrist;
+    use crate::{fen::Fen, movegen::init_tables, zobrist::perft_zobrist};
 
     const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const KIWIPETE_FEN: &str =

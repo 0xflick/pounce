@@ -14,4 +14,3 @@ pub mod moves;
 pub mod position;
 pub mod uci;
 pub mod zobrist;
-
