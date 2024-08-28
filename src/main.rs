@@ -4,6 +4,7 @@ use pounce::{
     bench::bench,
     fen::Fen,
     movegen::{init_tables, perft},
+    search::init_reductions,
     uci::Uci,
     zobrist::init_zobrist,
 };
@@ -55,5 +56,6 @@ fn main() -> Result<()> {
 
 fn init() {
     init_tables();
+    init_reductions();
     init_zobrist();
 }

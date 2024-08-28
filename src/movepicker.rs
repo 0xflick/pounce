@@ -12,7 +12,7 @@ const CAPTURE_SCORE: i16 = 30_000;
 const KILLER_1_SCORE: i16 = 29_001;
 const KILLER_2_SCORE: i16 = 29_000;
 
-const MAX_MOVES: usize = 256;
+pub const MAX_MOVES: usize = 256;
 
 const MVV_LVA: [[i16; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
@@ -123,7 +123,7 @@ impl MovePicker {
     }
 
     fn select_sorted(&mut self) -> Option<Move> {
-        let mut best_score = -1;
+        let mut best_score = i32::MIN;
         let mut best_index = 0;
 
         for i in self.scored_index..self.scored_moves.len() {
@@ -134,7 +134,7 @@ impl MovePicker {
             }
         }
 
-        if best_score == -1 {
+        if best_score == i32::MIN {
             return None;
         }
 

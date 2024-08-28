@@ -1,8 +1,6 @@
 mod eval;
 mod limits;
 mod movepicker;
-mod search;
-mod tt;
 mod util;
 
 pub mod bench;
@@ -12,5 +10,7 @@ pub mod fen;
 pub mod movegen;
 pub mod moves;
 pub mod position;
+pub mod search;
+pub mod tt;
 pub mod uci;
 pub mod zobrist;

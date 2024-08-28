@@ -7,7 +7,7 @@ use crate::{
     chess::{Color, GameResult, Square},
     eval,
     limits::Limits,
-    movepicker::MovePicker,
+    movepicker::{MovePicker, MAX_MOVES},
     moves::Move,
     position::Position,
     tt::{Entry, EntryType, Table},
@@ -21,6 +21,20 @@ pub struct SearchCop {
 
 const MAX_DEPTH: u8 = 64;
 const MAX_PLY: u8 = 128;
+
+static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
+
+pub fn init_reductions() {
+    unsafe {
+        #[allow(clippy::needless_range_loop)]
+        for m in 1..MAX_MOVES {
+            for depth in 1..MAX_DEPTH as usize {
+                let reduction = 1. + ((depth as f32).ln() * (m as f32).ln()) / 2.;
+                REDUCTIONS[depth][m] = reduction as u8;
+            }
+        }
+    }
+}
 
 impl SearchCop {
     pub fn new(
@@ -91,7 +105,7 @@ impl Search {
     }
 
     fn iterative_deepening(&mut self) -> Option<Move> {
-        let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH);
+        let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
         let mut best_move = None;
         let mut best_score = -eval::INFINITY;
 
@@ -128,7 +142,7 @@ impl Search {
 
     fn search(
         &mut self,
-        mut depth: u8,
+        mut depth: i32,
         mut alpha: i16,
         mut beta: i16,
         ply: u8,
@@ -137,6 +151,9 @@ impl Search {
     ) -> i16 {
         if self.done_thinking() {
             return 0;
+        }
+        if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
+            return self.position.eval();
         }
         self.nodes += 1;
 
@@ -159,10 +176,13 @@ impl Search {
 
         if self.position.in_check() {
             depth += 1;
+            if depth >= MAX_DEPTH as i32 {
+                return self.position.eval();
+            }
         }
 
         // Go to quiescence search if depth is 0
-        if depth == 0 {
+        if depth <= 0 {
             return self.quiescence_search(alpha, beta, is_pv);
         }
 
@@ -170,7 +190,10 @@ impl Search {
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            if entry.depth >= depth && !is_pv && self.current_move[ply as usize - 1] != Move::NULL {
+            if entry.depth as i32 >= depth
+                && !is_pv
+                && self.current_move[ply as usize - 1] != Move::NULL
+            {
                 match entry.score_type {
                     // Exact score
                     EntryType::Exact => return entry.score,
@@ -199,7 +222,7 @@ impl Search {
             self.position.make_null_move();
             self.current_move[ply as usize] = Move::NULL;
 
-            let reduced_depth = depth - (3 + (depth / 6));
+            let reduced_depth = depth - (3 + (depth / 5));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move();
@@ -221,12 +244,36 @@ impl Search {
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             move_count += 1;
+            let capture = (self.position.occupancy & mv.to()).any();
 
             self.position.make_move(mv);
             self.current_move[ply as usize] = mv;
 
             let mut score = -eval::INFINITY;
-            if move_count > 1 || !is_pv {
+
+            // LMR
+            let needs_full_search = if depth >= 3 && !self.position.in_check() && move_count > 4 {
+                let reduction = self.reduction(depth, move_count);
+                let mut rdepth = (depth - 1 - reduction).clamp(1, depth - 2);
+
+                // Reduce less in PV nodes
+                if is_pv {
+                    rdepth += 1;
+                }
+
+                // reduce more in non-capture moves
+                if move_count > 15 && !capture {
+                    rdepth -= 1;
+                }
+
+                score = -self.search(rdepth, -alpha - 1, -alpha, ply + 1, false, false);
+
+                score > alpha && rdepth < depth - 1
+            } else {
+                move_count > 1 || !is_pv
+            };
+
+            if needs_full_search {
                 score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
 
@@ -247,10 +294,13 @@ impl Search {
                     alpha = score;
                     if score >= beta {
                         self.update_killers(mv, ply);
-                        self.update_history(mv, depth);
+                        self.update_history(mv, 155 * depth);
                         break;
                     }
                 }
+            } else {
+                // Update history negative because this move was not good
+                self.update_history(mv, -75 * depth);
             }
         }
 
@@ -272,7 +322,7 @@ impl Search {
 
         self.tt.set(Entry::new(
             self.position.key,
-            depth,
+            depth as u8,
             best,
             entry_type,
             best_move,
@@ -315,6 +365,7 @@ impl Search {
         if stand_pat >= beta {
             return stand_pat;
         }
+
         if stand_pat > alpha {
             alpha = stand_pat;
         }
@@ -364,25 +415,39 @@ impl Search {
         }
     }
 
-    fn update_history(&mut self, mv: Move, depth: u8) {
-        let bonus = 2000.min(depth as i32 * 155);
-        let bonus = bonus
-            - self.history[self.position.side][mv.from()][mv.to()] as i32 * bonus.abs() / 16384;
+    fn update_history(&mut self, mv: Move, bonus: i32) {
+        let clamped_bonus = bonus.clamp(-2000, 4000);
 
-        self.history[self.position.side][mv.from()][mv.to()] += bonus as i16;
+        let clamped_bonus = clamped_bonus
+            - self.history[self.position.side][mv.from()][mv.to()] as i32 * clamped_bonus.abs()
+                / 16384;
+
+        self.history[self.position.side][mv.from()][mv.to()] += clamped_bonus as i16;
+    }
+
+    fn reduction(&self, depth: i32, move_count: u8) -> i32 {
+        unsafe { REDUCTIONS[depth as usize][move_count as usize] as i32 }
     }
 
     pub fn done_thinking(&self) -> bool {
-        self.start_time.elapsed() >= self.limits.time
-            || self.stop.load(std::sync::atomic::Ordering::Relaxed)
+        if self.stop.load(std::sync::atomic::Ordering::Relaxed)
             || self.limits.nodes.is_some_and(|n| self.nodes >= n)
+        {
+            return true;
+        }
+
+        if self.nodes % 2048 == 0 && self.start_time.elapsed() >= self.limits.time {
+            return true;
+        }
+
+        false
     }
 
     pub fn set_silent(&mut self, silent: bool) {
         self.silent = silent;
     }
 
-    fn uci_info(&self, depth: u8, score: i16) {
+    fn uci_info(&self, depth: i32, score: i16) {
         if self.silent {
             return;
         }

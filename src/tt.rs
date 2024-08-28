@@ -51,7 +51,7 @@ impl Default for Entry {
     }
 }
 
-pub(crate) struct Table {
+pub struct Table {
     entries: Mutex<Vec<Entry>>,
     max_size: usize,
 }
