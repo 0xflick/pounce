@@ -57,7 +57,9 @@ pub struct Search {
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
     start_time: Instant,
     stop: Arc<AtomicBool>,
-    nodes: u64,
+    silent: bool,
+
+    pub nodes: u64,
 }
 
 impl Search {
@@ -77,6 +79,7 @@ impl Search {
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
             start_time: Instant::now(),
             stop,
+            silent: false,
             nodes: 0,
         }
     }
@@ -375,7 +378,15 @@ impl Search {
             || self.limits.nodes.is_some_and(|n| self.nodes >= n)
     }
 
+    pub fn set_silent(&mut self, silent: bool) {
+        self.silent = silent;
+    }
+
     fn uci_info(&self, depth: u8, score: i16) {
+        if self.silent {
+            return;
+        }
+
         let elapsed = self.start_time.elapsed().as_millis() + 1;
         let nps = (self.nodes as u128 * 1000) / elapsed;
         if score.abs() > eval::MATE - MAX_PLY as i16 {

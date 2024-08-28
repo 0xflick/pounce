@@ -9,6 +9,7 @@ use anyhow::{anyhow, Context, Result};
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 use crate::{
+    bench::bench,
     fen::Fen,
     limits::Limits,
     movegen::{perft, MoveGen},
@@ -229,6 +230,10 @@ impl Uci {
         if !tokens.is_empty() && tokens[0].as_ref() == "perft" {
             self.cmd_perft(&tokens[1..])?;
             return Ok(());
+        }
+
+        if !tokens.is_empty() && tokens[0].as_ref() == "bench" {
+            return bench();
         }
 
         let limits = if !tokens.is_empty() {

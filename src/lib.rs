@@ -5,6 +5,7 @@ mod search;
 mod tt;
 mod util;
 
+pub mod bench;
 pub mod bitboard;
 pub mod chess;
 pub mod fen;
