@@ -163,7 +163,7 @@ impl Search {
         let mut tt_move = Move::NULL;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            if entry.depth >= depth {
+            if entry.depth >= depth && !is_root && !is_pv {
                 match entry.score_type {
                     // Exact score
                     EntryType::Exact => return entry.score,
@@ -226,12 +226,12 @@ impl Search {
             }
         }
 
-        let entry_type = if best <= alpha {
-            EntryType::UpperBound
-        } else if best >= beta {
+        let entry_type = if best >= beta {
             EntryType::LowerBound
-        } else {
+        } else if is_pv && best_move != Move::NULL {
             EntryType::Exact
+        } else {
+            EntryType::LowerBound
         };
 
         self.tt.set(Entry::new(
@@ -255,8 +255,10 @@ impl Search {
 
         // Probe tt
         // Use tt move?
-        if !is_pv {
-            if let Some(entry) = self.tt.probe(self.position.key) {
+        let mut tt_move = Move::NULL;
+        if let Some(entry) = self.tt.probe(self.position.key) {
+            tt_move = entry.best_move;
+            if !is_pv {
                 match entry.score_type {
                     EntryType::Exact => return entry.score,
                     EntryType::LowerBound => {
@@ -285,7 +287,7 @@ impl Search {
         let mut best = stand_pat;
         let mut best_move = Move::NULL;
 
-        let mut move_picker = MovePicker::new_quiescence(&self.position);
+        let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
         while let Some(mv) = move_picker.next(&self.position) {
             self.position.make_move(mv);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
@@ -303,12 +305,10 @@ impl Search {
             }
         }
 
-        let entry_type = if best <= alpha {
-            EntryType::UpperBound
-        } else if best >= beta {
+        let entry_type = if best >= beta {
             EntryType::LowerBound
         } else {
-            EntryType::Exact
+            EntryType::UpperBound
         };
 
         self.tt.set(Entry::new(

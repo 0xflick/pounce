@@ -69,8 +69,13 @@ impl MovePicker {
         }
     }
 
-    pub fn new_quiescence(pos: &Position) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Quiescence, Move::NULL, [Move::NULL; 2])
+    pub fn new_quiescence(pos: &Position, mut tt_move: Move) -> MovePicker {
+        // If the tt move isn't a capture, we can't use it in quiescence search
+        if tt_move != Move::NULL && (pos.occupancy & tt_move.to()).none() {
+            tt_move = Move::NULL;
+        }
+
+        MovePicker::new(pos, MovePickerMode::Quiescence, tt_move, [Move::NULL; 2])
     }
 
     pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
