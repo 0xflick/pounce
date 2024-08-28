@@ -42,7 +42,7 @@ fn main() -> Result<()> {
             return Ok(());
         }
         Some(Commands::Bench) => {
-            return bench();
+            return bench(16);
         }
 
         _ => {}

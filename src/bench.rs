@@ -60,10 +60,10 @@ const BENCHMARK_FENS: [&str; 50] = [
     "2r2b2/5p2/5k2/p1r1pP2/P2pB3/1P3P2/K1P3R1/7R w - - 23 93",
 ];
 
-pub fn bench() -> Result<()> {
+pub fn bench(hash_size_mb: u32) -> Result<()> {
     let mut total_nodes = 0;
 
-    let tt = Arc::new(Table::new_mb(16));
+    let tt = Arc::new(Table::new_mb(hash_size_mb as usize));
     let limits = Limits {
         depth: Some(7),
         ..Limits::default()

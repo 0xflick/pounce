@@ -98,4 +98,8 @@ impl Table {
             .filter(|entry| entry.score_type != EntryType::None)
             .count() as f64
     }
+
+    pub fn size_mb(&self) -> usize {
+        self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
+    }
 }

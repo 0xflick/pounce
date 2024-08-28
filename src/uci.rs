@@ -1,5 +1,8 @@
+use core::prelude;
 use std::{
     borrow::Borrow,
+    collections::HashMap,
+    fmt::Display,
     ops::ControlFlow,
     sync::{atomic::AtomicBool, Arc},
     thread,
@@ -20,20 +23,144 @@ use crate::{
     util::engine_name,
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum UciOption {
+    Spin {
+        name: &'static str,
+        default: i32,
+        min: i32,
+        max: i32,
+    },
+}
+
+impl Display for UciOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UciOption::Spin {
+                name,
+                default,
+                min,
+                max,
+            } => {
+                write!(
+                    f,
+                    "option name {} type spin default {} min {} max {}",
+                    name, default, min, max
+                )
+            }
+        }
+    }
+}
+
+struct UciOptionSet {
+    options: Vec<UciOption>,
+    values: HashMap<String, String>,
+}
+
+impl UciOptionSet {
+    pub fn new() -> Self {
+        UciOptionSet::default()
+    }
+    pub fn add_option(&mut self, option: UciOption) {
+        match option {
+            UciOption::Spin { name, default, .. } => {
+                self.values.insert(name.to_string(), default.to_string());
+            }
+        }
+
+        self.options.push(option);
+    }
+
+    pub fn parse<T>(&mut self, tokens: &[T]) -> Result<()>
+    where
+        T: AsRef<str> + Borrow<str>,
+    {
+        enum ParseStage {
+            Pre,
+            Name,
+            Value,
+        }
+
+        let mut parse_stage = ParseStage::Pre;
+
+        let mut name = String::new();
+        let mut value = String::new();
+
+        for token in tokens {
+            match token.as_ref() {
+                "name" => {
+                    parse_stage = ParseStage::Name;
+                }
+                "value" => {
+                    parse_stage = ParseStage::Value;
+                }
+                _ => match parse_stage {
+                    ParseStage::Name => {
+                        name = token.as_ref().to_string();
+                    }
+                    ParseStage::Value => {
+                        value = token.as_ref().to_string();
+                    }
+                    _ => {}
+                },
+            }
+        }
+
+        self.values.insert(name, value);
+        Ok(())
+    }
+
+    pub fn get_int(&self, name: &str) -> Option<i32> {
+        self.values
+            .get(name)
+            .and_then(|val| val.parse::<i32>().ok())
+    }
+}
+
+impl Default for UciOptionSet {
+    fn default() -> Self {
+        UciOptionSet {
+            options: Vec::new(),
+            values: HashMap::new(),
+        }
+    }
+}
+
+impl Display for UciOptionSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for option in &self.options {
+            writeln!(f, "{}", option)?;
+        }
+        Ok(())
+    }
+}
+
 pub struct Uci {
     position: Position,
     stop: Arc<AtomicBool>,
     tt: Arc<Table>,
+    options: UciOptionSet,
 }
 
 impl Uci {
     pub fn new() -> Self {
         let Fen(position) = Uci::STARTPOS.parse().unwrap();
-        let tt = Table::new_mb(512);
+
+        let mut options = UciOptionSet::new();
+        options.add_option(UciOption::Spin {
+            name: "Hash",
+            default: 512,
+            min: 1,
+            max: 16384,
+        });
+
+        let tt = Table::new_mb(options.get_int("Hash").unwrap() as usize);
+
         Uci {
             position,
             stop: Arc::new(AtomicBool::new(false)),
             tt: Arc::new(tt),
+            options,
         }
     }
 
@@ -89,10 +216,21 @@ impl Uci {
             Some("uci") => {
                 println!("id name {}", engine_name());
                 println!("id author alex flick");
+                println!("{}", self.options);
                 println!("uciok");
             }
             Some("isready") => {
                 println!("readyok");
+            }
+            Some("setoption") => {
+                self.options.parse(rest)?;
+
+                if let Some(hash_size) = self.options.get_int("Hash") {
+                    if self.tt.size_mb() != hash_size.try_into().unwrap() {
+                        self.tt = Arc::new(Table::new_mb(hash_size as usize));
+                    }
+                }
+                self.tt = Arc::new(Table::new_mb(self.options.get_int("Hash").unwrap() as usize));
             }
             Some("quit") => {
                 return Ok(ControlFlow::Break(()));
@@ -233,7 +371,7 @@ impl Uci {
         }
 
         if !tokens.is_empty() && tokens[0].as_ref() == "bench" {
-            return bench();
+            return bench(self.tt.size_mb() as u32);
         }
 
         let limits = if !tokens.is_empty() {
