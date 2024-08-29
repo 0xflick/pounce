@@ -324,13 +324,15 @@ impl Search {
             EntryType::LowerBound
         };
 
-        self.tt.set(Entry::new(
-            self.position.key,
-            depth as u8,
-            best,
-            entry_type,
-            best_move,
-        ));
+        if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            self.tt.set(Entry::new(
+                self.position.key,
+                depth as u8,
+                best,
+                entry_type,
+                best_move,
+            ));
+        }
         best
     }
 
@@ -401,13 +403,15 @@ impl Search {
             EntryType::UpperBound
         };
 
-        self.tt.set(Entry::new(
-            self.position.key,
-            0,
-            best,
-            entry_type,
-            best_move,
-        ));
+        if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            self.tt.set(Entry::new(
+                self.position.key,
+                0,
+                best,
+                entry_type,
+                best_move,
+            ));
+        }
 
         best
     }
@@ -441,6 +445,7 @@ impl Search {
         }
 
         if self.nodes % 2048 == 0 && self.start_time.elapsed() >= self.limits.time {
+            self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
 
