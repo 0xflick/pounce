@@ -85,9 +85,8 @@ impl Position {
     }
 }
 
-const PIECE_VALUES_MG: [i32; Role::NUM] = [126, 781, 825, 1276, 2538, 0];
-
-const PIECE_VALUES_EG: [i32; Role::NUM] = [208, 854, 915, 1380, 2682, 0];
+pub const PIECE_VALUES_MG: [i32; Role::NUM] = [126, 781, 825, 1276, 2538, 0];
+pub const PIECE_VALUES_EG: [i32; Role::NUM] = [208, 854, 915, 1380, 2682, 0];
 
 #[rustfmt::skip]
 pub const PSQT_MG: [[i32; Square::NUM]; Role::NUM] = [
