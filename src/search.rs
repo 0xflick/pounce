@@ -306,14 +306,15 @@ impl Search {
                 if score > alpha {
                     alpha = score;
                     if score >= beta {
-                        self.update_killers(mv, ply);
-                        self.update_history(mv, 155 * depth);
+                        if !capture {
+                            self.update_killers(mv, ply);
+                            self.update_history(mv, 100 * depth * depth);
+                        }
                         break;
                     }
                 }
-            } else {
-                // Update history negative because this move was not good
-                self.update_history(mv, -75 * depth);
+            } else if !capture {
+                self.update_history(mv, -depth);
             }
         }
 
@@ -426,18 +427,16 @@ impl Search {
     }
 
     pub fn update_killers(&mut self, mv: Move, ply: u8) {
-        if self.position.piece_at(mv.to()).is_some() {
-            self.killers[ply as usize][1] = self.killers[ply as usize][0];
-            self.killers[ply as usize][0] = mv;
-        }
+        self.killers[ply as usize][1] = self.killers[ply as usize][0];
+        self.killers[ply as usize][0] = mv;
     }
 
     fn update_history(&mut self, mv: Move, bonus: i32) {
-        let clamped_bonus = bonus.clamp(-2000, 4000);
+        let clamped_bonus = bonus.clamp(-2000, 2000);
 
         let clamped_bonus = clamped_bonus
             - self.history[self.position.side][mv.from()][mv.to()] as i32 * clamped_bonus.abs()
-                / 16384;
+                / 5000;
 
         self.history[self.position.side][mv.from()][mv.to()] += clamped_bonus as i16;
     }
