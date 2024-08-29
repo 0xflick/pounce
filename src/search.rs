@@ -69,7 +69,8 @@ pub struct Search {
     limits: SearchCop,
     tt: Arc<Table>,
 
-    pv: [Move; MAX_DEPTH as usize],
+    pv: [[Move; MAX_PLY as usize]; MAX_PLY as usize],
+    pv_length: [u8; MAX_PLY as usize],
     killers: [[Move; 2]; MAX_PLY as usize],
     current_move: [Move; MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
@@ -91,7 +92,8 @@ impl Search {
             position,
             limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
             tt,
-            pv: [Move::NONE; MAX_DEPTH as usize],
+            pv: [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize],
+            pv_length: [0; MAX_PLY as usize],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
             current_move: [Move::NONE; MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
@@ -121,7 +123,7 @@ impl Search {
                 break;
             }
 
-            best_move = Some(self.pv[0]);
+            best_move = Some(self.pv[0][0]);
             if depth > 1 {
                 self.uci_info(depth - 1, best_score);
             }
@@ -134,7 +136,7 @@ impl Search {
         }
 
         if max_depth == 1 {
-            best_move = Some(self.pv[0]);
+            best_move = Some(self.pv[0][0]);
         }
 
         if !done_early {
@@ -160,6 +162,8 @@ impl Search {
             return self.position.eval();
         }
         self.nodes += 1;
+
+        self.pv_length[ply as usize] = ply;
 
         debug_assert!(alpha < beta);
         debug_assert_eq!(self.position.key, self.position.zobrist_hash());
@@ -292,7 +296,12 @@ impl Search {
                 best = score;
                 best_move = mv;
 
-                self.pv[ply as usize] = best_move;
+                self.pv[ply as usize][ply as usize] = mv;
+                for j in (ply + 1)..self.pv_length[ply as usize + 1] {
+                    self.pv[ply as usize][j as usize] = self.pv[ply as usize + 1][j as usize];
+                }
+
+                self.pv_length[ply as usize] = self.pv_length[ply as usize + 1];
 
                 if score > alpha {
                     alpha = score;
@@ -463,26 +472,33 @@ impl Search {
 
         let elapsed = self.start_time.elapsed().as_millis() + 1;
         let nps = (self.nodes as u128 * 1000) / elapsed;
+        let pv = (0..self.pv_length[0])
+            .map(|i| self.pv[0][i as usize].to_string())
+            .collect::<Vec<String>>()
+            .join(" ");
         if score.abs() > eval::MATE - MAX_PLY as i16 {
             let ply = score.signum() * (eval::MATE - score.abs()) / 2;
+
             println!(
-                "info depth {} score mate {} time {} nodes {} nps {} hashfull {}",
+                "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
                 depth,
                 ply,
                 elapsed,
                 self.nodes,
                 nps,
-                self.tt.hashfull()
+                self.tt.hashfull(),
+                pv
             );
         } else {
             println!(
-                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {}",
+                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
                 depth,
                 score,
                 elapsed,
                 self.nodes,
                 nps,
                 self.tt.hashfull(),
+                pv
             );
         }
     }
