@@ -40,18 +40,22 @@ impl SearchCop {
     pub fn new(
         depth: Option<u8>,
         nodes: Option<u64>,
-        time_left: Option<i32>,
+        time_remaining: Option<i32>,
         inc: Option<u32>,
         movestogo: Option<u32>,
     ) -> Self {
-        let time = match time_left {
-            Some(left) => {
-                let overhead = 30;
+        let time = match time_remaining {
+            Some(time_remaining) => {
+                let overhead = 10;
+                let mtg = movestogo.unwrap_or(20);
+                let total = time_remaining as u32 + (mtg - 1) * inc.unwrap_or(0) - mtg * overhead;
 
-                let mtg = movestogo.unwrap_or(50);
-                let total = left as u32 + (mtg - 1) * inc.unwrap_or(0) - mtg * overhead;
+                let mut goal = total / mtg;
+                if goal > time_remaining as u32 {
+                    goal = time_remaining as u32 / 2
+                }
 
-                Duration::from_millis((total / mtg) as u64)
+                Duration::from_millis(goal as u64)
             }
             None => Duration::MAX,
         };
