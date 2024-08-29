@@ -28,6 +28,8 @@ pub struct Position {
     pub checkers: Bitboard,
     pub pinned: Bitboard,
 
+    pub mailbox: [Option<Piece>; 64],
+
     pub castling: CastleRights,
     pub ep_square: Option<Square>,
 
@@ -52,6 +54,7 @@ impl Position {
             occupancy: Bitboard::EMPTY,
             checkers: Bitboard::EMPTY,
             pinned: Bitboard::EMPTY,
+            mailbox: [None; 64],
             castling: CastleRights::all(),
             ep_square: None,
             side: Color::White,
@@ -74,30 +77,17 @@ impl Default for Position {
 impl Position {
     #[inline]
     pub fn color_at(&self, sq: Square) -> Option<Color> {
-        self.by_color
-            .iter()
-            .position(|bb| bb.contains(sq))
-            .map(|idx| Color::new(idx as u8))
+        self.mailbox[sq].map(|piece| piece.color)
     }
 
     #[inline]
     pub fn role_at(&self, sq: Square) -> Option<Role> {
-        if self.occupancy.contains(sq) {
-            self.by_role
-                .iter()
-                .position(|bb| bb.contains(sq))
-                .map(|idx| Role::new(idx as u8))
-        } else {
-            None
-        }
+        self.mailbox[sq].map(|piece| piece.role)
     }
 
     #[inline]
     pub fn piece_at(&self, sq: Square) -> Option<Piece> {
-        self.role_at(sq).map(|role| Piece {
-            color: self.color_at(sq).unwrap(),
-            role,
-        })
+        self.mailbox[sq]
     }
 
     #[inline]
@@ -238,6 +228,7 @@ impl Position {
         self.by_color.iter_mut().for_each(|bb| bb.clear(sq));
         self.by_role.iter_mut().for_each(|bb| bb.clear(sq));
         self.occupancy.clear(sq);
+        self.mailbox[sq] = None;
         self.key.toggle_piece(sq, piece);
     }
 
@@ -259,6 +250,7 @@ impl Position {
         self.by_color[piece.color as usize].set(sq);
         self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
+        self.mailbox[sq] = Some(piece);
         self.key.toggle_piece(sq, piece);
     }
 

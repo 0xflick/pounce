@@ -418,7 +418,7 @@ impl Search {
             let captured = self.position.role_at(mv.to()).unwrap();
             if mv.promotion().is_none()
                 && !self.position.in_check()
-                && ((stand_pat + 400 + eval::PIECE_VALUES_EG[captured] as i16) < alpha)
+                && ((stand_pat + 400 + eval::PIECE_VALUES_MG[captured] as i16) < alpha)
                 && self.position.non_pawn_material(self.position.side)
             {
                 continue;
