@@ -150,6 +150,9 @@ impl Search {
         };
 
         loop {
+            if self.done_thinking() {
+                return 0;
+            }
             let score = self.search(depth, alpha, beta, 0, true, true);
             if score <= alpha {
                 alpha -= 50;
