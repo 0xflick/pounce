@@ -1,5 +1,4 @@
 use std::{
-    ops::RangeBounds,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
@@ -366,7 +365,17 @@ impl Search {
             return 0;
         }
 
-        // TODO: check for repetition or draw or 50 move rule
+        match self.position.is_draw() {
+            Some(GameResult::Draw) => return eval::DRAW,
+            // don't have ply here so this is a guess
+            Some(GameResult::Loss) => return -eval::MATE + MAX_PLY as i16,
+            _ => {}
+        }
+
+        let repetition_count = if is_pv { 2 } else { 1 };
+        if self.position.is_repetition(repetition_count) {
+            return eval::DRAW;
+        }
 
         // Probe tt
         let mut tt_move = Move::NONE;
@@ -404,6 +413,16 @@ impl Search {
 
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
+            // delta pruning
+            let captured = self.position.role_at(mv.to()).unwrap();
+            if mv.promotion().is_none()
+                && !self.position.in_check()
+                && ((stand_pat + 500 + eval::PIECE_VALUES_EG[captured] as i16) < alpha)
+                && self.position.non_pawn_material(self.position.side)
+            {
+                continue;
+            }
+
             self.position.make_move(mv);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move(mv);
