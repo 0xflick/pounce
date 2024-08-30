@@ -1,4 +1,5 @@
 use std::{
+    ops::RangeBounds,
     sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
@@ -195,9 +196,11 @@ impl Search {
         }
 
         // Probe the transposition table
+        let mut tt_eval = None;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
+            tt_eval = Some(entry.score);
             if entry.depth as i32 >= depth
                 && !is_pv
                 && self.current_move[ply as usize - 1] != Move::NULL
@@ -217,7 +220,7 @@ impl Search {
             }
         }
 
-        let static_eval = self.position.eval();
+        let static_eval = tt_eval.unwrap_or(self.position.eval());
 
         // Null move pruning
         if !is_pv
@@ -242,6 +245,16 @@ impl Search {
                 }
                 return null_score;
             }
+        }
+
+        // Reverse futility pruning
+        if !is_pv
+            && (-31_000..31_000).contains(&beta)
+            && !self.position.in_check()
+            && depth < 7
+            && (static_eval - 300 * depth as i16) >= beta
+        {
+            return static_eval - 300 * depth as i16;
         }
 
         let mut best_move = Move::NONE;
