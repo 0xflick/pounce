@@ -113,7 +113,7 @@ impl Search {
     fn iterative_deepening(&mut self) -> Option<Move> {
         let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
         let mut best_move = None;
-        let mut best_score = -eval::INFINITY;
+        let mut score = 0;
 
         let mut done_early = false;
 
@@ -125,14 +125,10 @@ impl Search {
 
             best_move = Some(self.pv[0][0]);
             if depth > 1 {
-                self.uci_info(depth - 1, best_score);
+                self.uci_info(depth - 1, score);
             }
 
-            let alpha = -eval::INFINITY;
-            let beta = eval::INFINITY;
-
-            let score = self.search(depth, alpha, beta, 0, true, true);
-            best_score = score;
+            score = self.aspiration(depth, score);
         }
 
         if max_depth == 1 {
@@ -140,10 +136,34 @@ impl Search {
         }
 
         if !done_early {
-            self.uci_info(max_depth, best_score);
+            self.uci_info(max_depth, score);
         }
 
         best_move
+    }
+
+    fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
+        let (mut alpha, mut beta) = if depth > 6 {
+            (prev - 50, prev + 50)
+        } else {
+            (-eval::INFINITY, eval::INFINITY)
+        };
+
+        loop {
+            if self.done_thinking() {
+                return 0;
+            }
+            let score = self.search(depth, alpha, beta, 0, true, true);
+            if score <= alpha {
+                alpha -= 50;
+                beta = alpha + 50;
+            } else if score >= beta {
+                beta += 50;
+                alpha = beta - 50;
+            } else {
+                return score;
+            }
+        }
     }
 
     fn search(

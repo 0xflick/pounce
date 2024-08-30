@@ -375,13 +375,17 @@ impl Position {
             .pop()
             .expect("unmake called without a past state");
 
-        self.key.toggle_castling(self.castling);
-        self.castling = past.castling;
-        self.key.toggle_castling(self.castling);
+        if self.castling != past.castling {
+            self.key.toggle_castling(self.castling);
+            self.castling = past.castling;
+            self.key.toggle_castling(self.castling);
+        }
 
-        self.key.toggle_ep(self.ep_square);
-        self.ep_square = past.ep_square;
-        self.key.toggle_ep(self.ep_square);
+        if self.ep_square != past.ep_square {
+            self.key.toggle_ep(self.ep_square);
+            self.ep_square = past.ep_square;
+            self.key.toggle_ep(self.ep_square);
+        }
 
         self.halfmove_clock = past.halfmove_clock;
         self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
