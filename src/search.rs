@@ -145,8 +145,9 @@ impl Search {
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
+        let mut delta = 50;
         let (mut alpha, mut beta) = if depth > 6 {
-            (prev - 50, prev + 50)
+            (prev - delta, prev + delta)
         } else {
             (-eval::INFINITY, eval::INFINITY)
         };
@@ -155,15 +156,22 @@ impl Search {
             if self.done_thinking() {
                 return 0;
             }
+
             let score = self.search(depth, alpha, beta, 0, true, true);
+
             if score <= alpha {
-                alpha -= 50;
-                beta = alpha + 50;
+                beta = (alpha + beta) / 2;
+                alpha = (-eval::INFINITY).max(alpha - delta);
             } else if score >= beta {
-                beta += 50;
-                alpha = beta - 50;
+                beta = (eval::INFINITY).min(beta + delta);
             } else {
                 return score;
+            }
+
+            delta += delta / 2;
+            if delta > 1000 {
+                alpha = -eval::INFINITY;
+                beta = eval::INFINITY;
             }
         }
     }
@@ -348,11 +356,11 @@ impl Search {
                     if score >= beta {
                         if !capture {
                             self.update_killers(mv, ply);
-                            let bonus = 1600.min(350 * depth as i16 - 350);
+                            let bonus = 2000.min(350 * depth as i16 - 350);
                             self.update_history(mv, bonus);
 
                             for quiet in quiets.iter() {
-                                self.update_history(*quiet, -bonus);
+                                self.update_history(*quiet, -bonus / 2);
                             }
                         }
 
@@ -500,8 +508,9 @@ impl Search {
     }
 
     fn update_history(&mut self, mv: Move, bonus: i16) {
-        self.history[self.position.side][mv.from()][mv.to()] +=
-            bonus - self.history[self.position.side][mv.from()][mv.to()] * bonus.abs() / 16384;
+        self.history[self.position.side][mv.from()][mv.to()] += bonus
+            - ((self.history[self.position.side][mv.from()][mv.to()] as i32 * bonus.abs() as i32)
+                / 16384) as i16;
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
