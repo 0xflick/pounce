@@ -241,6 +241,11 @@ impl Search {
 
         let static_eval = tt_eval.unwrap_or(self.position.eval());
 
+        // internal iterative reduction
+        if !is_root && is_pv && depth >= 4 && !self.position.in_check() && tt_move == Move::NONE {
+            depth -= 1;
+        }
+
         // Null move pruning
         if !is_pv
             && depth >= 3
