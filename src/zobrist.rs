@@ -1,8 +1,18 @@
-use rand::{rngs::SmallRng, Rng};
+use rand::{
+    rngs::SmallRng,
+    Rng,
+};
 use rand_core::SeedableRng;
 
 use crate::{
-    chess::{CastleRights, Color, File, Piece, Role, Square},
+    chess::{
+        CastleRights,
+        Color,
+        File,
+        Piece,
+        Role,
+        Square,
+    },
     position::Position,
 };
 
@@ -97,7 +107,10 @@ impl Position {
 
 #[cfg(test)]
 fn perft_zobrist(pos: &mut Position, depth: u8) {
-    use crate::{fen::Fen, movegen::MoveGen};
+    use crate::{
+        fen::Fen,
+        movegen::MoveGen,
+    };
 
     if depth == 0 {
         return;
@@ -136,7 +149,11 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 #[cfg(test)]
 mod test {
     use super::init_zobrist;
-    use crate::{fen::Fen, movegen::init_tables, zobrist::perft_zobrist};
+    use crate::{
+        fen::Fen,
+        movegen::init_tables,
+        zobrist::perft_zobrist,
+    };
 
     const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const KIWIPETE_FEN: &str =

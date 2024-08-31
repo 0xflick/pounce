@@ -1,8 +1,15 @@
-use types::{FromAndMoves, PawnType};
+use types::{
+    FromAndMoves,
+    PawnType,
+};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, Role, Square},
+    chess::{
+        Color,
+        Role,
+        Square,
+    },
     movegen::*,
     position::Position,
 };

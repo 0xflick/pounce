@@ -1,9 +1,15 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{
+    Parser,
+    Subcommand,
+};
 use pounce::{
     bench::bench,
     fen::Fen,
-    movegen::{init_tables, perft},
+    movegen::{
+        init_tables,
+        perft,
+    },
     search::init_reductions,
     uci::Uci,
     zobrist::init_zobrist,

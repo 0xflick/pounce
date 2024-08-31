@@ -1,5 +1,9 @@
 use std::{
-    fmt::{self, Display, Formatter},
+    fmt::{
+        self,
+        Display,
+        Formatter,
+    },
     num::NonZeroU32,
     str::FromStr,
 };
@@ -7,7 +11,15 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    chess::{CastleRights, Color, File, ParsePieceError, ParseSquareError, Rank, Square},
+    chess::{
+        CastleRights,
+        Color,
+        File,
+        ParsePieceError,
+        ParseSquareError,
+        Rank,
+        Square,
+    },
     position::Position,
 };
 

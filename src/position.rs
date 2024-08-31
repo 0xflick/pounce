@@ -2,10 +2,31 @@ use std::num::NonZeroU32;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{CastleRights, Color, File, GameResult, Piece, Role, Square},
-    eval::{PSQT_EG, PSQT_MG},
-    movegen::{between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays, MoveGen},
-    moves::{Move, MoveType},
+    chess::{
+        CastleRights,
+        Color,
+        File,
+        GameResult,
+        Piece,
+        Role,
+        Square,
+    },
+    eval::{
+        PSQT_EG,
+        PSQT_MG,
+    },
+    movegen::{
+        between,
+        bishop_rays,
+        get_knight_moves,
+        get_pawn_attacks,
+        rook_rays,
+        MoveGen,
+    },
+    moves::{
+        Move,
+        MoveType,
+    },
     zobrist::ZobristHash,
 };
 
@@ -293,7 +314,8 @@ impl Position {
                 self.key.toggle_ep(self.ep_square);
             }
             MoveType::EnPassant => {
-                // unwrapping is safe here because we know ep_square is never at the edge of the board
+                // unwrapping is safe here because we know ep_square is never at the edge of the
+                // board
                 let captured_pawn_square = to
                     .down(self.side)
                     .expect("en passant moves are never at the edge of the board");

@@ -1,7 +1,19 @@
-use magic::{bishop_attacks, occupancy_bb, rook_attacks};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use magic::{
+    bishop_attacks,
+    occupancy_bb,
+    rook_attacks,
+};
+use rand::{
+    rngs::SmallRng,
+    Rng,
+    SeedableRng,
+};
 
-use crate::{bitboard::Bitboard, chess::Square, movegen::*};
+use crate::{
+    bitboard::Bitboard,
+    chess::Square,
+    movegen::*,
+};
 
 pub struct Wizard {
     rng: SmallRng,
@@ -165,7 +177,10 @@ pub fn bishop_mask(sq: Square) -> Bitboard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{File, Rank};
+    use crate::chess::{
+        File,
+        Rank,
+    };
     #[test]
     fn test_rook_mask_1() {
         let sq = Square::make(File::D, Rank::R4);

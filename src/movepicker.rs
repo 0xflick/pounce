@@ -2,7 +2,10 @@ use arrayvec::ArrayVec;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, Square},
+    chess::{
+        Color,
+        Square,
+    },
     movegen::MoveGen,
     moves::Move,
     position::Position,
@@ -217,7 +220,11 @@ impl MovePicker {
 
 #[cfg(test)]
 mod test {
-    use crate::{fen::Fen, movegen::init_tables, zobrist::init_zobrist};
+    use crate::{
+        fen::Fen,
+        movegen::init_tables,
+        zobrist::init_zobrist,
+    };
 
     #[test]
     fn move_order() {

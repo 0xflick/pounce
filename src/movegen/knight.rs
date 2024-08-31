@@ -2,7 +2,11 @@ use types::KnightType;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, Role, Square},
+    chess::{
+        Color,
+        Role,
+        Square,
+    },
     movegen::*,
     position::Position,
 };
