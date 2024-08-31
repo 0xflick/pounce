@@ -1,6 +1,14 @@
 use std::{
-    fmt::{self, Display, Formatter},
-    ops::{BitXor, Index, IndexMut},
+    fmt::{
+        self,
+        Display,
+        Formatter,
+    },
+    ops::{
+        BitXor,
+        Index,
+        IndexMut,
+    },
     str::FromStr,
 };
 

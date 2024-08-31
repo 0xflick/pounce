@@ -1,4 +1,9 @@
-use vergen_git2::{BuildBuilder, CargoBuilder, Emitter, Git2Builder};
+use vergen_git2::{
+    BuildBuilder,
+    CargoBuilder,
+    Emitter,
+    Git2Builder,
+};
 
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");

@@ -2,7 +2,11 @@ use arrayvec::ArrayVec;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, Role, Square},
+    chess::{
+        Color,
+        Role,
+        Square,
+    },
     movegen::*,
     moves::Move,
     position::Position,

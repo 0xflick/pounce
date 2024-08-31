@@ -1,5 +1,9 @@
 use crate::{
-    chess::{Color, Role, Square},
+    chess::{
+        Color,
+        Role,
+        Square,
+    },
     position::Position,
 };
 

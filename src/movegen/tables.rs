@@ -1,9 +1,19 @@
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, File, Square},
+    chess::{
+        Color,
+        File,
+        Square,
+    },
     movegen::{
-        magic::{BISHOP_ATTACKS, ROOK_ATTACKS},
-        magic_gen::{BISHOP_MAGICS, ROOK_MAGICS},
+        magic::{
+            BISHOP_ATTACKS,
+            ROOK_ATTACKS,
+        },
+        magic_gen::{
+            BISHOP_MAGICS,
+            ROOK_MAGICS,
+        },
     },
 };
 

@@ -1,11 +1,29 @@
 use magic::Magic;
 pub use tables::{
-    between, bishop_rays, get_bishop_moves, get_king_moves, get_kingside_castle_through_squares,
-    get_knight_moves, get_pawn_attacks, get_pawn_moves, get_queenside_castle_throught_squares,
-    get_rook_moves, init_tables, line, rook_rays,
+    between,
+    bishop_rays,
+    get_bishop_moves,
+    get_king_moves,
+    get_kingside_castle_through_squares,
+    get_knight_moves,
+    get_pawn_attacks,
+    get_pawn_moves,
+    get_queenside_castle_throught_squares,
+    get_rook_moves,
+    init_tables,
+    line,
+    rook_rays,
 };
 pub use types::{
-    BishopType, KingType, KnightType, MoveGen, MoveList, Mover, PawnType, QueenType, RookType,
+    BishopType,
+    KingType,
+    KnightType,
+    MoveGen,
+    MoveList,
+    Mover,
+    PawnType,
+    QueenType,
+    RookType,
 };
 
 use crate::position::Position;
