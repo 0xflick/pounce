@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use arrayvec::ArrayVec;
+
 use crate::{
     chess::{Color, GameResult, Square},
     eval,
@@ -284,6 +286,7 @@ impl Search {
         let mut best_move = Move::NONE;
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
+        let mut quiets: ArrayVec<Move, 64> = ArrayVec::new();
 
         let mut move_picker =
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
@@ -345,13 +348,21 @@ impl Search {
                     if score >= beta {
                         if !capture {
                             self.update_killers(mv, ply);
-                            self.update_history(mv, 100 * depth * depth);
+                            let bonus = 1600.min(350 * depth as i16 - 350);
+                            self.update_history(mv, bonus);
+
+                            for quiet in quiets.iter() {
+                                self.update_history(*quiet, -bonus);
+                            }
                         }
+
                         break;
                     }
                 }
-            } else if !capture {
-                self.update_history(mv, -depth);
+            }
+
+            if !capture {
+                quiets.push(mv);
             }
         }
 
@@ -488,14 +499,9 @@ impl Search {
         self.killers[ply as usize][0] = mv;
     }
 
-    fn update_history(&mut self, mv: Move, bonus: i32) {
-        let clamped_bonus = bonus.clamp(-2000, 2000);
-
-        let clamped_bonus = clamped_bonus
-            - self.history[self.position.side][mv.from()][mv.to()] as i32 * clamped_bonus.abs()
-                / 5000;
-
-        self.history[self.position.side][mv.from()][mv.to()] += clamped_bonus as i16;
+    fn update_history(&mut self, mv: Move, bonus: i16) {
+        self.history[self.position.side][mv.from()][mv.to()] +=
+            bonus - self.history[self.position.side][mv.from()][mv.to()] * bonus.abs() / 16384;
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
