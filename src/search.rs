@@ -361,7 +361,7 @@ impl Search {
                 }
             }
 
-            if !capture {
+            if !capture && quiets.len() < quiets.capacity() {
                 quiets.push(mv);
             }
         }
