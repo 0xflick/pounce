@@ -99,9 +99,9 @@ impl SearchCop {
 
         let time_left = 0.max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
 
-        let optimal_time = if movestogo.is_none() {
+        let opt = if movestogo.is_none() {
             // one time control for the whole game
-            let scale = 0.022;
+            let scale = 0.04;
             (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
         } else {
             // multiple time controls
@@ -109,14 +109,15 @@ impl SearchCop {
             (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
         };
 
-        let max_time = (optimal_time * 5).min((0.8 * time_left as f32) as u64);
+        let max = (opt).min((0.8 * time_left as f32) as u64);
+        let max = max.min(time_remaining.unwrap() as u64 - 3 * overhead as u64);
 
         SearchCop {
             depth,
             nodes,
             adjust: true,
-            optimal_time: Some(Duration::from_millis(optimal_time)),
-            max_time: Some(Duration::from_millis(max_time)),
+            optimal_time: Some(Duration::from_millis(opt)),
+            max_time: Some(Duration::from_millis(max)),
         }
     }
 
@@ -141,6 +142,7 @@ pub struct Search {
     start_time: Instant,
     stop: Arc<AtomicBool>,
     silent: bool,
+    effort: [[u64; Square::NUM]; Square::NUM],
 
     pub nodes: u64,
 }
@@ -160,6 +162,7 @@ impl Search {
             start_time: Instant::now(),
             stop,
             silent: false,
+            effort: [[0; Square::NUM]; Square::NUM],
             nodes: 0,
         }
     }
@@ -174,70 +177,47 @@ impl Search {
         let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
         let mut best_move = None;
         let mut score = 0;
-        let mut best_move_changes = 0;
 
-        let mut done_early = false;
-        let mut prev_score;
+        let mut scale = 1.;
 
         for depth in 1..=max_depth {
             if self.done_thinking() {
-                done_early = true;
+                break;
+            }
+
+            score = self.aspiration(depth, score);
+
+            if self.done_thinking() {
                 break;
             }
 
             best_move = Some(self.pv[0][0]);
-            if depth > 1 {
-                self.uci_info(depth - 1, score);
-            }
+            self.uci_info(depth, score);
 
-            prev_score = score;
-            score = self.aspiration(depth, score);
-
-            if best_move != Some(self.pv[0][0]) {
-                best_move_changes += 1;
-            }
-
-            if self.limits.adjust && depth > 4 {
-                // adjust optimum up if we're improving
-                if score - 100 > prev_score {
-                    self.limits.optimal_time.map(|time| time.mul_f32(1.1));
-                }
-
-                // adjust optimum up if we're decrease
-                if score + 100 < prev_score {
-                    self.limits.optimal_time.map(|time| time.mul_f32(1.1));
-                }
-
-                // adjust optimum up if best move changes a lot
-                if best_move_changes > 3 {
-                    best_move_changes = 0;
-                    self.limits.optimal_time.map(|time| time.mul_f32(1.1));
-                }
-
-                // make sure optimum is less than maximum
-                if let Some(optimal_time) = self.limits.optimal_time {
-                    if let Some(max_time) = self.limits.max_time {
-                        if optimal_time > max_time {
-                            self.limits.optimal_time = Some(max_time);
-                        }
-                    }
-                }
+            //TODO: Move this into search cop
+            if self.limits.adjust {
+                let bm_nodes = self.effort[self.pv[0][0].from()][self.pv[0][0].to()];
+                let bm_frac = bm_nodes as f32 / self.nodes as f32;
+                scale = (0.4 + 2. * (1. - bm_frac)).max(0.5);
             }
 
             // stop search if we're past optimum
             if let Some(optimal_time) = self.limits.optimal_time {
-                if self.start_time.elapsed() >= optimal_time {
+                if self.start_time.elapsed() >= optimal_time.mul_f32(scale) {
+                    break;
+                }
+            }
+
+            // stop search if we're more than 80% of max time
+            if let Some(max_time) = self.limits.max_time {
+                if self.start_time.elapsed() >= max_time.mul_f32(0.80) {
                     break;
                 }
             }
         }
 
-        if max_depth == 1 {
+        if best_move.is_none() {
             best_move = Some(self.pv[0][0]);
-        }
-
-        if !done_early {
-            self.uci_info(max_depth, score);
         }
 
         best_move
@@ -401,6 +381,9 @@ impl Search {
             move_count += 1;
             let capture = (self.position.occupancy & mv.to()).any();
 
+            // store node count for effort calculation
+            let before_nodes = self.nodes;
+
             self.position.make_move(mv);
             self.current_move[ply as usize] = mv;
 
@@ -438,6 +421,11 @@ impl Search {
 
             self.position.unmake_move(mv);
             self.current_move[ply as usize] = Move::NONE;
+
+            // store effort at root
+            if is_root {
+                self.effort[mv.from()][mv.to()] = self.nodes - before_nodes;
+            }
 
             if score > best {
                 best = score;
