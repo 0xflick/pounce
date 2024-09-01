@@ -1,41 +1,26 @@
 use std::{
-    sync::{
-        atomic::AtomicBool,
-        Arc,
-    },
-    time::{
-        Duration,
-        Instant,
-    },
+    sync::{atomic::AtomicBool, Arc},
+    time::{Duration, Instant},
 };
 
 use arrayvec::ArrayVec;
 
 use crate::{
-    chess::{
-        Color,
-        GameResult,
-        Square,
-    },
+    chess::{Color, GameResult, Square},
     eval,
     limits::Limits,
-    movepicker::{
-        MovePicker,
-        MAX_MOVES,
-    },
+    movepicker::{MovePicker, MAX_MOVES},
     moves::Move,
     position::Position,
-    tt::{
-        Entry,
-        EntryType,
-        Table,
-    },
+    tt::{Entry, EntryType, Table},
 };
 
 pub struct SearchCop {
     pub depth: Option<u8>,
     pub nodes: Option<u64>,
-    pub time: Duration,
+    pub adjust: bool,
+    pub optimal_time: Option<Duration>,
+    pub max_time: Option<Duration>,
 }
 
 const MAX_DEPTH: u8 = 64;
@@ -57,29 +42,90 @@ pub fn init_reductions() {
 
 impl SearchCop {
     pub fn new(
-        depth: Option<u8>,
-        nodes: Option<u64>,
-        time_remaining: Option<i32>,
-        inc: Option<u32>,
-        movestogo: Option<u32>,
+        Limits {
+            depth,
+            nodes,
+            wtime,
+            btime,
+            winc,
+            binc,
+            movestogo,
+            movetime,
+            infinite,
+        }: Limits,
+        side: Color,
     ) -> Self {
-        let time = match time_remaining {
-            Some(time_remaining) => {
-                let overhead = 10;
-                let mtg = movestogo.unwrap_or(20);
-                let total = time_remaining as u32 + (mtg - 1) * inc.unwrap_or(0) - mtg * overhead;
+        if infinite {
+            return SearchCop {
+                depth,
+                nodes,
+                adjust: false,
+                optimal_time: None,
+                max_time: None,
+            };
+        }
 
-                let mut goal = total / mtg;
-                if goal > time_remaining as u32 {
-                    goal = time_remaining as u32 / 2
-                }
+        if let Some(movetime) = movetime {
+            return SearchCop {
+                depth,
+                nodes,
+                adjust: false,
+                optimal_time: Some(Duration::from_millis(movetime as u64)),
+                max_time: Some(Duration::from_millis(movetime as u64)),
+            };
+        }
 
-                Duration::from_millis(goal as u64)
-            }
-            None => Duration::MAX,
+        let (time_remaining, inc) = match side {
+            Color::White => (wtime, winc.unwrap_or(0) as i32),
+            Color::Black => (btime, binc.unwrap_or(0) as i32),
         };
 
-        SearchCop { depth, nodes, time }
+        // if time remaining was not set, return as if infinite
+        if time_remaining.is_none() {
+            return SearchCop {
+                depth,
+                nodes,
+                adjust: false,
+                optimal_time: None,
+                max_time: None,
+            };
+        }
+
+        // inspired by weiss
+        let overhead = 10;
+
+        // plan as if there are at most 50 moves left
+        let mtg = 50.min(movestogo.unwrap_or(50)) as i32;
+
+        let time_left = 0.max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
+
+        let opt = if movestogo.is_none() {
+            // one time control for the whole game
+            let scale = 0.04;
+            (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
+        } else {
+            // multiple time controls
+            let scale = 0.7;
+            (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
+        };
+
+        let max = (opt).min((0.8 * time_left as f32) as u64);
+        let max = max.min(time_remaining.unwrap() as u64 - 3 * overhead as u64);
+
+        SearchCop {
+            depth,
+            nodes,
+            adjust: true,
+            optimal_time: Some(Duration::from_millis(opt)),
+            max_time: Some(Duration::from_millis(max)),
+        }
+    }
+
+    pub fn time_up(&self, start_time: Instant) -> bool {
+        if let Some(time) = self.max_time {
+            return start_time.elapsed() >= time;
+        }
+        false
     }
 }
 
@@ -96,20 +142,17 @@ pub struct Search {
     start_time: Instant,
     stop: Arc<AtomicBool>,
     silent: bool,
+    effort: [[u64; Square::NUM]; Square::NUM],
 
     pub nodes: u64,
 }
 
 impl Search {
     pub fn new(position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) -> Self {
-        let (time_left, inc) = match position.side {
-            Color::White => (limits.wtime, limits.winc),
-            Color::Black => (limits.btime, limits.binc),
-        };
-
+        let side = position.side;
         Search {
             position,
-            limits: SearchCop::new(limits.depth, limits.nodes, time_left, inc, limits.movestogo),
+            limits: SearchCop::new(limits, side),
             tt,
             pv: [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize],
             pv_length: [0; MAX_PLY as usize],
@@ -119,6 +162,7 @@ impl Search {
             start_time: Instant::now(),
             stop,
             silent: false,
+            effort: [[0; Square::NUM]; Square::NUM],
             nodes: 0,
         }
     }
@@ -134,28 +178,46 @@ impl Search {
         let mut best_move = None;
         let mut score = 0;
 
-        let mut done_early = false;
+        let mut scale = 1.;
 
         for depth in 1..=max_depth {
             if self.done_thinking() {
-                done_early = true;
+                break;
+            }
+
+            score = self.aspiration(depth, score);
+
+            if self.done_thinking() {
                 break;
             }
 
             best_move = Some(self.pv[0][0]);
-            if depth > 1 {
-                self.uci_info(depth - 1, score);
+            self.uci_info(depth, score);
+
+            //TODO: Move this into search cop
+            if self.limits.adjust {
+                let bm_nodes = self.effort[self.pv[0][0].from()][self.pv[0][0].to()];
+                let bm_frac = bm_nodes as f32 / self.nodes as f32;
+                scale = (0.4 + 2. * (1. - bm_frac)).max(0.5);
             }
 
-            score = self.aspiration(depth, score);
+            // stop search if we're past optimum
+            if let Some(optimal_time) = self.limits.optimal_time {
+                if self.start_time.elapsed() >= optimal_time.mul_f32(scale) {
+                    break;
+                }
+            }
+
+            // stop search if we're more than 80% of max time
+            if let Some(max_time) = self.limits.max_time {
+                if self.start_time.elapsed() >= max_time.mul_f32(0.80) {
+                    break;
+                }
+            }
         }
 
-        if max_depth == 1 {
+        if best_move.is_none() {
             best_move = Some(self.pv[0][0]);
-        }
-
-        if !done_early {
-            self.uci_info(max_depth, score);
         }
 
         best_move
@@ -319,6 +381,9 @@ impl Search {
             move_count += 1;
             let capture = (self.position.occupancy & mv.to()).any();
 
+            // store node count for effort calculation
+            let before_nodes = self.nodes;
+
             self.position.make_move(mv);
             self.current_move[ply as usize] = mv;
 
@@ -356,6 +421,11 @@ impl Search {
 
             self.position.unmake_move(mv);
             self.current_move[ply as usize] = Move::NONE;
+
+            // store effort at root
+            if is_root {
+                self.effort[mv.from()][mv.to()] = self.nodes - before_nodes;
+            }
 
             if score > best {
                 best = score;
@@ -541,7 +611,7 @@ impl Search {
             return true;
         }
 
-        if self.nodes % 2048 == 0 && self.start_time.elapsed() >= self.limits.time {
+        if self.nodes % 2048 == 0 && self.limits.time_up(self.start_time) {
             self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             return true;
         }

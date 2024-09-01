@@ -32,7 +32,7 @@ impl Limits {
             binc: None,
             movestogo: None,
             movetime: None,
-            infinite: true,
+            infinite: false,
         }
     }
 
