@@ -129,6 +129,11 @@ impl SearchCop {
     }
 }
 
+pub struct SearchResult {
+    pub bestmove: Move,
+    pub score: i16,
+}
+
 pub struct Search {
     position: Position,
     limits: SearchCop,
@@ -167,15 +172,15 @@ impl Search {
         }
     }
 
-    pub fn think(&mut self) -> Move {
+    pub fn think(&mut self) -> SearchResult {
         self.start_time = Instant::now();
 
-        self.iterative_deepening().expect("No best move found")
+        self.iterative_deepening()
     }
 
-    fn iterative_deepening(&mut self) -> Option<Move> {
+    fn iterative_deepening(&mut self) -> SearchResult {
         let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
-        let mut best_move = None;
+        let mut bestmove = Move::NONE;
         let mut score = 0;
 
         let mut scale = 1.;
@@ -185,13 +190,14 @@ impl Search {
                 break;
             }
 
-            score = self.aspiration(depth, score);
+            let depth_score = self.aspiration(depth, score);
 
             if self.done_thinking() {
                 break;
             }
 
-            best_move = Some(self.pv[0][0]);
+            score = depth_score;
+            bestmove = self.pv[0][0];
             self.uci_info(depth, score);
 
             //TODO: Move this into search cop
@@ -216,11 +222,11 @@ impl Search {
             }
         }
 
-        if best_move.is_none() {
-            best_move = Some(self.pv[0][0]);
+        if bestmove == Move::NONE {
+            bestmove = self.pv[0][0];
         }
 
-        best_move
+        SearchResult { bestmove, score }
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {

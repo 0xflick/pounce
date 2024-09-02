@@ -389,8 +389,8 @@ impl Uci {
 
         thread::spawn(move || {
             let mut search = Search::new(position, limits, tt, stop.clone());
-            let best_move = search.think();
-            println!("bestmove {}", best_move);
+            let bestmove = search.think().bestmove;
+            println!("bestmove {}", bestmove);
         });
         Ok(())
     }

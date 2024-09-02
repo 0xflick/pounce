@@ -1,12 +1,7 @@
 use core::fmt;
 use std::fmt::Formatter;
 
-use crate::chess::{
-    Color,
-    File,
-    Rank,
-    Square,
-};
+use crate::chess::{Color, File, Rank, Square};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
 pub struct Bitboard(pub u64);
@@ -73,6 +68,11 @@ impl Bitboard {
         } else {
             self.north()
         }
+    }
+
+    #[inline]
+    pub fn flip(self) -> Bitboard {
+        Bitboard(self.0.swap_bytes())
     }
 
     pub const EMPTY: Bitboard = Bitboard(0);

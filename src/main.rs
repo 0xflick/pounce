@@ -1,15 +1,10 @@
-use anyhow::Result;
-use clap::{
-    Parser,
-    Subcommand,
-};
+use anyhow::{Ok, Result};
+use clap::{Parser, Subcommand};
 use pounce::{
     bench::bench,
+    datagen::playout,
     fen::Fen,
-    movegen::{
-        init_tables,
-        perft,
-    },
+    movegen::{init_tables, perft},
     search::init_reductions,
     uci::Uci,
     zobrist::init_zobrist,
@@ -27,6 +22,7 @@ struct Cli {
 enum Commands {
     Perft { depth: u8 },
     Bench,
+    Datagen,
 }
 
 fn main() -> Result<()> {
@@ -50,6 +46,11 @@ fn main() -> Result<()> {
         }
         Some(Commands::Bench) => {
             return bench(16);
+        }
+        Some(Commands::Datagen) => {
+            let Fen(pos) = Uci::STARTPOS.parse()?;
+            playout(&pos, 9);
+            return Ok(());
         }
 
         _ => {}

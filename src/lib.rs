@@ -6,6 +6,7 @@ mod util;
 pub mod bench;
 pub mod bitboard;
 pub mod chess;
+pub mod datagen;
 pub mod fen;
 pub mod movegen;
 pub mod moves;
