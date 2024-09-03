@@ -3,18 +3,31 @@ use std::{
     collections::HashMap,
     fmt::Display,
     ops::ControlFlow,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::AtomicBool,
+        Arc,
+    },
     thread,
 };
 
-use anyhow::{anyhow, Context, Result};
-use rustyline::{error::ReadlineError, DefaultEditor};
+use anyhow::{
+    anyhow,
+    Context,
+    Result,
+};
+use rustyline::{
+    error::ReadlineError,
+    DefaultEditor,
+};
 
 use crate::{
     bench::bench,
     fen::Fen,
     limits::Limits,
-    movegen::{perft, MoveGen},
+    movegen::{
+        perft,
+        MoveGen,
+    },
     moves::Move,
     position::Position,
     search::Search,

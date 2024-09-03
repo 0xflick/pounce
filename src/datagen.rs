@@ -1,26 +1,44 @@
-use rand::seq::SliceRandom;
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use std::{
+    fmt::{
+        self,
+        Debug,
+        Formatter,
+    },
+    fs::OpenOptions,
+    io::{
+        Read,
+        Write,
+    },
+    path::PathBuf,
+    sync::{
+        atomic::{
+            AtomicBool,
+            AtomicU32,
+        },
+        Arc,
+    },
+};
 
-use crate::eval;
+use rand::{
+    rngs::SmallRng,
+    seq::SliceRandom,
+    Rng,
+    SeedableRng,
+};
+
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, GameResult},
+    chess::{
+        Color,
+        GameResult,
+    },
+    eval,
     fen::Fen,
     limits::Limits,
     movegen::MoveGen,
     position::Position,
     search::Search,
     tt::Table,
-};
-use std::{
-    fmt::{self, Debug, Formatter},
-    fs::OpenOptions,
-    io::{Read, Write},
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, AtomicU32},
-        Arc,
-    },
 };
 
 static STOP: AtomicBool = AtomicBool::new(false);

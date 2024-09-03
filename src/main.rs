@@ -1,13 +1,25 @@
 use std::path::PathBuf;
 
-use anyhow::{Ok, Result};
-use clap::{Parser, Subcommand};
+use anyhow::{
+    Ok,
+    Result,
+};
+use clap::{
+    Parser,
+    Subcommand,
+};
 use pounce::{
     bench::bench,
-    datagen::{self, DatagenConfig},
+    datagen::{
+        self,
+        DatagenConfig,
+    },
     fen::Fen,
     limits::Limits,
-    movegen::{init_tables, perft},
+    movegen::{
+        init_tables,
+        perft,
+    },
     search::init_reductions,
     uci::Uci,
     zobrist::init_zobrist,
