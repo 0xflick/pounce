@@ -365,10 +365,8 @@ mod test {
         let Fen(flipped_pos) = Fen::parse(STARTPOS_FLIPPED).unwrap();
 
         let comp = CompressedPosition::new(&pos, 0, Wdl::BlackWin);
-        println!("{:x?}", comp.as_bytes());
         let comp_flipped = CompressedPosition::new(&flipped_pos, 0, Wdl::BlackWin);
 
-        panic!("");
         assert_eq!(comp, comp_flipped);
     }
 }
