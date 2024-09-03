@@ -1,14 +1,12 @@
 use crate::{
-    chess::{
-        Color,
-        Role,
-        Square,
-    },
+    chess::{Color, Role, Square},
     position::Position,
+    search,
 };
 
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
+pub const MATE_IN_PLY: i16 = MATE - search::MAX_PLY as i16;
 pub const DRAW: i16 = 0;
 
 impl Position {

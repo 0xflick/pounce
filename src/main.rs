@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use pounce::{
     bench::bench,
-    datagen::playout,
+    datagen::{self, DatagenConfig},
     fen::Fen,
+    limits::Limits,
     movegen::{init_tables, perft},
     search::init_reductions,
     uci::Uci,
@@ -20,9 +23,34 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Perft { depth: u8 },
-    Bench,
-    Datagen,
+    Perft {
+        depth: u8,
+    },
+    Bench {
+        #[arg(default_value_t = 7)]
+        depth: u8,
+    },
+    Datagen {
+        #[arg(short, long, default_value_t = 7)]
+        depth: u8,
+
+        #[arg(short, long)]
+        out_file: String,
+
+        #[arg(short, long)]
+        num_games: u32,
+
+        #[arg(short, long, default_value_t = 1)]
+        concurrency: u32,
+
+        #[arg(short, long, default_value_t = 16)]
+        table_size: u32,
+    },
+    Datamix {
+        in_files: Vec<PathBuf>,
+        #[arg(short, long, required = true)]
+        out_file: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -44,12 +72,33 @@ fn main() -> Result<()> {
             );
             return Ok(());
         }
-        Some(Commands::Bench) => {
-            return bench(16);
+        Some(Commands::Bench { depth }) => {
+            let limits = Limits {
+                depth: Some(*depth),
+                ..Default::default()
+            };
+            return bench(16, limits);
         }
-        Some(Commands::Datagen) => {
-            let Fen(pos) = Uci::STARTPOS.parse()?;
-            playout(&pos, 9);
+        Some(Commands::Datagen {
+            depth,
+            out_file,
+            num_games,
+            concurrency,
+            table_size,
+        }) => {
+            return datagen::datagen(DatagenConfig {
+                limits: Limits {
+                    depth: Some(*depth),
+                    ..Limits::new()
+                },
+                num_games: num_games.to_owned(),
+                tt_size_mb: *table_size,
+                concurrency: concurrency.to_owned(),
+                out_path: out_file.to_owned(),
+            });
+        }
+        Some(Commands::Datamix { in_files, out_file }) => {
+            datagen::shuffle_interleave(in_files, out_file);
             return Ok(());
         }
 

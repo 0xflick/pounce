@@ -24,7 +24,7 @@ pub struct SearchCop {
 }
 
 const MAX_DEPTH: u8 = 64;
-const MAX_PLY: u8 = 128;
+pub const MAX_PLY: u8 = 128;
 
 static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
 
@@ -369,6 +369,7 @@ impl Search {
         // Reverse futility pruning
         if !is_pv
             && (-31_000..31_000).contains(&beta)
+            && (-31_000..31_000).contains(&static_eval)
             && !self.position.in_check()
             && depth < 7
             && (static_eval - 300 * depth as i16) >= beta

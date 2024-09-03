@@ -370,7 +370,11 @@ impl Uci {
         }
 
         if !tokens.is_empty() && tokens[0].as_ref() == "bench" {
-            return bench(self.tt.size_mb() as u32);
+            let limits = Limits {
+                depth: Some(7),
+                ..Default::default()
+            };
+            return bench(self.tt.size_mb() as u32, limits);
         }
 
         let limits = if !tokens.is_empty() {

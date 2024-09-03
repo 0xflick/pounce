@@ -1,5 +1,4 @@
 mod eval;
-mod limits;
 mod movepicker;
 mod util;
 
@@ -8,6 +7,7 @@ pub mod bitboard;
 pub mod chess;
 pub mod datagen;
 pub mod fen;
+pub mod limits;
 pub mod movegen;
 pub mod moves;
 pub mod position;

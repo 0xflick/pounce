@@ -1,19 +1,11 @@
 use std::{
-    sync::{
-        atomic::AtomicBool,
-        Arc,
-    },
+    sync::{atomic::AtomicBool, Arc},
     time::Instant,
 };
 
 use anyhow::Result;
 
-use crate::{
-    fen::Fen,
-    limits::Limits,
-    search::Search,
-    tt::Table,
-};
+use crate::{fen::Fen, limits::Limits, search::Search, tt::Table};
 
 const BENCHMARK_FENS: [&str; 50] = [
     "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",
@@ -68,14 +60,10 @@ const BENCHMARK_FENS: [&str; 50] = [
     "2r2b2/5p2/5k2/p1r1pP2/P2pB3/1P3P2/K1P3R1/7R w - - 23 93",
 ];
 
-pub fn bench(hash_size_mb: u32) -> Result<()> {
+pub fn bench(hash_size_mb: u32, limits: Limits) -> Result<()> {
     let mut total_nodes = 0;
 
     let tt = Arc::new(Table::new_mb(hash_size_mb as usize));
-    let limits = Limits {
-        depth: Some(7),
-        ..Limits::default()
-    };
     let stop = Arc::new(AtomicBool::new(false));
 
     let start = Instant::now();

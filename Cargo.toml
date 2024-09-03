@@ -14,11 +14,16 @@ codegen-units = 1
 lto = true
 panic = "abort"
 
+[profile.profile]
+inherits = "release"
+debug = true
+
 [dependencies]
 anyhow = "1.0.86"
 arrayvec = "0.7.4"
 bitflags = "2.6.0"
 clap = { version = "4.5.15", features = ["derive"] }
+ctrlc = "3.4.5"
 rand = { version = "0.8.5", features = ["small_rng"] }
 rand_core = "0.6.4"
 rustyline = "14.0.0"
