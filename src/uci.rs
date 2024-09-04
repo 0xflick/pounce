@@ -3,18 +3,31 @@ use std::{
     collections::HashMap,
     fmt::Display,
     ops::ControlFlow,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::AtomicBool,
+        Arc,
+    },
     thread,
 };
 
-use anyhow::{anyhow, Context, Result};
-use rustyline::{error::ReadlineError, DefaultEditor};
+use anyhow::{
+    anyhow,
+    Context,
+    Result,
+};
+use rustyline::{
+    error::ReadlineError,
+    DefaultEditor,
+};
 
 use crate::{
     bench::bench,
     fen::Fen,
     limits::Limits,
-    movegen::{perft, MoveGen},
+    movegen::{
+        perft,
+        MoveGen,
+    },
     moves::Move,
     position::Position,
     search::Search,
@@ -370,7 +383,11 @@ impl Uci {
         }
 
         if !tokens.is_empty() && tokens[0].as_ref() == "bench" {
-            return bench(self.tt.size_mb() as u32);
+            let limits = Limits {
+                depth: Some(7),
+                ..Default::default()
+            };
+            return bench(self.tt.size_mb() as u32, limits);
         }
 
         let limits = if !tokens.is_empty() {
@@ -389,8 +406,8 @@ impl Uci {
 
         thread::spawn(move || {
             let mut search = Search::new(position, limits, tt, stop.clone());
-            let best_move = search.think();
-            println!("bestmove {}", best_move);
+            let bestmove = search.think().bestmove;
+            println!("bestmove {}", bestmove);
         });
         Ok(())
     }

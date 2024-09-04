@@ -1,18 +1,35 @@
 use std::{
-    sync::{atomic::AtomicBool, Arc},
-    time::{Duration, Instant},
+    sync::{
+        atomic::AtomicBool,
+        Arc,
+    },
+    time::{
+        Duration,
+        Instant,
+    },
 };
 
 use arrayvec::ArrayVec;
 
 use crate::{
-    chess::{Color, GameResult, Square},
+    chess::{
+        Color,
+        GameResult,
+        Square,
+    },
     eval,
     limits::Limits,
-    movepicker::{MovePicker, MAX_MOVES},
+    movepicker::{
+        MovePicker,
+        MAX_MOVES,
+    },
     moves::Move,
     position::Position,
-    tt::{Entry, EntryType, Table},
+    tt::{
+        Entry,
+        EntryType,
+        Table,
+    },
 };
 
 pub struct SearchCop {
@@ -24,7 +41,7 @@ pub struct SearchCop {
 }
 
 const MAX_DEPTH: u8 = 64;
-const MAX_PLY: u8 = 128;
+pub const MAX_PLY: u8 = 128;
 
 static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
 
@@ -129,6 +146,11 @@ impl SearchCop {
     }
 }
 
+pub struct SearchResult {
+    pub bestmove: Move,
+    pub score: i16,
+}
+
 pub struct Search {
     position: Position,
     limits: SearchCop,
@@ -167,15 +189,15 @@ impl Search {
         }
     }
 
-    pub fn think(&mut self) -> Move {
+    pub fn think(&mut self) -> SearchResult {
         self.start_time = Instant::now();
 
-        self.iterative_deepening().expect("No best move found")
+        self.iterative_deepening()
     }
 
-    fn iterative_deepening(&mut self) -> Option<Move> {
+    fn iterative_deepening(&mut self) -> SearchResult {
         let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
-        let mut best_move = None;
+        let mut bestmove = Move::NONE;
         let mut score = 0;
 
         let mut scale = 1.;
@@ -185,13 +207,14 @@ impl Search {
                 break;
             }
 
-            score = self.aspiration(depth, score);
+            let depth_score = self.aspiration(depth, score);
 
             if self.done_thinking() {
                 break;
             }
 
-            best_move = Some(self.pv[0][0]);
+            score = depth_score;
+            bestmove = self.pv[0][0];
             self.uci_info(depth, score);
 
             //TODO: Move this into search cop
@@ -216,11 +239,11 @@ impl Search {
             }
         }
 
-        if best_move.is_none() {
-            best_move = Some(self.pv[0][0]);
+        if bestmove == Move::NONE {
+            bestmove = self.pv[0][0];
         }
 
-        best_move
+        SearchResult { bestmove, score }
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
@@ -363,6 +386,7 @@ impl Search {
         // Reverse futility pruning
         if !is_pv
             && (-31_000..31_000).contains(&beta)
+            && (-31_000..31_000).contains(&static_eval)
             && !self.position.in_check()
             && depth < 7
             && (static_eval - 300 * depth as i16) >= beta

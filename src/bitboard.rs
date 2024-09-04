@@ -75,6 +75,11 @@ impl Bitboard {
         }
     }
 
+    #[inline]
+    pub fn flip(self) -> Bitboard {
+        Bitboard(self.0.swap_bytes())
+    }
+
     pub const EMPTY: Bitboard = Bitboard(0);
     pub const FULL: Bitboard = Bitboard(0xFFFFFFFFFFFFFFFF);
 }
