@@ -52,6 +52,8 @@ enum Commands {
         #[arg(long)]
         state: Option<PathBuf>,
     },
+
+    #[cfg(feature = "datagen")]
     Datamix {
         in_files: Vec<PathBuf>,
         #[arg(short, long, required = true)]
@@ -106,6 +108,7 @@ fn main() -> Result<()> {
                 state_path: state.clone(),
             });
         }
+        #[cfg(feature = "datagen")]
         Some(Commands::Datamix { in_files, out_file }) => {
             datagen::shuffle_interleave(in_files, out_file);
             return Ok(());
