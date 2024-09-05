@@ -5,6 +5,32 @@ edition = "2021"
 build = "build.rs"
 default-run = "pounce"
 
+[features]
+datagen = ["serde", "serde_json", "ctrlc"]
+
+[dependencies]
+anyhow = "1.0.86"
+arrayvec = "0.7.4"
+bitflags = "2.6.0"
+clap = { version = "4.5.15", features = ["derive"] }
+ctrlc = { version = "3.4.5", features = ["termination"], optional = true }
+rand = { version = "0.8.5", features = ["small_rng"] }
+rand_core = "0.6.4"
+rustyline = "14.0.0"
+serde = { version = "1.0.209", features = ["derive"], optional = true }
+serde_json = { version = "1.0.128", optional = true }
+thiserror = "1.0.63"
+
+[dev-dependencies]
+criterion = { version = "0.5.1", features = ["html_reports"] }
+
+[build-dependencies]
+vergen-git2 = { version = "1.0.0", features = ["build", "cargo"] }
+
+[[bench]]
+name = "pawn_movegen"
+harness = false
+
 [profile.release]
 opt-level = 3
 debug = false
@@ -17,24 +43,3 @@ panic = "abort"
 [profile.profile]
 inherits = "release"
 debug = true
-
-[dependencies]
-anyhow = "1.0.86"
-arrayvec = "0.7.4"
-bitflags = "2.6.0"
-clap = { version = "4.5.15", features = ["derive"] }
-ctrlc = "3.4.5"
-rand = { version = "0.8.5", features = ["small_rng"] }
-rand_core = "0.6.4"
-rustyline = "14.0.0"
-thiserror = "1.0.63"
-
-[dev-dependencies]
-criterion = { version = "0.5.1", features = ["html_reports"] }
-
-[build-dependencies]
-vergen-git2 = { version = "1.0.0", features = ["build", "cargo"] }
-
-[[bench]]
-name = "pawn_movegen"
-harness = false
