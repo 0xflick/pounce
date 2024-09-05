@@ -1,29 +1,19 @@
 use std::path::PathBuf;
 
-use anyhow::{
-    Ok,
-    Result,
-};
-use clap::{
-    Parser,
-    Subcommand,
-};
+use anyhow::{Ok, Result};
+use clap::{Parser, Subcommand};
 use pounce::{
     bench::bench,
-    datagen::{
-        self,
-        DatagenConfig,
-    },
     fen::Fen,
     limits::Limits,
-    movegen::{
-        init_tables,
-        perft,
-    },
+    movegen::{init_tables, perft},
     search::init_reductions,
     uci::Uci,
     zobrist::init_zobrist,
 };
+
+#[cfg(feature = "datagen")]
+use pounce::datagen::{self, DatagenConfig};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -42,12 +32,13 @@ enum Commands {
         #[arg(default_value_t = 7)]
         depth: u8,
     },
+    #[cfg(feature = "datagen")]
     Datagen {
         #[arg(short, long, default_value_t = 7)]
         depth: u8,
 
         #[arg(short, long)]
-        out_file: String,
+        out_path: PathBuf,
 
         #[arg(short, long)]
         num_games: u32,
@@ -57,7 +48,12 @@ enum Commands {
 
         #[arg(short, long, default_value_t = 16)]
         table_size: u32,
+
+        #[arg(long)]
+        state: Option<PathBuf>,
     },
+
+    #[cfg(feature = "datagen")]
     Datamix {
         in_files: Vec<PathBuf>,
         #[arg(short, long, required = true)]
@@ -91,12 +87,14 @@ fn main() -> Result<()> {
             };
             return bench(16, limits);
         }
+        #[cfg(feature = "datagen")]
         Some(Commands::Datagen {
             depth,
-            out_file,
+            out_path,
             num_games,
             concurrency,
             table_size,
+            state,
         }) => {
             return datagen::datagen(DatagenConfig {
                 limits: Limits {
@@ -106,9 +104,11 @@ fn main() -> Result<()> {
                 num_games: num_games.to_owned(),
                 tt_size_mb: *table_size,
                 concurrency: concurrency.to_owned(),
-                out_path: out_file.to_owned(),
+                out_path: out_path.to_owned(),
+                state_path: state.clone(),
             });
         }
+        #[cfg(feature = "datagen")]
         Some(Commands::Datamix { in_files, out_file }) => {
             datagen::shuffle_interleave(in_files, out_file);
             return Ok(());

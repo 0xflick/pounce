@@ -1,37 +1,21 @@
 use std::{
-    fmt::{
-        self,
-        Debug,
-        Formatter,
-    },
+    fmt::{self, Debug, Formatter},
     fs::OpenOptions,
-    io::{
-        Read,
-        Write,
-    },
+    io::{Read, Write},
     path::PathBuf,
     sync::{
-        atomic::{
-            AtomicBool,
-            AtomicU32,
-        },
+        atomic::{AtomicBool, AtomicU32},
         Arc,
     },
+    time::Duration,
 };
 
-use rand::{
-    rngs::SmallRng,
-    seq::SliceRandom,
-    Rng,
-    SeedableRng,
-};
+use rand::{rngs::SmallRng, seq::SliceRandom, Rng, SeedableRng};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{
-        Color,
-        GameResult,
-    },
+    chess::{Color, GameResult},
     eval,
     fen::Fen,
     limits::Limits,
@@ -46,6 +30,7 @@ static TOTAL_GAMES: AtomicU32 = AtomicU32::new(0);
 static WHITE_WINS: AtomicU32 = AtomicU32::new(0);
 static BLACK_WINS: AtomicU32 = AtomicU32::new(0);
 static DRAWS: AtomicU32 = AtomicU32::new(0);
+static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
 
 const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -57,13 +42,15 @@ pub enum Wdl {
     WhiteWin,
 }
 
+// 32 bytes (needs to be a multiple of 8 because that's the alignment of Bitboard)
 #[repr(C)]
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct CompressedPosition {
-    occ: Bitboard,
-    pieces: [u8; 16],
-    score: i16,
-    pub wdl: u8,
+    occ: Bitboard,    // 8 bytes
+    pieces: [u8; 16], // 16 bytes
+    score: i16,       // 2 bytes
+    pub wdl: u8,      // 1 byte
+    extra: [u8; 5],   // 5 bytes
 }
 
 impl CompressedPosition {
@@ -98,6 +85,7 @@ impl CompressedPosition {
             pieces,
             score,
             wdl,
+            extra: [0; 5],
         }
     }
 
@@ -126,43 +114,121 @@ impl Debug for CompressedPosition {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct DatagenConfig {
     pub limits: Limits,
     pub num_games: u32,
     pub tt_size_mb: u32,
     pub concurrency: u32,
-    pub out_path: String,
+    pub out_path: PathBuf,
+    pub state_path: Option<PathBuf>,
 }
 
-pub fn datagen(
-    DatagenConfig {
-        limits,
-        num_games,
-        tt_size_mb,
-        concurrency,
-        out_path,
-    }: DatagenConfig,
-) -> anyhow::Result<()> {
+pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     // start playout threads, share global state, print results
     ctrlc::set_handler(move || {
         STOP.store(true, std::sync::atomic::Ordering::Relaxed);
     })?;
 
-    let out_dir = PathBuf::from("data").join(out_path);
-    std::fs::create_dir_all(&out_dir)?;
-    println!("Output directory: {:?}", out_dir);
+    std::fs::create_dir_all(&config.out_path)?;
+    println!("Output directory: {:?}", config.out_path);
 
-    let games_per_thread = (num_games / concurrency).max(1);
-    println!("Games per thread: {}", games_per_thread);
+    if let Some(ref state_path) = config.state_path {
+        let state: DatagenState = match std::fs::read_to_string(state_path) {
+            Ok(s) => {
+                println!("Loaded state from {:?}", state_path);
+                let state: DatagenState = serde_json::from_str(&s)?;
+                if state.config != config {
+                    return Err(anyhow::anyhow!("Config mismatch"));
+                }
+                println!(
+                    "Found {} previous games.\nWhite wins: {}, Black wins: {}, Draws: {}",
+                    state.white_wins + state.black_wins + state.draws,
+                    state.white_wins,
+                    state.black_wins,
+                    state.draws
+                );
+                println!();
+
+                config = state.config.to_owned();
+
+                state
+            }
+            Err(_) => {
+                println!("Creating new state file at {:?}", state_path);
+                println!();
+                DatagenState {
+                    white_wins: 0,
+                    black_wins: 0,
+                    draws: 0,
+                    config: config.clone(),
+                }
+            }
+        };
+        WHITE_WINS.store(state.white_wins, std::sync::atomic::Ordering::Relaxed);
+        BLACK_WINS.store(state.black_wins, std::sync::atomic::Ordering::Relaxed);
+        DRAWS.store(state.draws, std::sync::atomic::Ordering::Relaxed);
+        TOTAL_GAMES.store(
+            state.white_wins + state.black_wins + state.draws,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        NUM_AT_RESTART.store(
+            state.white_wins + state.black_wins + state.draws,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
+
+    let games_remaing = config.num_games - TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+
+    println!("Starting datagen with the following configuration:");
+    println!("Limits: {:?}", config.limits);
+    println!("TT size: {} MB", config.tt_size_mb);
+    println!("Concurrency: {}", config.concurrency);
+    println!("Output path: {:?}", config.out_path);
+    if let Some(ref state_path) = config.state_path {
+        println!("State path: {:?}", state_path);
+    } else {
+        println!("State path: None");
+    }
+    println!("Total games: {}", config.num_games);
+    println!("Games remaining: {}", games_remaing);
+    println!();
 
     std::thread::scope(|s| {
-        for i in 0..concurrency {
-            let out_path = out_dir.join(format!("{}.dat", i));
-            s.spawn(move || {
-                thread_worker(limits, tt_size_mb, games_per_thread, out_path, i);
+        println!("Starting threads");
+        for i in 0..config.concurrency {
+            s.spawn({
+                let config = config.clone();
+                move || thread_worker(i, &config)
             });
         }
+        println!(
+            "{}/{} threads started",
+            config.concurrency, config.concurrency
+        );
+        println!();
+        println!("Let 'er rip!!!!");
     });
+
+    if STOP.load(std::sync::atomic::Ordering::Relaxed) {
+        println!("Stopped by user");
+    } else {
+        println!("All games finished");
+    }
+
+    if let Some(ref state_path) = config.state_path {
+        println!("Saving state to {:?}", config.state_path);
+        let state = DatagenState {
+            white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
+            black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
+            draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
+            config: config.clone(),
+        };
+        let state = serde_json::to_string(&state)?;
+        std::fs::write(state_path, state)?;
+    };
+
+    println!();
     println!(
         "Total: {}, White wins: {}, Black wins: {}, Draws: {}",
         TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed),
@@ -170,31 +236,71 @@ pub fn datagen(
         BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
         DRAWS.load(std::sync::atomic::Ordering::Relaxed)
     );
+    println!("See ya!");
     Ok(())
 }
 
-fn thread_worker(limits: Limits, tt_size_mb: u32, num_games: u32, out_path: PathBuf, id: u32) {
-    let tt = Arc::new(Table::new_mb(tt_size_mb as usize));
+#[derive(Debug, Serialize, Deserialize)]
+struct DatagenState {
+    white_wins: u32,
+    black_wins: u32,
+    draws: u32,
+
+    config: DatagenConfig,
+}
+
+fn thread_worker(id: u32, config: &DatagenConfig) -> anyhow::Result<()> {
+    let out_path = config.out_path.join(format!("{}.dat", id));
+    let tt = Arc::new(Table::new_mb(config.tt_size_mb as usize));
+    let start = std::time::Instant::now();
+    let mut last_log = std::time::Instant::now();
+
     let Fen(pos) = STARTPOS.parse().unwrap();
-    let mut completed = 0;
-    while completed < num_games {
+
+    while TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) < config.num_games {
         if STOP.load(std::sync::atomic::Ordering::Relaxed) {
-            return;
+            return Ok(());
         }
 
-        if id == 0 && completed % 10 == 0 {
+        if id == 0 && last_log.elapsed() > Duration::from_secs(60) {
+            last_log = std::time::Instant::now();
+
+            let white_wins = WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed);
+            let black_wins = BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed);
+            let draws = DRAWS.load(std::sync::atomic::Ordering::Relaxed);
+
+            let total = white_wins + black_wins + draws;
+            let num_since_restart =
+                total - NUM_AT_RESTART.load(std::sync::atomic::Ordering::Relaxed);
+
+            let games_per_min = (num_since_restart as f64)
+                / (std::time::Instant::now() - start).as_secs_f64()
+                * 60.0;
+            let est_remaining = (config.num_games - num_since_restart) as f64 / games_per_min;
+
+            println!();
             println!(
-                "Total: {}, White wins: {}, Black wins: {}, Draws: {}",
-                TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed),
-                WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                DRAWS.load(std::sync::atomic::Ordering::Relaxed)
+                "{}/{} Games, White wins: {}, Black wins: {}, Draws: {}",
+                total, config.num_games, white_wins, black_wins, draws
             );
+            println!("Games per minute: {:.1}", games_per_min);
+            println!("Estimated time remaining: {:.1} minutes", est_remaining);
+
+            if let Some(ref state_path) = config.state_path {
+                let state = DatagenState {
+                    white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
+                    black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
+                    draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
+                    config: config.to_owned(),
+                };
+
+                let state = serde_json::to_string(&state).unwrap();
+                std::fs::write(state_path, state)?;
+            };
         }
 
         tt.clear();
-        if let Ok(positions) = playout(&pos, limits, tt.clone()) {
-            completed += 1;
+        if let Ok(positions) = playout(&pos, config.limits, tt.clone()) {
             TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let mut file = OpenOptions::new()
                 .read(true)
@@ -204,11 +310,12 @@ fn thread_worker(limits: Limits, tt_size_mb: u32, num_games: u32, out_path: Path
                 .unwrap();
 
             for p in positions {
-                file.write_all(p.as_bytes())
-                    .expect("Failed to write to file");
+                file.write_all(p.as_bytes())?;
             }
         }
     }
+
+    Ok(())
 }
 
 fn playout(
@@ -334,6 +441,7 @@ pub fn shuffle_interleave(inputs: &[PathBuf], output: &PathBuf) {
                 pieces: [0; 16],
                 score: 0,
                 wdl: 0,
+                extra: [0; 5],
             };
 
             let bytes_read = reader.read(cp.as_mut_bytes()).unwrap();
