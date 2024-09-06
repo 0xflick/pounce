@@ -25,7 +25,7 @@ thiserror = "1.0.63"
 criterion = { version = "0.5.1", features = ["html_reports"] }
 
 [build-dependencies]
-vergen-git2 = { version = "1.0.0", features = ["build", "cargo"] }
+vergen-gitcl = { version = "1.0.0", features = ["build", "cargo"] }
 
 [[bench]]
 name = "pawn_movegen"
