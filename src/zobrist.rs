@@ -1,5 +1,3 @@
-use std::sync::OnceLock;
-
 use rand::{rngs::SmallRng, Rng};
 use rand_core::SeedableRng;
 
@@ -12,15 +10,23 @@ use crate::{
 // 8 for the en passant file, 16 for castling rights (don't
 // need that many, but it's easier to just index that way).
 const ZOBRIST_LEN: usize = Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + 16;
-static ZOBRIST_KEYS: OnceLock<[u64; ZOBRIST_LEN]> = OnceLock::new();
+static mut ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = [0; ZOBRIST_LEN];
 
 pub fn init_zobrist() {
-    ZOBRIST_KEYS.get_or_init(|| {
-        let mut keys = [0; ZOBRIST_LEN];
-        let mut rng = SmallRng::seed_from_u64(0xcafe);
-        rng.fill(keys.as_mut());
-        keys
-    });
+    let mut rng = SmallRng::seed_from_u64(0xcafe);
+    unsafe {
+        let ptr = &raw mut ZOBRIST_KEYS;
+        let ptr = ptr as *mut u64;
+
+        for i in 0..ZOBRIST_LEN {
+            *ptr.add(i) = rng.gen();
+        }
+    }
+}
+
+#[inline(always)]
+fn get_zobrist_key(idx: usize) -> u64 {
+    unsafe { ZOBRIST_KEYS[idx] }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,44 +40,24 @@ impl ZobristHash {
 
     pub fn toggle_piece(&mut self, square: Square, Piece { color, role }: Piece) {
         let piece_idx = role as usize + Role::NUM * color as usize;
-        self.0 ^= unsafe {
-            ZOBRIST_KEYS
-                .get()
-                .expect("Zobrist keys not initialized")
-                .get_unchecked(square as usize * Color::NUM * Role::NUM + piece_idx)
-        };
+        self.0 ^= get_zobrist_key(square as usize * Color::NUM * Role::NUM + piece_idx);
     }
 
     pub fn toggle_side(&mut self) {
-        self.0 ^= unsafe {
-            ZOBRIST_KEYS
-                .get()
-                .expect("Zobrist keys not initialized")
-                .get_unchecked(Square::NUM * Color::NUM * Role::NUM)
-        };
+        self.0 ^= get_zobrist_key(Square::NUM * Color::NUM * Role::NUM);
     }
 
     pub fn toggle_ep(&mut self, ep_square: Option<Square>) {
         if let Some(ep_square) = ep_square {
             let file = ep_square.file();
-            self.0 ^= unsafe {
-                ZOBRIST_KEYS
-                    .get()
-                    .expect("Zobrist keys not initialized")
-                    .get_unchecked(Square::NUM * Color::NUM * Role::NUM + 1 + file as usize)
-            };
+            self.0 ^= get_zobrist_key(Square::NUM * Color::NUM * Role::NUM + 1 + file as usize);
         }
     }
 
     pub fn toggle_castling(&mut self, castling: CastleRights) {
-        self.0 ^= unsafe {
-            ZOBRIST_KEYS
-                .get()
-                .expect("Zobrist keys not initialized")
-                .get_unchecked(
-                    Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + castling.bits() as usize,
-                )
-        };
+        self.0 ^= get_zobrist_key(
+            Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + castling.bits() as usize,
+        );
     }
 }
 
