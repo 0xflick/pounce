@@ -19,7 +19,7 @@ pub fn init_zobrist() {
         let ptr = ptr as *mut u64;
 
         for i in 0..ZOBRIST_LEN {
-            *ptr.add(i) = rng.gen();
+            *ptr.add(i) = rng.random();
         }
     }
 }

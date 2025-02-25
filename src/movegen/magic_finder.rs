@@ -74,7 +74,8 @@ impl Wizard {
         let mut used = vec![Bitboard(0); 1 << shift];
 
         for _ in 0..num_tries {
-            let magic = self.rng.gen::<u64>() & self.rng.gen::<u64>() & self.rng.gen::<u64>();
+            let magic =
+                self.rng.random::<u64>() & self.rng.random::<u64>() & self.rng.random::<u64>();
             used.fill(Bitboard(0));
 
             let mut fail = false;
