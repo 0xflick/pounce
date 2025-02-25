@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};

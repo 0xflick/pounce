@@ -51,6 +51,7 @@ impl Display for UciOption {
     }
 }
 
+#[derive(Default)]
 struct UciOptionSet {
     options: Vec<UciOption>,
     values: HashMap<String, String>,
@@ -116,14 +117,6 @@ impl UciOptionSet {
     }
 }
 
-impl Default for UciOptionSet {
-    fn default() -> Self {
-        UciOptionSet {
-            options: Vec::new(),
-            values: HashMap::new(),
-        }
-    }
-}
 
 impl Display for UciOptionSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
