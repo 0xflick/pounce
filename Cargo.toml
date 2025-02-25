@@ -1,7 +1,7 @@
 [package]
 name = "pounce"
 authors = ["alex flick"]
-edition = "2021"
+edition = "2024"
 build = "build.rs"
 default-run = "pounce"
 
