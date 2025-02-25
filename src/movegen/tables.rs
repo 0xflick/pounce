@@ -1,19 +1,9 @@
 use crate::{
     bitboard::Bitboard,
-    chess::{
-        Color,
-        File,
-        Square,
-    },
+    chess::{Color, File, Square},
     movegen::{
-        magic::{
-            BISHOP_ATTACKS,
-            ROOK_ATTACKS,
-        },
-        magic_gen::{
-            BISHOP_MAGICS,
-            ROOK_MAGICS,
-        },
+        magic::{BISHOP_ATTACKS, ROOK_ATTACKS},
+        magic_gen::{BISHOP_MAGICS, ROOK_MAGICS},
     },
 };
 
@@ -41,20 +31,12 @@ pub fn init_tables() {
 
 #[inline(always)]
 pub fn get_pawn_moves(sq: Square, color: Color) -> Bitboard {
-    unsafe {
-        *PAWN_MOVES
-            .get_unchecked(color as usize)
-            .get_unchecked(sq as usize)
-    }
+    unsafe { PAWN_MOVES[color][sq] }
 }
 
 #[inline(always)]
 pub fn get_pawn_attacks(sq: Square, color: Color) -> Bitboard {
-    unsafe {
-        *PAWN_ATTACKS
-            .get_unchecked(color as usize)
-            .get_unchecked(sq as usize)
-    }
+    unsafe { PAWN_ATTACKS[color][sq] }
 }
 
 #[inline(always)]
@@ -77,46 +59,42 @@ pub fn get_bishop_moves(sq: Square, occ: Bitboard) -> Bitboard {
 
 #[inline(always)]
 pub fn get_knight_moves(sq: Square) -> Bitboard {
-    unsafe { *KNIGHT_MOVES.get_unchecked(sq as usize) }
+    unsafe { KNIGHT_MOVES[sq] }
 }
 
 #[inline(always)]
 pub fn get_king_moves(sq: Square) -> Bitboard {
-    unsafe { *KING_MOVES.get_unchecked(sq as usize) }
+    unsafe { KING_MOVES[sq] }
 }
 
 #[inline(always)]
 pub fn between(from: Square, to: Square) -> Bitboard {
-    unsafe {
-        *BETWEEN
-            .get_unchecked(from as usize)
-            .get_unchecked(to as usize)
-    }
+    unsafe { BETWEEN[from][to] }
 }
 
 #[inline(always)]
 pub fn line(from: Square, to: Square) -> Bitboard {
-    unsafe { *LINE.get_unchecked(from as usize).get_unchecked(to as usize) }
+    unsafe { LINE[from][to] }
 }
 
 #[inline(always)]
 pub fn bishop_rays(sq: Square) -> Bitboard {
-    unsafe { *BISHOP_RAYS.get_unchecked(sq as usize) }
+    unsafe { BISHOP_RAYS[sq] }
 }
 
 #[inline(always)]
 pub fn rook_rays(sq: Square) -> Bitboard {
-    unsafe { *ROOK_RAYS.get_unchecked(sq as usize) }
+    unsafe { ROOK_RAYS[sq] }
 }
 
 #[inline(always)]
 pub fn get_kingside_castle_through_squares(color: Color) -> Bitboard {
-    unsafe { *KINGSIDE_CASTLE.get_unchecked(color as usize) }
+    unsafe { KINGSIDE_CASTLE[color] }
 }
 
 #[inline(always)]
 pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
-    unsafe { *QUEENSIDE_CASTLE.get_unchecked(color as usize) }
+    unsafe { QUEENSIDE_CASTLE[color] }
 }
 
 fn init_pawn_move_table() {

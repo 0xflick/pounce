@@ -1,18 +1,8 @@
-use rand::{
-    rngs::SmallRng,
-    Rng,
-};
+use rand::{rngs::SmallRng, Rng};
 use rand_core::SeedableRng;
 
 use crate::{
-    chess::{
-        CastleRights,
-        Color,
-        File,
-        Piece,
-        Role,
-        Square,
-    },
+    chess::{CastleRights, Color, File, Piece, Role, Square},
     position::Position,
 };
 
@@ -25,8 +15,18 @@ static mut ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = [0; ZOBRIST_LEN];
 pub fn init_zobrist() {
     let mut rng = SmallRng::seed_from_u64(0xcafe);
     unsafe {
-        rng.fill(ZOBRIST_KEYS.as_mut());
+        let ptr = &raw mut ZOBRIST_KEYS;
+        let ptr = ptr as *mut u64;
+
+        for i in 0..ZOBRIST_LEN {
+            *ptr.add(i) = rng.random();
+        }
     }
+}
+
+#[inline(always)]
+fn get_zobrist_key(idx: usize) -> u64 {
+    unsafe { ZOBRIST_KEYS[idx] }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,30 +40,24 @@ impl ZobristHash {
 
     pub fn toggle_piece(&mut self, square: Square, Piece { color, role }: Piece) {
         let piece_idx = role as usize + Role::NUM * color as usize;
-        self.0 ^= unsafe {
-            ZOBRIST_KEYS.get_unchecked(square as usize * Color::NUM * Role::NUM + piece_idx)
-        };
+        self.0 ^= get_zobrist_key(square as usize * Color::NUM * Role::NUM + piece_idx);
     }
 
     pub fn toggle_side(&mut self) {
-        self.0 ^= unsafe { ZOBRIST_KEYS.get_unchecked(Square::NUM * Color::NUM * Role::NUM) };
+        self.0 ^= get_zobrist_key(Square::NUM * Color::NUM * Role::NUM);
     }
 
     pub fn toggle_ep(&mut self, ep_square: Option<Square>) {
         if let Some(ep_square) = ep_square {
             let file = ep_square.file();
-            self.0 ^= unsafe {
-                ZOBRIST_KEYS.get_unchecked(Square::NUM * Color::NUM * Role::NUM + 1 + file as usize)
-            };
+            self.0 ^= get_zobrist_key(Square::NUM * Color::NUM * Role::NUM + 1 + file as usize);
         }
     }
 
     pub fn toggle_castling(&mut self, castling: CastleRights) {
-        self.0 ^= unsafe {
-            ZOBRIST_KEYS.get_unchecked(
-                Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + castling.bits() as usize,
-            )
-        };
+        self.0 ^= get_zobrist_key(
+            Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + castling.bits() as usize,
+        );
     }
 }
 
@@ -107,10 +101,7 @@ impl Position {
 
 #[cfg(test)]
 fn perft_zobrist(pos: &mut Position, depth: u8) {
-    use crate::{
-        fen::Fen,
-        movegen::MoveGen,
-    };
+    use crate::{fen::Fen, movegen::MoveGen};
 
     if depth == 0 {
         return;
@@ -149,11 +140,7 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 #[cfg(test)]
 mod test {
     use super::init_zobrist;
-    use crate::{
-        fen::Fen,
-        movegen::init_tables,
-        zobrist::perft_zobrist,
-    };
+    use crate::{fen::Fen, movegen::init_tables, zobrist::perft_zobrist};
 
     const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const KIWIPETE_FEN: &str =

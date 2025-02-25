@@ -1,19 +1,7 @@
-use magic::{
-    bishop_attacks,
-    occupancy_bb,
-    rook_attacks,
-};
-use rand::{
-    rngs::SmallRng,
-    Rng,
-    SeedableRng,
-};
+use magic::{bishop_attacks, occupancy_bb, rook_attacks};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 
-use crate::{
-    bitboard::Bitboard,
-    chess::Square,
-    movegen::*,
-};
+use crate::{bitboard::Bitboard, chess::Square, movegen::*};
 
 pub struct Wizard {
     rng: SmallRng,
@@ -27,7 +15,7 @@ pub struct Wizard {
 
 impl Wizard {
     pub fn new() -> Self {
-        let rng = SmallRng::from_entropy();
+        let rng = SmallRng::from_os_rng();
         let mut r_masks = [Bitboard(0); 64];
         let mut b_masks = [Bitboard(0); 64];
 
@@ -86,7 +74,8 @@ impl Wizard {
         let mut used = vec![Bitboard(0); 1 << shift];
 
         for _ in 0..num_tries {
-            let magic = self.rng.gen::<u64>() & self.rng.gen::<u64>() & self.rng.gen::<u64>();
+            let magic =
+                self.rng.random::<u64>() & self.rng.random::<u64>() & self.rng.random::<u64>();
             used.fill(Bitboard(0));
 
             let mut fail = false;
@@ -177,10 +166,7 @@ pub fn bishop_mask(sq: Square) -> Bitboard {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{
-        File,
-        Rank,
-    };
+    use crate::chess::{File, Rank};
     #[test]
     fn test_rook_mask_1() {
         let sq = Square::make(File::D, Rank::R4);
