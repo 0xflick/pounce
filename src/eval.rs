@@ -1,8 +1,10 @@
 use crate::{
     chess::{Color, Role, Square},
     position::Position,
-    search,
 };
+
+#[cfg(feature = "datagen")]
+use crate::search;
 
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;

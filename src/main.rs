@@ -1,4 +1,3 @@
-
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use pounce::{
@@ -12,7 +11,10 @@ use pounce::{
 };
 
 #[cfg(feature = "datagen")]
-use pounce::datagen::{self, DatagenConfig};
+use {
+    pounce::datagen::{self, DatagenConfig},
+    std::path::PathBuf,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
