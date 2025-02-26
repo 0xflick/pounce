@@ -3,18 +3,18 @@ use std::{
     collections::HashMap,
     fmt::Display,
     ops::ControlFlow,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
     thread,
 };
 
-use anyhow::{anyhow, Context, Result};
-use rustyline::{error::ReadlineError, DefaultEditor};
+use anyhow::{Context, Result, anyhow};
+use rustyline::{DefaultEditor, error::ReadlineError};
 
 use crate::{
     bench::bench,
     fen::Fen,
     limits::Limits,
-    movegen::{perft, MoveGen},
+    movegen::{MoveGen, perft},
     moves::Move,
     position::Position,
     search::Search,
@@ -116,7 +116,6 @@ impl UciOptionSet {
             .and_then(|val| val.parse::<i32>().ok())
     }
 }
-
 
 impl Display for UciOptionSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

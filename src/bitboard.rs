@@ -1,12 +1,7 @@
 use core::fmt;
 use std::fmt::Formatter;
 
-use crate::chess::{
-    Color,
-    File,
-    Rank,
-    Square,
-};
+use crate::chess::{Color, File, Rank, Square};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
 pub struct Bitboard(pub u64);

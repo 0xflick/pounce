@@ -1,15 +1,8 @@
-use types::{
-    BishopType,
-    QueenType,
-    RookType,
-};
+use types::{BishopType, QueenType, RookType};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{
-        Role,
-        Square,
-    },
+    chess::{Role, Square},
     movegen::*,
 };
 

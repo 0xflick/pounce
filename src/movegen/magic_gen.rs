@@ -1,7 +1,4 @@
-use crate::{
-    bitboard::Bitboard,
-    movegen::Magic,
-};
+use crate::{bitboard::Bitboard, movegen::Magic};
 
 #[rustfmt::skip]
 pub const BISHOP_MAGICS: [Magic; 64] = [

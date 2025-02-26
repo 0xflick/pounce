@@ -1,4 +1,4 @@
-use rand::{rngs::SmallRng, Rng};
+use rand::{Rng, rngs::SmallRng};
 use rand_core::SeedableRng;
 
 use crate::{

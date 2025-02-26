@@ -4,13 +4,13 @@ use std::{
     io::{Read, Write},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU32},
         Arc,
+        atomic::{AtomicBool, AtomicU32},
     },
     time::Duration,
 };
 
-use rand::{rngs::SmallRng, seq::SliceRandom, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, prelude::IndexedRandom, rngs::SmallRng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -324,14 +324,14 @@ fn playout(
     tt: Arc<Table>,
 ) -> anyhow::Result<Vec<CompressedPosition>> {
     let mut pos = startpos.clone();
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
 
     let stop = Arc::new(AtomicBool::new(false));
 
     let mut positions = Vec::new();
 
     // make random moves
-    let num_random = if rng.gen_bool(0.5) { 8 } else { 9 };
+    let num_random = if rng.random_bool(0.5) { 8 } else { 9 };
 
     for _ in 0..num_random {
         let moves = MoveGen::new(&pos).collect::<Vec<_>>();
@@ -429,7 +429,7 @@ fn playout(
 }
 
 pub fn shuffle_interleave(inputs: &[PathBuf], output: &PathBuf) {
-    let mut rng = SmallRng::from_entropy();
+    let mut rng = SmallRng::from_os_rng();
 
     let mut all_positions = Vec::new();
     for input in inputs.iter() {

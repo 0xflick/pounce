@@ -1,21 +1,11 @@
 use std::{
-    fmt::{
-        self,
-        Debug,
-        Display,
-        Formatter,
-    },
+    fmt::{self, Debug, Display, Formatter},
     str::FromStr,
 };
 
 use thiserror::Error;
 
-use crate::chess::{
-    ParseRoleError,
-    ParseSquareError,
-    Role,
-    Square,
-};
+use crate::chess::{ParseRoleError, ParseSquareError, Role, Square};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveType {
