@@ -1,22 +1,9 @@
-use std::{
-    hint::black_box,
-    time::Duration,
-};
+use std::{hint::black_box, time::Duration};
 
-use criterion::{
-    criterion_group,
-    criterion_main,
-    BatchSize,
-    Criterion,
-};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use pounce::{
     fen::Fen,
-    movegen::{
-        init_tables,
-        MoveList,
-        Mover,
-        PawnType,
-    },
+    movegen::{MoveList, Mover, PawnType, init_tables},
 };
 
 fn bench_pawn_movegen(c: &mut Criterion) {

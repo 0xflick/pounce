@@ -1,14 +1,6 @@
 use std::{
-    fmt::{
-        self,
-        Display,
-        Formatter,
-    },
-    ops::{
-        BitXor,
-        Index,
-        IndexMut,
-    },
+    fmt::{self, Display, Formatter},
+    ops::{BitXor, Index, IndexMut},
     str::FromStr,
 };
 
@@ -60,11 +52,7 @@ impl Rank {
     pub fn distance(&self, other: Rank) -> u8 {
         let a = *self as u8;
         let b = other as u8;
-        if a > b {
-            a - b
-        } else {
-            b - a
-        }
+        if a > b { a - b } else { b - a }
     }
 
     pub const fn from_char(c: char) -> Option<Rank> {
@@ -168,11 +156,7 @@ impl File {
     pub fn distance(&self, other: File) -> u8 {
         let a = *self as u8;
         let b = other as u8;
-        if a > b {
-            a - b
-        } else {
-            b - a
-        }
+        if a > b { a - b } else { b - a }
     }
 
     pub fn direction(&self, other: File) -> i8 {

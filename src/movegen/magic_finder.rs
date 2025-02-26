@@ -1,5 +1,5 @@
 use magic::{bishop_attacks, occupancy_bb, rook_attacks};
-use rand::{rngs::SmallRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 use crate::{bitboard::Bitboard, chess::Square, movegen::*};
 

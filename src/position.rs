@@ -2,31 +2,10 @@ use std::num::NonZeroU32;
 
 use crate::{
     bitboard::Bitboard,
-    chess::{
-        CastleRights,
-        Color,
-        File,
-        GameResult,
-        Piece,
-        Role,
-        Square,
-    },
-    eval::{
-        PSQT_EG,
-        PSQT_MG,
-    },
-    movegen::{
-        between,
-        bishop_rays,
-        get_knight_moves,
-        get_pawn_attacks,
-        rook_rays,
-        MoveGen,
-    },
-    moves::{
-        Move,
-        MoveType,
-    },
+    chess::{CastleRights, Color, File, GameResult, Piece, Role, Square},
+    eval::{PSQT_EG, PSQT_MG},
+    movegen::{MoveGen, between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
+    moves::{Move, MoveType},
     zobrist::ZobristHash,
 };
 
