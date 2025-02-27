@@ -1,5 +1,4 @@
 use std::{
-    process::abort,
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
@@ -375,7 +374,7 @@ impl Search {
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
             && !self.position.in_check()
             && depth < 7
-            && (static_eval.saturating_sub(300).saturating_mul(depth as i16)) >= beta
+            && static_eval.saturating_sub(300 * depth as i16) >= beta
         {
             return static_eval - 300 * depth as i16;
         }
@@ -647,7 +646,7 @@ impl Search {
             .collect::<Vec<String>>()
             .join(" ");
         if score.abs() > eval::MATE_IN_PLY {
-            let ply = score.signum() * ((eval::MATE - score.abs()) / 2 + 1);
+            let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
 
             println!(
                 "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
