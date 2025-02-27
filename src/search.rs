@@ -1,4 +1,5 @@
 use std::{
+    process::abort,
     sync::{Arc, atomic::AtomicBool},
     time::{Duration, Instant},
 };
@@ -245,15 +246,15 @@ impl Search {
             let score = self.search(depth, alpha, beta, 0, true, true);
 
             if score <= alpha {
-                beta = (alpha + beta) / 2;
-                alpha = (-eval::INFINITY).max(alpha - delta);
+                beta = alpha + (beta - alpha) / 2;
+                alpha = (-eval::INFINITY).max(alpha.saturating_sub(delta));
             } else if score >= beta {
-                beta = (eval::INFINITY).min(beta + delta);
+                beta = (eval::INFINITY).min(beta.saturating_add(delta));
             } else {
                 return score;
             }
 
-            delta += delta / 2;
+            delta = delta.saturating_add(delta / 2);
             if delta > 1000 {
                 alpha = -eval::INFINITY;
                 beta = eval::INFINITY;
@@ -314,22 +315,24 @@ impl Search {
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            tt_eval = Some(entry.score);
+            let score = denormalize_score(entry.score, ply);
+            tt_eval = Some(score);
             if entry.depth as i32 >= depth
                 && !is_pv
                 && self.current_move[ply as usize - 1] != Move::NULL
+                && self.position.halfmove_clock < 80
             {
                 match entry.score_type {
                     // Exact score
-                    EntryType::Exact => return entry.score,
+                    EntryType::Exact => return score,
                     // Lower bound
-                    EntryType::LowerBound => alpha = alpha.max(entry.score),
+                    EntryType::LowerBound => alpha = alpha.max(score),
                     // Upper bound
-                    EntryType::UpperBound => beta = beta.min(entry.score),
+                    EntryType::UpperBound => beta = beta.min(score),
                     EntryType::None => {}
                 }
                 if alpha >= beta {
-                    return entry.score;
+                    return score;
                 }
             }
         }
@@ -359,7 +362,7 @@ impl Search {
             self.current_move[ply as usize] = Move::NONE;
 
             if null_score >= beta {
-                if null_score >= (eval::MATE - MAX_PLY as i16) {
+                if null_score >= (eval::MATE_IN_PLY) {
                     return beta;
                 }
                 return null_score;
@@ -368,11 +371,11 @@ impl Search {
 
         // Reverse futility pruning
         if !is_pv
-            && (-31_000..31_000).contains(&beta)
-            && (-31_000..31_000).contains(&static_eval)
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
             && !self.position.in_check()
             && depth < 7
-            && (static_eval - 300 * depth as i16) >= beta
+            && (static_eval.saturating_sub(300).saturating_mul(depth as i16)) >= beta
         {
             return static_eval - 300 * depth as i16;
         }
@@ -485,10 +488,11 @@ impl Search {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            if normalize_score(best, ply).abs() >= eval::INFINITY {}
             self.tt.set(Entry::new(
                 self.position.key,
                 depth as u8,
-                best,
+                normalize_score(best, ply),
                 entry_type,
                 best_move,
             ));
@@ -520,16 +524,17 @@ impl Search {
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
             if !is_pv {
+                let score = denormalize_score(entry.score, MAX_PLY);
                 match entry.score_type {
-                    EntryType::Exact => return entry.score,
+                    EntryType::Exact => return score,
                     EntryType::LowerBound => {
-                        if entry.score >= beta {
-                            return entry.score;
+                        if score >= beta {
+                            return score;
                         }
                     }
                     EntryType::UpperBound => {
-                        if entry.score <= alpha {
-                            return entry.score;
+                        if score <= alpha {
+                            return score;
                         }
                     }
                     _ => {}
@@ -587,7 +592,7 @@ impl Search {
             self.tt.set(Entry::new(
                 self.position.key,
                 0,
-                best,
+                normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
             ));
@@ -641,8 +646,8 @@ impl Search {
             .map(|i| self.pv[0][i as usize].to_string())
             .collect::<Vec<String>>()
             .join(" ");
-        if score.abs() > eval::MATE - MAX_PLY as i16 {
-            let ply = score.signum() * (eval::MATE - score.abs()) / 2;
+        if score.abs() > eval::MATE_IN_PLY {
+            let ply = score.signum() * ((eval::MATE - score.abs()) / 2 + 1);
 
             println!(
                 "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
@@ -666,5 +671,25 @@ impl Search {
                 pv
             );
         }
+    }
+}
+
+fn normalize_score(score: i16, ply: u8) -> i16 {
+    if score > eval::MATE_IN_PLY {
+        score + ply as i16
+    } else if score < -eval::MATE_IN_PLY {
+        score - ply as i16
+    } else {
+        score
+    }
+}
+
+fn denormalize_score(score: i16, ply: u8) -> i16 {
+    if score >= eval::MATE_IN_PLY {
+        score - ply as i16
+    } else if score <= -eval::MATE_IN_PLY {
+        score + ply as i16
+    } else {
+        score
     }
 }

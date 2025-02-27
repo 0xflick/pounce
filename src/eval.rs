@@ -1,17 +1,13 @@
 use crate::{
     chess::{Color, Role, Square},
     position::Position,
+    search,
 };
-
-#[cfg(feature = "datagen")]
-use crate::search;
 
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
-pub const DRAW: i16 = 0;
-
-#[cfg(feature = "datagen")]
 pub const MATE_IN_PLY: i16 = MATE - search::MAX_PLY as i16;
+pub const DRAW: i16 = 0;
 
 impl Position {
     pub fn eval(&self) -> i16 {
