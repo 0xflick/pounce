@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::NonZeroU16;
 
 use crate::{
     bitboard::Bitboard,
@@ -13,7 +13,7 @@ use crate::{
 pub struct State {
     pub castling: CastleRights,
     pub ep_square: Option<Square>,
-    pub halfmove_clock: u16,
+    pub halfmove_clock: u8,
     pub captured: Option<Piece>,
     pub checkers: Bitboard,
     pub pinned: Bitboard,
@@ -35,8 +35,8 @@ pub struct Position {
 
     pub side: Color,
 
-    pub halfmove_clock: u16,
-    pub fullmove_number: NonZeroU32,
+    pub halfmove_clock: u8,
+    pub fullmove_number: NonZeroU16,
 
     pub key: ZobristHash,
 
@@ -59,7 +59,7 @@ impl Position {
             ep_square: None,
             side: Color::White,
             halfmove_clock: 0,
-            fullmove_number: NonZeroU32::new(1).unwrap(),
+            fullmove_number: NonZeroU16::new(1).unwrap(),
             key: ZobristHash::new(),
             history: Vec::new(),
             psqt_mg: 0,
@@ -361,7 +361,9 @@ impl Position {
         self.update_checks_and_pins(mv, Some(mv.promotion().unwrap_or(piece.role)));
 
         self.history.push(state);
-        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
+        if self.side == Color::Black {
+            self.fullmove_number = self.fullmove_number.saturating_add(1);
+        }
 
         self.side = self.side.opponent();
         self.key.toggle_side();
@@ -389,7 +391,9 @@ impl Position {
         }
 
         self.halfmove_clock = past.halfmove_clock;
-        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
+        if self.side == Color::Black {
+            self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
+        }
         self.pinned = past.pinned;
         self.checkers = past.checkers;
 
@@ -467,7 +471,9 @@ impl Position {
         self.key.toggle_ep(self.ep_square);
 
         self.history.push(state);
-        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() + 1).unwrap();
+        if self.side == Color::Black {
+            self.fullmove_number = self.fullmove_number.saturating_add(1);
+        }
 
         self.key.toggle_side();
         self.side = self.side.opponent();
@@ -487,7 +493,9 @@ impl Position {
         self.key.toggle_ep(self.ep_square);
 
         self.halfmove_clock = past.halfmove_clock;
-        self.fullmove_number = NonZeroU32::new(self.fullmove_number.get() - 1).unwrap();
+        if self.side == Color::Black {
+            self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
+        }
         self.pinned = past.pinned;
         self.checkers = past.checkers;
     }

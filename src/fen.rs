@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Display, Formatter},
-    num::NonZeroU32,
+    num::NonZeroU16,
     str::FromStr,
 };
 
@@ -137,13 +137,13 @@ fn parse_ep_part(ep_str: &str) -> Result<Option<Square>> {
     }
 }
 
-fn parse_halfmove_clock_part(halfmove_clock_str: &str) -> Result<u16> {
+fn parse_halfmove_clock_part(halfmove_clock_str: &str) -> Result<u8> {
     halfmove_clock_str
         .parse()
         .map_err(ParseFenError::InvalidHalfmoveClock)
 }
 
-fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU32> {
+fn parse_fullmove_number_part(fullmove_number_str: &str) -> Result<NonZeroU16> {
     fullmove_number_str
         .parse()
         .map_err(ParseFenError::InvalidFullmoveNumber)
@@ -184,7 +184,7 @@ impl Position {
             self.ep_square
                 .map_or_else(|| "-".to_string(), |s| s.to_string()),
             self.halfmove_clock,
-            self.fullmove_number
+            self.fullmove_number.get(),
         )
     }
 }
@@ -234,6 +234,6 @@ mod test {
         assert_eq!(position.castling, CastleRights::all());
         assert_eq!(position.ep_square, None);
         assert_eq!(position.halfmove_clock, 0);
-        assert_eq!(position.fullmove_number, NonZeroU32::new(1).unwrap());
+        assert_eq!(position.fullmove_number, NonZeroU16::new(1).unwrap());
     }
 }

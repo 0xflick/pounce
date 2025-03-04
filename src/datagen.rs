@@ -1,25 +1,27 @@
 use std::{
-    fmt::{self, Debug, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     fs::OpenOptions,
-    io::{Read, Write},
+    io::BufWriter,
+    num::NonZeroU16,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU32},
     },
     time::Duration,
 };
 
-use rand::{Rng, SeedableRng, prelude::IndexedRandom, rngs::SmallRng, seq::SliceRandom};
+use rand::{Rng, SeedableRng, prelude::IndexedRandom, rngs::SmallRng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     bitboard::Bitboard,
-    chess::{Color, GameResult},
+    chess::{CastleRights, Color, GameResult, Piece, Role, Square},
     eval,
     fen::Fen,
     limits::Limits,
     movegen::MoveGen,
+    moves::Move,
     position::Position,
     search::Search,
     tt::Table,
@@ -34,58 +36,149 @@ static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
 
 const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[repr(transparent)]
+struct U4Array32([u8; 16]);
+
+impl U4Array32 {
+    pub const fn get(&self, i: usize) -> u8 {
+        (self.0[i / 2] >> (4 * (i % 2))) & 0b1111
+    }
+
+    pub const fn set(&mut self, i: usize, val: u8) {
+        debug_assert!(val < 0x10);
+        let shift = 4 * (i % 2);
+        let idx = i / 2;
+        self.0[idx] &= !(0b1111 << shift);
+        self.0[idx] |= val << shift;
+    }
+}
+
+impl Debug for U4Array32 {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut dbg_list = f.debug_list();
+        for i in 0..32 {
+            dbg_list.entry(&format!("{:#02x}", self.get(i)));
+        }
+        dbg_list.finish()
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Wdl {
     BlackWin,
     Draw,
     WhiteWin,
+    Unknown,
+}
+
+impl Display for Wdl {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Wdl::Unknown => write!(f, "Unknown"),
+            Wdl::BlackWin => write!(f, "0-1"),
+            Wdl::Draw => write!(f, "1/2-1/2"),
+            Wdl::WhiteWin => write!(f, "1-0"),
+        }
+    }
+}
+
+impl From<u8> for Wdl {
+    fn from(val: u8) -> Self {
+        match val {
+            0 => Wdl::BlackWin,
+            1 => Wdl::Draw,
+            2 => Wdl::WhiteWin,
+            _ => Wdl::Unknown,
+        }
+    }
 }
 
 // 32 bytes (needs to be a multiple of 8 because that's the alignment of Bitboard)
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
 pub struct CompressedPosition {
-    occ: Bitboard,    // 8 bytes
-    pieces: [u8; 16], // 16 bytes
-    score: i16,       // 2 bytes
-    pub wdl: u8,      // 1 byte
-    extra: [u8; 5],   // 5 bytes
+    occ: Bitboard,      // 8 bytes
+    pieces: U4Array32,  // 16 bytes
+    score: i16,         // 2 bytes
+    halfmove_clock: u8, // 1 byte
+    pub wdl: u8,        // 1 byte
+    ply: u16,           // 2 byte
+    stm_ep_square: u8,  // 1 byte
+    castling: u8,       // 1 bytes
 }
 
 impl CompressedPosition {
     pub fn new(pos: &Position, score: i16, wdl: Wdl) -> Self {
-        let mut occ = pos.occupancy;
-        let mailbox = pos.mailbox;
-        let mut wdl = wdl as u8;
+        let mut pieces = U4Array32::default();
+        for (idx, sq) in pos.occupancy.enumerate() {
+            let pc = pos.mailbox[sq].unwrap();
+            let bit_pc = ((pc.color as u8) << 3) | (pc.role as u8);
 
-        // if side to move is black, we want to flip the orientation of the board
-        if pos.side == Color::Black {
-            occ = occ.flip();
-            wdl = 2 - wdl;
+            pieces.set(idx, bit_pc);
         }
 
-        let mut pieces = [0; 16];
-        for (idx, mut sq) in occ.enumerate() {
-            if pos.side == Color::Black {
-                sq = sq ^ 56;
+        Self {
+            occ: pos.occupancy,
+            pieces,
+            score,
+            wdl: wdl as u8,
+            stm_ep_square: pos.ep_square.map_or(u8::MAX, |sq| sq as u8),
+            halfmove_clock: pos.halfmove_clock,
+            ply: (pos.fullmove_number.get() - 1) * 2 + pos.side as u16,
+            castling: pos.castling.bits(),
+        }
+    }
+
+    pub fn flip(&self) -> Self {
+        let mut mailbox: [Option<Piece>; 64] = [None; 64];
+
+        for (idx, sq) in self.occ.enumerate() {
+            let pc = self.pieces.get(idx);
+
+            let color = if pc >> 3 == 0 {
+                Color::White
+            } else {
+                Color::Black
             };
 
-            let pc = mailbox[sq].unwrap();
-            let bit_pc = (((pos.side != pc.color) as u8) << 3) | (pc.role as u8);
-
-            let shift = 4 * (idx % 2);
-            let idx = idx / 2;
-
-            pieces[idx] |= bit_pc << shift;
+            mailbox[(sq) as usize] = Some(Piece {
+                color,
+                role: unsafe { std::mem::transmute::<u8, Role>(pc & 0b111) },
+            });
         }
+
+        let occ = self.occ.flip();
+        let mut pieces = U4Array32::default();
+        for (idx, sq) in occ.enumerate() {
+            let pc = mailbox[sq ^ 56].unwrap();
+            let bit_pc = ((1 - pc.color as u8) << 3) | (pc.role as u8);
+
+            pieces.set(idx, bit_pc);
+        }
+
+        let ep_square = if self.stm_ep_square == u8::MAX {
+            u8::MAX
+        } else {
+            self.stm_ep_square ^ 56
+        };
+
+        let new_ply = if self.ply % 2 == 0 {
+            self.ply + 1
+        } else {
+            self.ply - 1
+        };
 
         Self {
             occ,
             pieces,
-            score,
-            wdl,
-            extra: [0; 5],
+            score: -self.score,
+            wdl: 2 - self.wdl,
+            stm_ep_square: ep_square,
+            halfmove_clock: self.halfmove_clock,
+            ply: new_ply,
+            castling: self.castling,
         }
     }
 
@@ -104,13 +197,178 @@ impl CompressedPosition {
 
 impl Debug for CompressedPosition {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "occ:")?;
-        writeln!(f, "{:?}", self.occ)?;
-        writeln!(f, "pieces:")?;
-        for p in self.pieces {
-            writeln!(f, "{:#010b}", p)?;
+        f.debug_struct("CompressedPosition")
+            .field("occ", &self.occ)
+            .field("pieces", &self.pieces)
+            .field("score", &self.score)
+            .field("wdl", &Wdl::from(self.wdl))
+            .field("halfmove_clock", &self.halfmove_clock)
+            .field("ply", &self.ply)
+            .field(
+                "stm_ep_square",
+                &if self.stm_ep_square == u8::MAX {
+                    "None".to_string()
+                } else {
+                    format!("{}", Square::from(self.stm_ep_square))
+                },
+            )
+            .field("castling", &format!("{:04b}", self.castling))
+            .finish()
+    }
+}
+
+// 4 bytes
+#[repr(C)]
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
+pub struct CompressedMove {
+    mv: Move,   // 2 bytes
+    score: i16, // 2 bytes
+}
+
+impl CompressedMove {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of::<Self>())
         }
-        writeln!(f, "score: {}, wdl: {}", self.score, self.wdl)
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self as *mut _ as *mut u8, std::mem::size_of::<Self>())
+        }
+    }
+}
+
+const NULL_TERMINATOR: [u8; 4] = [0; 4];
+
+pub struct CompressedGame {
+    initial: CompressedPosition,
+    moves: Vec<CompressedMove>,
+}
+
+impl CompressedGame {
+    pub fn new(initial: Position) -> Self {
+        Self {
+            initial: CompressedPosition::new(&initial, 0, Wdl::Unknown),
+            moves: Vec::new(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.moves.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.moves.is_empty()
+    }
+
+    pub fn push_move(&mut self, mv: Move, score: i16) {
+        self.moves.push(CompressedMove { mv, score });
+    }
+
+    pub fn set_win(&mut self, wdl: Wdl) {
+        self.initial.wdl = wdl as u8;
+    }
+
+    pub fn serialize_into(&self, file: &mut impl std::io::Write) -> std::io::Result<()> {
+        file.write_all(self.initial.as_bytes())?;
+        for m in &self.moves {
+            file.write_all(m.as_bytes())?;
+        }
+        file.write_all(&NULL_TERMINATOR)?;
+        Ok(())
+    }
+
+    pub fn deserialize_from(file: &mut impl std::io::Read) -> std::io::Result<Self> {
+        let mut initial = CompressedPosition::default();
+        file.read_exact(initial.as_mut_bytes())?;
+
+        let mut moves = Vec::new();
+        loop {
+            let mut unparsed_move = [0; std::mem::size_of::<CompressedMove>()];
+            file.read_exact(&mut unparsed_move)?;
+            if unparsed_move == NULL_TERMINATOR {
+                break;
+            }
+            let mut m = CompressedMove::default();
+            m.as_mut_bytes().copy_from_slice(&unparsed_move);
+            moves.push(m);
+        }
+
+        Ok(Self { initial, moves })
+    }
+}
+
+impl From<CompressedPosition> for Position {
+    fn from(value: CompressedPosition) -> Self {
+        let mut pos = Self::default();
+
+        for (idx, sq) in value.occ.enumerate() {
+            let pc = value.pieces.get(idx);
+
+            let color = if pc >> 3 == 0 {
+                Color::White
+            } else {
+                Color::Black
+            };
+
+            let role = unsafe { std::mem::transmute::<u8, Role>(pc & 0b111) };
+
+            pos.set(sq, Piece { color, role });
+        }
+
+        pos.fullmove_number = NonZeroU16::new(value.ply / 2 + 1).unwrap();
+        pos.ep_square = match value.stm_ep_square {
+            u8::MAX => None,
+            sq => Some(Square::from(sq)),
+        };
+        pos.halfmove_clock = value.halfmove_clock;
+        pos.side = if value.ply % 2 == 0 {
+            Color::White
+        } else {
+            Color::Black
+        };
+        pos.refresh_checks_and_pins();
+        pos.key = pos.zobrist_hash();
+        pos.castling = CastleRights::from_bits_retain(value.castling);
+
+        pos
+    }
+}
+
+impl Display for CompressedGame {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut pos: Position = self.initial.into();
+        let header = format!(
+            r#"[Event "game"]
+[Site "NA"]
+[Date "NA"]
+[White "pounce"]
+[Black "pounce"]
+[Result "{}"]
+[FEN "{}"]"#,
+            Wdl::from(self.initial.wdl),
+            pos.to_fen(),
+        );
+        writeln!(f, "{}", header)?;
+
+        let mut move_count = 0;
+        for m in &self.moves {
+            if move_count % 12 == 0 && pos.side == Color::White {
+                writeln!(f)?;
+            }
+            if pos.side == Color::White {
+                write!(f, "{}. ", pos.fullmove_number.get())?;
+            } else {
+                move_count += 1;
+            }
+
+            let san = pos.san(m.mv).unwrap();
+            write!(f, "{} {{{:+.2}}} ", san, m.score as f64 / 100.0)?;
+            pos.make_move(m.mv);
+        }
+        write!(f, "{}\n\n", Wdl::from(self.initial.wdl))?;
+        Ok(())
     }
 }
 
@@ -130,8 +388,10 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         STOP.store(true, std::sync::atomic::Ordering::Relaxed);
     })?;
 
-    std::fs::create_dir_all(&config.out_path)?;
-    println!("Output directory: {:?}", config.out_path);
+    if let Some(parent) = config.out_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    println!("Output location: {:?}", config.out_path);
 
     if let Some(ref state_path) = config.state_path {
         let state: DatagenState = match std::fs::read_to_string(state_path) {
@@ -193,13 +453,22 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     println!("Total games: {}", config.num_games);
     println!("Games remaining: {}", games_remaing);
     println!();
+    let file = OpenOptions::new()
+        .read(true)
+        .create(true)
+        .append(true)
+        .open(&config.out_path)
+        .unwrap();
 
     std::thread::scope(|s| {
         println!("Starting threads");
+        let buf_writer = BufWriter::new(file);
+        let shared_writer = Arc::new(Mutex::new(buf_writer));
         for i in 0..config.concurrency {
             s.spawn({
                 let config = config.clone();
-                move || thread_worker(i, &config)
+                let writer_clone = shared_writer.clone();
+                move || thread_worker(i, &config, writer_clone)
             });
         }
         println!(
@@ -249,8 +518,11 @@ struct DatagenState {
     config: DatagenConfig,
 }
 
-fn thread_worker(id: u32, config: &DatagenConfig) -> anyhow::Result<()> {
-    let out_path = config.out_path.join(format!("{}.dat", id));
+fn thread_worker(
+    id: u32,
+    config: &DatagenConfig,
+    writer: Arc<Mutex<impl std::io::Write>>,
+) -> anyhow::Result<()> {
     let tt = Arc::new(Table::new_mb(config.tt_size_mb as usize));
     let start = std::time::Instant::now();
     let mut last_log = std::time::Instant::now();
@@ -300,45 +572,32 @@ fn thread_worker(id: u32, config: &DatagenConfig) -> anyhow::Result<()> {
         }
 
         tt.clear();
-        if let Ok(positions) = playout(&pos, config.limits, tt.clone()) {
+        if let Ok(game) = playout(&pos, config.limits, tt.clone()) {
             TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let mut file = OpenOptions::new()
-                .read(true)
-                .create(true)
-                .append(true)
-                .open(&out_path)
-                .unwrap();
 
-            for p in positions {
-                file.write_all(p.as_bytes())?;
-            }
+            let mut writer_guard = writer.lock().unwrap();
+            game.serialize_into(writer_guard.by_ref())?;
         }
     }
 
     Ok(())
 }
 
-fn playout(
-    startpos: &Position,
-    limits: Limits,
-    tt: Arc<Table>,
-) -> anyhow::Result<Vec<CompressedPosition>> {
+fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Result<CompressedGame> {
     let mut pos = startpos.clone();
     let mut rng = SmallRng::from_os_rng();
 
     let stop = Arc::new(AtomicBool::new(false));
 
-    let mut positions = Vec::new();
-
     // make random moves
     let num_random = if rng.random_bool(0.5) { 8 } else { 9 };
 
     for _ in 0..num_random {
-        let moves = MoveGen::new(&pos).collect::<Vec<_>>();
-        if moves.is_empty() {
+        let m = MoveGen::new(&pos).collect::<Vec<_>>();
+        if m.is_empty() {
             return Err(anyhow::anyhow!("No moves"));
         }
-        let mv = *moves.choose(&mut rng).unwrap();
+        let mv = *m.choose(&mut rng).unwrap();
         pos.make_move(mv);
     }
     let startpos = pos.clone();
@@ -363,6 +622,10 @@ fn playout(
     if res.score.abs() > 1_500 {
         return Err(anyhow::anyhow!("Extreme score"));
     }
+
+    let mut game = CompressedGame::new(startpos);
+
+    let mut drawish_count = 0;
 
     let result = loop {
         if STOP.load(std::sync::atomic::Ordering::Relaxed) {
@@ -389,6 +652,10 @@ fn playout(
             None => {}
         }
 
+        if pos.is_repetition(2) {
+            break Wdl::Draw;
+        }
+
         let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone());
         search.set_silent(true);
         let res = search.think();
@@ -405,76 +672,43 @@ fn playout(
                 Color::Black => break Wdl::BlackWin,
                 Color::White => break Wdl::WhiteWin,
             }
+        } else if res.score.abs() < 10 {
+            drawish_count += 1;
+            if drawish_count > 14 {
+                break Wdl::Draw;
+            }
+        } else {
+            drawish_count = 0;
         }
 
+        game.push_move(res.bestmove, {
+            if pos.side == Color::White {
+                res.score
+            } else {
+                -res.score
+            }
+        });
         pos.make_move(res.bestmove);
-        positions.push(res);
     };
+
+    game.set_win(result);
 
     match result {
         Wdl::WhiteWin => WHITE_WINS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         Wdl::BlackWin => BLACK_WINS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         Wdl::Draw => DRAWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        Wdl::Unknown => unreachable!(),
     };
-
-    let mut compressed_positions = Vec::with_capacity(positions.len());
-    let mut pos = startpos.clone();
-    // build up CompressedPositions
-    for p in positions {
-        compressed_positions.push(CompressedPosition::new(&pos, p.score, result));
-        pos.make_move(p.bestmove);
-    }
-
-    Ok(compressed_positions)
+    Ok(game)
 }
 
-pub fn shuffle_interleave(inputs: &[PathBuf], output: &PathBuf) {
-    let mut rng = SmallRng::from_os_rng();
-
-    let mut all_positions = Vec::new();
-    for input in inputs.iter() {
-        let file = std::fs::File::open(input).unwrap();
-        let mut reader = std::io::BufReader::new(file);
-        loop {
-            let mut cp = CompressedPosition {
-                occ: Bitboard::EMPTY,
-                pieces: [0; 16],
-                score: 0,
-                wdl: 0,
-                extra: [0; 5],
-            };
-
-            let bytes_read = reader.read(cp.as_mut_bytes()).unwrap();
-            if bytes_read == 0 {
-                break;
-            }
-            if cp.score.abs() > 20_000 {
-                continue;
-            }
-
-            all_positions.push(cp);
-        }
+pub fn bin_to_pgn(input: &PathBuf) -> anyhow::Result<()> {
+    let mut file = std::fs::File::open(input)?;
+    while let Ok(game) = CompressedGame::deserialize_from(&mut file) {
+        println!("{}", game);
     }
 
-    all_positions.shuffle(&mut rng);
-
-    let mut file = OpenOptions::new()
-        .read(true)
-        .create(true)
-        .append(true)
-        .open(output)
-        .unwrap();
-
-    for p in all_positions.iter() {
-        file.write_all(p.as_bytes())
-            .expect("Failed to write to file");
-    }
-
-    println!(
-        "Shuffled and interleaved {} positions into {}",
-        all_positions.len(),
-        output.display()
-    );
+    Ok(())
 }
 
 #[cfg(test)]
@@ -483,16 +717,37 @@ mod test {
     use crate::fen::Fen;
 
     const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const STARTPOS_FLIPPED: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    #[test]
+    fn test_size() {
+        assert_eq!(std::mem::size_of::<CompressedPosition>(), 32);
+        assert_eq!(std::mem::size_of::<CompressedMove>(), 4);
+    }
 
     #[test]
     fn test_startpos() {
         let Fen(pos) = Fen::parse(STARTPOS).unwrap();
-        let Fen(flipped_pos) = Fen::parse(STARTPOS_FLIPPED).unwrap();
 
         let comp = CompressedPosition::new(&pos, 0, Wdl::BlackWin);
-        let comp_flipped = CompressedPosition::new(&flipped_pos, 0, Wdl::BlackWin);
 
-        assert_eq!(comp, comp_flipped);
+        assert_eq!(comp, comp.flip().flip());
+
+        assert_eq!(comp.occ, comp.flip().occ);
+        assert_eq!(comp.pieces, comp.flip().pieces);
+        assert_eq!(comp.score, -comp.flip().score);
+    }
+
+    const POS_1: &str = "b3r1k1/5pbp/6p1/1NP5/8/5N2/2Q3PP/3q2K1 b - - 0 31";
+    const POS_1_FLIPPED: &str = "3Q2k1/2q3pp/5n2/8/1np5/6P1/5PBP/B3R1K1 w - - 0 31";
+
+    #[test]
+    fn test_flip() {
+        let Fen(pos) = Fen::parse(POS_1).unwrap();
+        let comp = CompressedPosition::new(&pos, 600, Wdl::BlackWin);
+
+        let Fen(flip) = POS_1_FLIPPED.parse().unwrap();
+        let comp_flip = CompressedPosition::new(&flip, -600, Wdl::WhiteWin);
+
+        assert_eq!(comp_flip, comp.flip());
     }
 }

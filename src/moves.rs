@@ -71,6 +71,12 @@ impl Move {
     pub const NONE: Move = Move(0);
 }
 
+impl Default for Move {
+    fn default() -> Self {
+        Move::NONE
+    }
+}
+
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}{}", self.from(), self.to())?;

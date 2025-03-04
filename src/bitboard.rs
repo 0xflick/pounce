@@ -81,18 +81,20 @@ impl Bitboard {
 
 impl fmt::Debug for Bitboard {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut dbg_list = f.debug_list();
         for rank in Rank::ALL.iter().rev() {
+            let mut file_str = "".to_string();
             for file in File::ALL.iter() {
                 let sq = Square::make(*file, *rank);
                 if self.contains(sq) {
-                    write!(f, "1")?;
+                    file_str.push('1');
                 } else {
-                    write!(f, ".")?;
+                    file_str.push('.');
                 }
             }
-            writeln!(f)?;
+            dbg_list.entry(&file_str);
         }
-        Ok(())
+        dbg_list.finish()
     }
 }
 
