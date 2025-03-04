@@ -485,7 +485,6 @@ impl Search {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            if normalize_score(best, ply).abs() >= eval::INFINITY {}
             self.tt.set(Entry::new(
                 self.position.key,
                 depth as u8,
