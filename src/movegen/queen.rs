@@ -1,10 +1,8 @@
 use types::{BishopType, QueenType, RookType};
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{Role, Square},
-    movegen::*,
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{Role, Square};
+use crate::movegen::*;
 
 impl Mover for QueenType {
     #[inline]

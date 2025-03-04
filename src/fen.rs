@@ -1,15 +1,11 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    num::NonZeroU16,
-    str::FromStr,
-};
+use std::fmt::{self, Display, Formatter};
+use std::num::NonZeroU16;
+use std::str::FromStr;
 
 use thiserror::Error;
 
-use crate::{
-    chess::{CastleRights, Color, File, ParsePieceError, ParseSquareError, Rank, Square},
-    position::Position,
-};
+use crate::chess::{CastleRights, Color, File, ParsePieceError, ParseSquareError, Rank, Square};
+use crate::position::Position;
 
 #[derive(Debug, Error)]
 pub enum ParseFenError {

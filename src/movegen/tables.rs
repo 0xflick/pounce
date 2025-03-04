@@ -1,11 +1,7 @@
-use crate::{
-    bitboard::Bitboard,
-    chess::{Color, File, Square},
-    movegen::{
-        magic::{BISHOP_ATTACKS, ROOK_ATTACKS},
-        magic_gen::{BISHOP_MAGICS, ROOK_MAGICS},
-    },
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{Color, File, Square};
+use crate::movegen::magic::{BISHOP_ATTACKS, ROOK_ATTACKS};
+use crate::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
 
 static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
 static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
@@ -134,14 +130,14 @@ fn init_knight_move_table() {
     let mut moves = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         let mut bb = Bitboard::EMPTY;
-        // NNE, NEE 
+        // NNE, NEE
         sq.north().and_then(|s| s.north().and_then(|s| s.east().map(|s| bb.set(s))));
         sq.north().and_then(|s| s.east().and_then(|s| s.east().map(|s| bb.set(s))));
 
         // NNW, NWW
         sq.north().and_then(|s| s.north().and_then(|s| s.west().map(|s| bb.set(s))));
         sq.north().and_then(|s| s.west().and_then(|s| s.west().map(|s| bb.set(s))));
-        
+
         // SSE, SEE
         sq.south().and_then(|s| s.south().and_then(|s| s.east().map(|s| bb.set(s))));
         sq.south().and_then(|s| s.east().and_then(|s| s.east().map(|s| bb.set(s))));

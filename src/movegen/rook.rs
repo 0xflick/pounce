@@ -1,10 +1,8 @@
 use types::RookType;
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{Color, Role, Square},
-    movegen::*,
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{Color, Role, Square};
+use crate::movegen::*;
 
 impl Mover for RookType {
     #[inline]

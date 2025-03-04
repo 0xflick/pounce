@@ -1,7 +1,5 @@
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-    str::FromStr,
-};
+use std::fmt::{self, Debug, Display, Formatter};
+use std::str::FromStr;
 
 use thiserror::Error;
 

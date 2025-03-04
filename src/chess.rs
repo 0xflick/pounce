@@ -1,8 +1,6 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    ops::{BitXor, Index, IndexMut},
-    str::FromStr,
-};
+use std::fmt::{self, Display, Formatter};
+use std::ops::{BitXor, Index, IndexMut};
+use std::str::FromStr;
 
 use bitflags::bitflags;
 use thiserror::Error;

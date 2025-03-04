@@ -1,13 +1,13 @@
 use std::num::NonZeroU16;
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{CastleRights, Color, File, GameResult, Piece, Role, Square},
-    eval::{PSQT_EG, PSQT_MG},
-    movegen::{MoveGen, between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays},
-    moves::{Move, MoveType},
-    zobrist::ZobristHash,
+use crate::bitboard::Bitboard;
+use crate::chess::{CastleRights, Color, File, GameResult, Piece, Role, Square};
+use crate::eval::{PSQT_EG, PSQT_MG};
+use crate::movegen::{
+    MoveGen, between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays,
 };
+use crate::moves::{Move, MoveType};
+use crate::zobrist::ZobristHash;
 
 #[derive(Debug, Clone, Copy)]
 pub struct State {
