@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use anyhow::Context;
 use rand::prelude::IndexedRandom;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -295,8 +296,9 @@ impl CompressedGame {
     }
 }
 
-impl From<CompressedPosition> for Position {
-    fn from(value: CompressedPosition) -> Self {
+impl TryFrom<CompressedPosition> for Position {
+    type Error = anyhow::Error;
+    fn try_from(value: CompressedPosition) -> Result<Self, Self::Error> {
         let mut pos = Self::default();
 
         for (idx, sq) in value.occ.enumerate() {
@@ -313,7 +315,7 @@ impl From<CompressedPosition> for Position {
             pos.set(sq, Piece { color, role });
         }
 
-        pos.fullmove_number = NonZeroU16::new(value.ply / 2 + 1).unwrap();
+        pos.fullmove_number = NonZeroU16::new(value.ply / 2 + 1).context("Invalid ply")?;
         pos.ep_square = match value.stm_ep_square {
             u8::MAX => None,
             sq => Some(Square::from(sq)),
@@ -328,13 +330,13 @@ impl From<CompressedPosition> for Position {
         pos.key = pos.zobrist_hash();
         pos.castling = CastleRights::from_bits_retain(value.castling);
 
-        pos
+        Ok(pos)
     }
 }
 
 impl Display for CompressedGame {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut pos: Position = self.initial.into();
+        let mut pos: Position = self.initial.try_into().unwrap();
         let header = format!(
             r#"[Event "game"]
 [Site "NA"]
@@ -699,7 +701,7 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
 }
 
 pub fn bin_to_pgn(input: &PathBuf) -> anyhow::Result<()> {
-    let mut file = std::fs::File::open(input)?;
+    let mut file = std::fs::File::open(input).context(format!("Failed to open {:?}", input))?;
     while let Ok(game) = CompressedGame::deserialize_from(&mut file) {
         println!("{}", game);
     }
