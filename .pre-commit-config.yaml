@@ -9,9 +9,25 @@ repos:
       - id: check-toml
       - id: end-of-file-fixer
       - id: trailing-whitespace
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
+  - repo: local
     hooks:
-      - id: fmt
-        args: ["+nightly"]
+      - id: cargo-fmt
+        name: cargo fmt
+        description: Format files with cargo fmt.
+        entry: cargo +nightly fmt --
+        language: system
+        files: \.rs$
       - id: cargo-check
+        name: cargo check
+        description: Check the package for errors.
+        entry: cargo check
+        language: system
+        files: \.rs$
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run the Clippy linter on the package.
+        entry: cargo clippy -- -D warnings
+        language: system
+        files: \.rs$
+        pass_filenames: false
