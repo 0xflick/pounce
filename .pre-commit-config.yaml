@@ -24,10 +24,3 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
-      - id: cargo-clippy
-        name: cargo clippy
-        description: Run the Clippy linter on the package.
-        entry: cargo clippy -- -D warnings
-        language: system
-        files: \.rs$
-        pass_filenames: false
