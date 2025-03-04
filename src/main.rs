@@ -53,6 +53,10 @@ enum Commands {
         #[arg(long)]
         state: Option<PathBuf>,
     },
+    #[cfg(feature = "datagen")]
+    BinToPgn {
+        in_file: PathBuf,
+    },
 
     #[cfg(feature = "datagen")]
     Datamix {
@@ -110,11 +114,9 @@ fn main() -> Result<()> {
             });
         }
         #[cfg(feature = "datagen")]
-        Some(Commands::Datamix { in_files, out_file }) => {
-            datagen::shuffle_interleave(in_files, out_file);
-            return Ok(());
+        Some(Commands::BinToPgn { in_file }) => {
+            return datagen::bin_to_pgn(in_file);
         }
-
         _ => {}
     }
 

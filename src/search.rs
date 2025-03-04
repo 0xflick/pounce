@@ -129,6 +129,7 @@ impl SearchCop {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
     pub bestmove: Move,
     pub score: i16,
