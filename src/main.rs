@@ -1,15 +1,12 @@
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
-use pounce::{
-    bench::bench,
-    fen::Fen,
-    limits::Limits,
-    movegen::{init_tables, perft},
-    search::init_reductions,
-    uci::Uci,
-    zobrist::init_zobrist,
-};
-
+use pounce::bench::bench;
+use pounce::fen::Fen;
+use pounce::limits::Limits;
+use pounce::movegen::{init_tables, perft};
+use pounce::search::init_reductions;
+use pounce::uci::Uci;
+use pounce::zobrist::init_zobrist;
 #[cfg(feature = "datagen")]
 use {
     pounce::datagen::{self, DatagenConfig},

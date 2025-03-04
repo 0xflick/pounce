@@ -1,11 +1,9 @@
 use types::BishopType;
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{Color, Role, Square},
-    movegen::*,
-    position::Position,
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{Color, Role, Square};
+use crate::movegen::*;
+use crate::position::Position;
 
 impl Mover for BishopType {
     #[inline]

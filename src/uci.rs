@@ -1,26 +1,24 @@
-use std::{
-    borrow::Borrow,
-    collections::HashMap,
-    fmt::Display,
-    ops::ControlFlow,
-    sync::{Arc, atomic::AtomicBool},
-    thread,
-};
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::ops::ControlFlow;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::thread;
 
 use anyhow::{Context, Result, anyhow};
-use rustyline::{DefaultEditor, error::ReadlineError};
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
-use crate::{
-    bench::bench,
-    fen::Fen,
-    limits::Limits,
-    movegen::{MoveGen, perft},
-    moves::Move,
-    position::Position,
-    search::Search,
-    tt::Table,
-    util::engine_name,
-};
+use crate::bench::bench;
+use crate::fen::Fen;
+use crate::limits::Limits;
+use crate::movegen::{MoveGen, perft};
+use crate::moves::Move;
+use crate::position::Position;
+use crate::search::Search;
+use crate::tt::Table;
+use crate::util::engine_name;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UciOption {

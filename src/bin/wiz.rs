@@ -1,10 +1,8 @@
 use std::io::Write;
 
 use clap::Parser;
-use pounce::{
-    chess::Square,
-    movegen::magic_finder::{Wizard, bishop_mask, rook_mask},
-};
+use pounce::chess::Square;
+use pounce::movegen::magic_finder::{Wizard, bishop_mask, rook_mask};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct Magic {

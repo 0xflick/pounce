@@ -1,31 +1,27 @@
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-    fs::OpenOptions,
-    io::BufWriter,
-    num::NonZeroU16,
-    path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicU32},
-    },
-    time::Duration,
-};
+use std::fmt::{self, Debug, Display, Formatter};
+use std::fs::OpenOptions;
+use std::io::BufWriter;
+use std::num::NonZeroU16;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use rand::{Rng, SeedableRng, prelude::IndexedRandom, rngs::SmallRng};
+use rand::prelude::IndexedRandom;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{CastleRights, Color, GameResult, Piece, Role, Square},
-    eval,
-    fen::Fen,
-    limits::Limits,
-    movegen::MoveGen,
-    moves::Move,
-    position::Position,
-    search::Search,
-    tt::Table,
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{CastleRights, Color, GameResult, Piece, Role, Square};
+use crate::eval;
+use crate::fen::Fen;
+use crate::limits::Limits;
+use crate::movegen::MoveGen;
+use crate::moves::Move;
+use crate::position::Position;
+use crate::search::Search;
+use crate::tt::Table;
 
 static STOP: AtomicBool = AtomicBool::new(false);
 static TOTAL_GAMES: AtomicU32 = AtomicU32::new(0);

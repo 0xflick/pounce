@@ -1,8 +1,6 @@
-use crate::{
-    bitboard::Bitboard,
-    chess::Square,
-    movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS},
-};
+use crate::bitboard::Bitboard;
+use crate::chess::Square;
+use crate::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
 
 const fn calc_size(magic_arr: &[Magic; 64]) -> usize {
     let mut size = 0;

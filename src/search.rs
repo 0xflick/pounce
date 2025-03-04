@@ -1,19 +1,16 @@
-use std::{
-    sync::{Arc, atomic::AtomicBool},
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use arrayvec::ArrayVec;
 
-use crate::{
-    chess::{Color, GameResult, Square},
-    eval,
-    limits::Limits,
-    movepicker::{MAX_MOVES, MovePicker},
-    moves::Move,
-    position::Position,
-    tt::{Entry, EntryType, Table},
-};
+use crate::chess::{Color, GameResult, Square};
+use crate::eval;
+use crate::limits::Limits;
+use crate::movepicker::{MAX_MOVES, MovePicker};
+use crate::moves::Move;
+use crate::position::Position;
+use crate::tt::{Entry, EntryType, Table};
 
 pub struct SearchCop {
     pub depth: Option<u8>,

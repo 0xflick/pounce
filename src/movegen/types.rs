@@ -1,12 +1,10 @@
 use arrayvec::ArrayVec;
 
-use crate::{
-    bitboard::Bitboard,
-    chess::{Color, Role, Square},
-    movegen::*,
-    moves::Move,
-    position::Position,
-};
+use crate::bitboard::Bitboard;
+use crate::chess::{Color, Role, Square};
+use crate::movegen::*;
+use crate::moves::Move;
+use crate::position::Position;
 
 pub type MoveList = ArrayVec<FromAndMoves, 18>;
 
