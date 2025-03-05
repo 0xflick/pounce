@@ -128,6 +128,7 @@ pub struct Uci {
     position: Position,
     stop: Arc<AtomicBool>,
     tt: Arc<Table>,
+    manager: SearchManager,
     options: UciOptionSet,
 }
 
@@ -142,13 +143,21 @@ impl Uci {
             min: 1,
             max: 16384,
         });
+        options.add_option(UciOption::Spin {
+            name: "Threads",
+            default: 1,
+            min: 1,
+            max: 128,
+        });
 
         let tt = Table::new_mb(options.get_int("Hash").unwrap() as usize);
+        let manager = SearchManager::new(options.get_int("Threads").unwrap() as usize);
 
         Uci {
             position,
             stop: Arc::new(AtomicBool::new(false)),
             tt: Arc::new(tt),
+            manager,
             options,
         }
     }
@@ -218,6 +227,10 @@ impl Uci {
                     if self.tt.size_mb() != hash_size as usize {
                         self.tt = Arc::new(Table::new_mb(hash_size as usize));
                     }
+                }
+
+                if let Some(threads) = self.options.get_int("Threads") {
+                    self.manager.set_num_threads(threads as usize);
                 }
                 self.tt = Arc::new(Table::new_mb(self.options.get_int("Hash").unwrap() as usize));
             }
@@ -378,7 +391,7 @@ impl Uci {
         let stop = Arc::new(AtomicBool::new(false));
         self.stop = stop.clone();
         let tt = self.tt.clone();
-        SearchManager::new(4).think(self.position.clone(), limits, tt, stop);
+        self.manager.think(self.position.clone(), limits, tt, stop);
         //
         // let position = self.position.clone();
         //
