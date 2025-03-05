@@ -30,7 +30,11 @@ criterion = { version = "0.5.1", features = ["html_reports"] }
 vergen-gitcl = { version = "1.0.0", features = ["build", "cargo"] }
 
 [[bench]]
-name = "pawn_movegen"
+name = "movegen_bench"
+harness = false
+
+[[bench]]
+name = "search_bench"
 harness = false
 
 [profile.release]

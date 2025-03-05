@@ -4,7 +4,6 @@ use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::thread;
 
 use anyhow::{Context, Result, anyhow};
 use rustyline::DefaultEditor;
@@ -16,7 +15,7 @@ use crate::limits::Limits;
 use crate::movegen::{MoveGen, perft};
 use crate::moves::Move;
 use crate::position::Position;
-use crate::search::{Search, SearchManager};
+use crate::search::SearchManager;
 use crate::tt::Table;
 use crate::util::engine_name;
 
@@ -377,7 +376,7 @@ impl Uci {
                 depth: Some(7),
                 ..Default::default()
             };
-            return bench(self.tt.size_mb() as u32, 4, limits);
+            return bench(self.tt.size_mb() as u32, 4, limits, false);
         }
 
         let limits = if !tokens.is_empty() {

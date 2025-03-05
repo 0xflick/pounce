@@ -3,10 +3,8 @@ use clap::{Parser, Subcommand};
 use pounce::bench::bench;
 use pounce::fen::Fen;
 use pounce::limits::Limits;
-use pounce::movegen::{init_tables, perft};
-use pounce::search::init_reductions;
+use pounce::movegen::perft;
 use pounce::uci::Uci;
-use pounce::zobrist::init_zobrist;
 #[cfg(feature = "datagen")]
 use {
     pounce::datagen::{self, DatagenConfig},
@@ -67,7 +65,7 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    init();
+    pounce::init();
 
     let cli = Cli::parse();
     match &cli.command {
@@ -90,7 +88,7 @@ fn main() -> Result<()> {
                 depth: Some(*depth),
                 ..Default::default()
             };
-            return bench(16, *threads, limits);
+            return bench(16, *threads, limits, false);
         }
         #[cfg(feature = "datagen")]
         Some(Commands::Datagen {
@@ -123,10 +121,4 @@ fn main() -> Result<()> {
     let mut uci = Uci::new();
 
     uci.run_loop()
-}
-
-fn init() {
-    init_tables();
-    init_reductions();
-    init_zobrist();
 }

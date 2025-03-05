@@ -62,7 +62,7 @@ const BENCHMARK_FENS: [&str; 50] = [
     "2r2b2/5p2/5k2/p1r1pP2/P2pB3/1P3P2/K1P3R1/7R w - - 23 93",
 ];
 
-pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits) -> Result<()> {
+pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits, silent: bool) -> Result<()> {
     let mut total_nodes = 0;
 
     let tt = Arc::new(Table::new_mb(hash_size_mb as usize));
@@ -81,13 +81,15 @@ pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits) -> Result<()
 
     let elapsed = start.elapsed();
 
-    println!(
-        "Nodes: {}, Time: {}s {}ms, Nodes/s: {:.2}M",
-        total_nodes,
-        elapsed.as_secs(),
-        elapsed.subsec_millis(),
-        (total_nodes as f64 / elapsed.as_secs_f64() / 1_000_000.0)
-    );
+    if !silent {
+        println!(
+            "Nodes: {}, Time: {}s {}ms, Nodes/s: {:.2}M",
+            total_nodes,
+            elapsed.as_secs(),
+            elapsed.subsec_millis(),
+            (total_nodes as f64 / elapsed.as_secs_f64() / 1_000_000.0)
+        );
+    }
 
     Ok(())
 }

@@ -18,3 +18,9 @@ pub mod zobrist;
 
 #[cfg(feature = "datagen")]
 pub mod datagen;
+
+pub fn init() {
+    movegen::init_tables();
+    zobrist::init_zobrist();
+    search::init_reductions();
+}
