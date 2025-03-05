@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::fen::Fen;
+use crate::chess::Fen;
 use crate::limits::Limits;
 use crate::search::SearchManager;
 use crate::tt::Table;

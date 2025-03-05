@@ -1,8 +1,6 @@
 use crate::bitboard::Bitboard;
-use crate::chess::Role;
+use crate::chess::{Move, MoveType, Position, Role};
 use crate::movegen::MoveGen;
-use crate::moves::{Move, MoveType};
-use crate::position::Position;
 
 enum CheckType {
     None,
@@ -163,10 +161,8 @@ impl Position {
 
 #[cfg(test)]
 mod test {
-    use crate::chess::Square;
-    use crate::fen::Fen;
+    use crate::chess::{Fen, Move, Square};
     use crate::movegen::init_tables;
-    use crate::moves::Move;
     use crate::zobrist::init_zobrist;
 
     #[test]

@@ -2,14 +2,13 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use pounce::fen::Fen;
+use pounce::chess::Fen;
+use pounce::chess::fen::STARTPOS;
 use pounce::movegen::{MoveList, Mover, PawnType, init_tables};
 
 fn bench_pawn_movegen(c: &mut Criterion) {
     init_tables();
-    let Fen(startpos) = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        .parse()
-        .unwrap();
+    let Fen(startpos) = STARTPOS.parse().unwrap();
     c.bench_function("pawn_movegen", |b| {
         b.iter_batched_ref(
             || MoveList::new(),

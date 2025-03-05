@@ -1,7 +1,8 @@
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use pounce::bench::bench;
-use pounce::fen::Fen;
+use pounce::chess::Fen;
+use pounce::chess::fen::STARTPOS;
 use pounce::limits::Limits;
 use pounce::movegen::perft;
 use pounce::uci::Uci;
@@ -70,7 +71,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Perft { depth }) => {
-            let Fen(mut pos) = Uci::STARTPOS.parse()?;
+            let Fen(mut pos) = STARTPOS.parse()?;
             let now = std::time::Instant::now();
             let nodes = perft(&mut pos, *depth);
             let elapsed = now.elapsed();

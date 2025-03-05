@@ -4,8 +4,11 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-use crate::chess::{CastleRights, Color, File, ParsePieceError, ParseSquareError, Rank, Square};
-use crate::position::Position;
+use crate::chess::{
+    CastleRights, Color, File, ParsePieceError, ParseSquareError, Position, Rank, Square,
+};
+
+pub const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, Error)]
 pub enum ParseFenError {

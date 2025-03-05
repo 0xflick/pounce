@@ -1,3 +1,5 @@
+mod util;
+
 use std::fmt::{self, Debug, Display, Formatter};
 use std::fs::OpenOptions;
 use std::io::BufWriter;
@@ -14,13 +16,12 @@ use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use crate::bitboard::Bitboard;
-use crate::chess::{CastleRights, Color, GameResult, Piece, Role, Square};
+use crate::chess::fen::STARTPOS;
+use crate::chess::{CastleRights, Color, Fen, GameResult, Move, Piece, Position, Role, Square};
+use crate::datagen::util::U4Array32;
 use crate::eval;
-use crate::fen::Fen;
 use crate::limits::Limits;
 use crate::movegen::MoveGen;
-use crate::moves::Move;
-use crate::position::Position;
 use crate::search::Search;
 use crate::tt::Table;
 
@@ -30,36 +31,6 @@ static WHITE_WINS: AtomicU32 = AtomicU32::new(0);
 static BLACK_WINS: AtomicU32 = AtomicU32::new(0);
 static DRAWS: AtomicU32 = AtomicU32::new(0);
 static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
-
-const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
-#[repr(transparent)]
-struct U4Array32([u8; 16]);
-
-impl U4Array32 {
-    pub const fn get(&self, i: usize) -> u8 {
-        (self.0[i / 2] >> (4 * (i % 2))) & 0b1111
-    }
-
-    pub const fn set(&mut self, i: usize, val: u8) {
-        debug_assert!(val < 0x10);
-        let shift = 4 * (i % 2);
-        let idx = i / 2;
-        self.0[idx] &= !(0b1111 << shift);
-        self.0[idx] |= val << shift;
-    }
-}
-
-impl Debug for U4Array32 {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut dbg_list = f.debug_list();
-        for i in 0..32 {
-            dbg_list.entry(&format!("{:#02x}", self.get(i)));
-        }
-        dbg_list.finish()
-    }
-}
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -712,9 +683,6 @@ pub fn bin_to_pgn(input: &PathBuf) -> anyhow::Result<()> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::fen::Fen;
-
-    const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
     #[test]
     fn test_size() {

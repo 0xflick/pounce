@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use crate::moves::Move;
+use crate::chess::Move;
 use crate::zobrist::ZobristHash;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

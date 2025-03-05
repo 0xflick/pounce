@@ -1,9 +1,8 @@
 use types::{FromAndMoves, KingType};
 
 use crate::bitboard::Bitboard;
-use crate::chess::{Color, Role, Square};
+use crate::chess::{Color, Position, Role, Square};
 use crate::movegen::*;
-use crate::position::Position;
 
 impl Mover for KingType {
     #[inline]

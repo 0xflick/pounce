@@ -10,11 +10,10 @@ use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
 use crate::bench::bench;
-use crate::fen::Fen;
+use crate::chess::fen::STARTPOS;
+use crate::chess::{Fen, Move, Position};
 use crate::limits::Limits;
 use crate::movegen::{MoveGen, perft};
-use crate::moves::Move;
-use crate::position::Position;
 use crate::search::SearchManager;
 use crate::tt::Table;
 use crate::util::engine_name;
@@ -133,7 +132,7 @@ pub struct Uci {
 
 impl Uci {
     pub fn new() -> Self {
-        let Fen(position) = Uci::STARTPOS.parse().unwrap();
+        let Fen(position) = STARTPOS.parse().unwrap();
 
         let mut options = UciOptionSet::new();
         options.add_option(UciOption::Spin {
@@ -160,8 +159,6 @@ impl Uci {
             options,
         }
     }
-
-    pub const STARTPOS: &'static str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 }
 
 impl Default for Uci {
@@ -315,7 +312,7 @@ impl Uci {
             let Fen(position) = Fen::parse(fen_str.as_str())?;
             self.position = position;
         } else {
-            let Fen(position) = Uci::STARTPOS.parse().unwrap();
+            let Fen(position) = STARTPOS.parse().unwrap();
             self.position = position;
         }
 

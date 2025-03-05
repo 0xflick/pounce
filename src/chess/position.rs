@@ -1,13 +1,18 @@
+pub mod fen;
+pub mod san;
+pub mod zobrist;
+
 use std::num::NonZeroU16;
 
+pub use fen::Fen;
+use zobrist::ZobristHash;
+
 use crate::bitboard::Bitboard;
-use crate::chess::{CastleRights, Color, File, GameResult, Piece, Role, Square};
+use crate::chess::{CastleRights, Color, File, GameResult, Move, MoveType, Piece, Role, Square};
 use crate::eval::{PSQT_EG, PSQT_MG};
 use crate::movegen::{
     MoveGen, between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays,
 };
-use crate::moves::{Move, MoveType};
-use crate::zobrist::ZobristHash;
 
 #[derive(Debug, Clone, Copy)]
 pub struct State {
