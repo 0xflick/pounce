@@ -3,14 +3,15 @@ use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
 use arrayvec::ArrayVec;
+use threadpool::ThreadPool;
 
 use crate::chess::{Color, GameResult, Square};
-use crate::eval;
 use crate::limits::Limits;
 use crate::movepicker::{MAX_MOVES, MovePicker};
 use crate::moves::Move;
 use crate::position::Position;
 use crate::tt::{Entry, EntryType, Table};
+use crate::{eval, limits, position};
 
 pub struct SearchCop {
     pub depth: Option<u8>,
@@ -126,6 +127,91 @@ impl SearchCop {
     }
 }
 
+pub struct SearchManager {
+    pool: ThreadPool,
+    silent: bool,
+}
+
+impl SearchManager {
+    pub fn new(num_threads: usize) -> Self {
+        SearchManager {
+            pool: ThreadPool::new(num_threads),
+            silent: false,
+        }
+    }
+
+    pub fn set_silent(&mut self, silent: bool) {
+        self.silent = silent;
+    }
+
+    pub fn set_num_threads(&mut self, num_threads: usize) {
+        self.pool.set_num_threads(num_threads);
+    }
+
+    pub fn think(&self, position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) {
+        for thread_idx in 0..self.pool.max_count() {
+            let position = position.clone();
+            let limits = limits.clone();
+            let tt = tt.clone();
+            let stop = stop.clone();
+            let silent = self.silent;
+            self.pool.execute(move || {
+                let mut search = Search::new(position, limits, tt, stop, thread_idx);
+                if silent {
+                    search.set_silent(true);
+                }
+                let result = search.think();
+                if thread_idx == 0 {
+                    println!("bestmove {}", result.bestmove.to_string());
+                }
+            });
+        }
+    }
+
+    pub fn think_sync(
+        &self,
+        position: Position,
+        limits: Limits,
+        tt: Arc<Table>,
+        stop: Arc<AtomicBool>,
+    ) -> (SearchResult, u64) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        for thread_idx in 0..self.pool.max_count() {
+            let tx = tx.clone();
+            let position = position.clone();
+            let limits = limits.clone();
+            let tt = tt.clone();
+            let stop = stop.clone();
+            let silent = self.silent;
+            self.pool.execute(move || {
+                let mut search = Search::new(position, limits, tt, stop, thread_idx);
+                if silent {
+                    search.set_silent(true);
+                }
+                let result = search.think();
+                tx.send((thread_idx, result, search.nodes)).unwrap();
+            });
+        }
+
+        self.pool.join();
+
+        let mut nodes = 0;
+        let mut result = SearchResult {
+            bestmove: Move::NONE,
+            score: 0,
+        };
+        for _ in 0..self.pool.max_count() {
+            let (thread_idx, worker_result, worker_nodes) = rx.recv().unwrap();
+            if thread_idx == 0 {
+                result = worker_result;
+            }
+            nodes += worker_nodes;
+        }
+
+        (result, nodes)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
     pub bestmove: Move,
@@ -146,12 +232,19 @@ pub struct Search {
     stop: Arc<AtomicBool>,
     silent: bool,
     effort: [[u64; Square::NUM]; Square::NUM],
+    thread_idx: usize,
 
     pub nodes: u64,
 }
 
 impl Search {
-    pub fn new(position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        position: Position,
+        limits: Limits,
+        tt: Arc<Table>,
+        stop: Arc<AtomicBool>,
+        thread_idx: usize,
+    ) -> Self {
         let side = position.side;
         Search {
             position,
@@ -167,6 +260,7 @@ impl Search {
             silent: false,
             effort: [[0; Square::NUM]; Square::NUM],
             nodes: 0,
+            thread_idx,
         }
     }
 
@@ -632,7 +726,7 @@ impl Search {
     }
 
     fn uci_info(&self, depth: i32, score: i16) {
-        if self.silent {
+        if self.silent || self.thread_idx > 0 {
             return;
         }
 

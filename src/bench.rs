@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::fen::Fen;
 use crate::limits::Limits;
-use crate::search::Search;
+use crate::search::{Search, SearchManager};
 use crate::tt::Table;
 
 const BENCHMARK_FENS: [&str; 50] = [
@@ -62,21 +62,21 @@ const BENCHMARK_FENS: [&str; 50] = [
     "2r2b2/5p2/5k2/p1r1pP2/P2pB3/1P3P2/K1P3R1/7R w - - 23 93",
 ];
 
-pub fn bench(hash_size_mb: u32, limits: Limits) -> Result<()> {
+pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits) -> Result<()> {
     let mut total_nodes = 0;
 
     let tt = Arc::new(Table::new_mb(hash_size_mb as usize));
     let stop = Arc::new(AtomicBool::new(false));
 
     let start = Instant::now();
+    let mut manager = SearchManager::new(num_threads);
+    manager.set_silent(true);
 
     for fen in BENCHMARK_FENS {
         let Fen(position) = fen.parse()?;
 
-        let mut search = Search::new(position, limits, tt.clone(), stop.clone());
-        search.set_silent(true);
-        search.think();
-        total_nodes += search.nodes;
+        let (_, nodes) = manager.think_sync(position, limits, tt.clone(), stop.clone());
+        total_nodes += nodes;
     }
 
     let elapsed = start.elapsed();

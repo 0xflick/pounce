@@ -53,14 +53,18 @@ impl Default for Entry {
 }
 
 pub struct Table {
-    entries: Mutex<Vec<Entry>>,
+    entries: Vec<Mutex<Entry>>,
     max_size: usize,
 }
 
 impl Table {
     pub fn new(size: usize) -> Table {
+        let mut entries = Vec::with_capacity(size);
+        for _ in 0..size {
+            entries.push(Mutex::new(Entry::default()));
+        }
         Table {
-            entries: Mutex::new(vec![Entry::default(); size]),
+            entries,
             max_size: size,
         }
     }
@@ -70,8 +74,9 @@ impl Table {
     }
 
     pub fn clear(&self) {
-        self.entries.lock().unwrap().iter_mut().for_each(|entry| {
-            *entry = Entry::default();
+        self.entries.iter().for_each(|entry| {
+            let mut val = entry.lock().unwrap();
+            *val = Entry::default();
         });
     }
 
@@ -81,7 +86,7 @@ impl Table {
 
     pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
         let idx = self.index(key);
-        let entry = &self.entries.lock().unwrap()[idx];
+        let entry = self.entries[idx].lock().unwrap();
         match entry.key == key {
             true => Some(*entry),
             false => None,
@@ -90,13 +95,14 @@ impl Table {
 
     pub fn set(&self, entry: Entry) {
         let idx = self.index(entry.key);
-        self.entries.lock().unwrap()[idx] = entry;
+        let mut val = self.entries[idx].lock().unwrap();
+        *val = entry;
     }
 
     pub fn hashfull(&self) -> f64 {
-        self.entries.lock().unwrap()[..1000]
+        self.entries[..1000]
             .iter()
-            .filter(|entry| entry.score_type != EntryType::None)
+            .filter(|entry| entry.lock().unwrap().score_type != EntryType::None)
             .count() as f64
     }
 

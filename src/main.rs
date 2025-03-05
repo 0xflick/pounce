@@ -29,6 +29,9 @@ enum Commands {
     Bench {
         #[arg(default_value_t = 7)]
         depth: u8,
+
+        #[arg(short, long, default_value_t = 1)]
+        threads: usize,
     },
     #[cfg(feature = "datagen")]
     Datagen {
@@ -82,12 +85,12 @@ fn main() -> Result<()> {
             );
             return Ok(());
         }
-        Some(Commands::Bench { depth }) => {
+        Some(Commands::Bench { depth, threads }) => {
             let limits = Limits {
                 depth: Some(*depth),
                 ..Default::default()
             };
-            return bench(16, limits);
+            return bench(16, *threads, limits);
         }
         #[cfg(feature = "datagen")]
         Some(Commands::Datagen {

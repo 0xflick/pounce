@@ -16,7 +16,7 @@ use crate::limits::Limits;
 use crate::movegen::{MoveGen, perft};
 use crate::moves::Move;
 use crate::position::Position;
-use crate::search::Search;
+use crate::search::{Search, SearchManager};
 use crate::tt::Table;
 use crate::util::engine_name;
 
@@ -364,7 +364,7 @@ impl Uci {
                 depth: Some(7),
                 ..Default::default()
             };
-            return bench(self.tt.size_mb() as u32, limits);
+            return bench(self.tt.size_mb() as u32, 4, limits);
         }
 
         let limits = if !tokens.is_empty() {
@@ -378,14 +378,15 @@ impl Uci {
         let stop = Arc::new(AtomicBool::new(false));
         self.stop = stop.clone();
         let tt = self.tt.clone();
-
-        let position = self.position.clone();
-
-        thread::spawn(move || {
-            let mut search = Search::new(position, limits, tt, stop.clone());
-            let bestmove = search.think().bestmove;
-            println!("bestmove {}", bestmove);
-        });
+        SearchManager::new(4).think(self.position.clone(), limits, tt, stop);
+        //
+        // let position = self.position.clone();
+        //
+        // thread::spawn(move || {
+        //     let mut search = Search::new(position, limits, tt, stop.clone());
+        //     let bestmove = search.think().bestmove;
+        //     println!("bestmove {}", bestmove);
+        // });
         Ok(())
     }
 
