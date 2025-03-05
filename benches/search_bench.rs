@@ -1,10 +1,6 @@
-use std::hint::black_box;
 use std::time::Duration;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use pounce::fen::Fen;
-use pounce::movegen::{MoveList, Mover, PawnType, init_tables};
-use pounce::search::init_reductions;
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_search(c: &mut Criterion) {
     pounce::init();

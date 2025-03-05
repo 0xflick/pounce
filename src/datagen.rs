@@ -614,7 +614,7 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
     }
 
     // break early if eval is too extreme
-    let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone());
+    let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone(), 0);
     search.set_silent(true);
     let res = search.think();
     if res.score.abs() > 1_500 {
@@ -654,7 +654,7 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
             break Wdl::Draw;
         }
 
-        let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone());
+        let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone(), 0);
         search.set_silent(true);
         let res = search.think();
         // exit if we find a mate score

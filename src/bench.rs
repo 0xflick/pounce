@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::fen::Fen;
 use crate::limits::Limits;
-use crate::search::{Search, SearchManager};
+use crate::search::SearchManager;
 use crate::tt::Table;
 
 const BENCHMARK_FENS: [&str; 50] = [

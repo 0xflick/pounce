@@ -6,12 +6,12 @@ use arrayvec::ArrayVec;
 use threadpool::ThreadPool;
 
 use crate::chess::{Color, GameResult, Square};
+use crate::eval;
 use crate::limits::Limits;
 use crate::movepicker::{MAX_MOVES, MovePicker};
 use crate::moves::Move;
 use crate::position::Position;
 use crate::tt::{Entry, EntryType, Table};
-use crate::{eval, limits, position};
 
 pub struct SearchCop {
     pub depth: Option<u8>,
@@ -151,7 +151,6 @@ impl SearchManager {
     pub fn think(&self, position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) {
         for thread_idx in 0..self.pool.max_count() {
             let position = position.clone();
-            let limits = limits.clone();
             let tt = tt.clone();
             let stop = stop.clone();
             let silent = self.silent;
@@ -162,7 +161,7 @@ impl SearchManager {
                 }
                 let result = search.think();
                 if thread_idx == 0 {
-                    println!("bestmove {}", result.bestmove.to_string());
+                    println!("bestmove {}", result.bestmove);
                 }
             });
         }
@@ -179,7 +178,6 @@ impl SearchManager {
         for thread_idx in 0..self.pool.max_count() {
             let tx = tx.clone();
             let position = position.clone();
-            let limits = limits.clone();
             let tt = tt.clone();
             let stop = stop.clone();
             let silent = self.silent;
