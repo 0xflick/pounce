@@ -160,7 +160,7 @@ impl Position {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::chess::movegen::init_tables;
     use crate::chess::position::fen::Fen;
     use crate::chess::{Move, Square};

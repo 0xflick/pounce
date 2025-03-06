@@ -5,8 +5,8 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::chess::position::fen::Fen;
+use crate::engine::SearchManager;
 use crate::engine::limits::Limits;
-use crate::engine::search::SearchManager;
 use crate::engine::tt::Table;
 
 const BENCHMARK_FENS: [&str; 50] = [

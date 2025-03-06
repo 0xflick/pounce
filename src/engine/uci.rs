@@ -13,9 +13,9 @@ use crate::chess::Move;
 use crate::chess::movegen::{MoveGen, perft};
 use crate::chess::position::Position;
 use crate::chess::position::fen::{Fen, STARTPOS};
+use crate::engine::SearchManager;
 use crate::engine::bench::bench;
 use crate::engine::limits::Limits;
-use crate::engine::search::SearchManager;
 use crate::engine::tt::Table;
 use crate::engine::utils::engine_name;
 
@@ -203,6 +203,18 @@ impl Uci {
         Ok(())
     }
 
+    pub fn run_once(&mut self, input: &str) -> Result<()> {
+        println!("{}", engine_name());
+        let mut tokens = input.split_whitespace();
+        let cmd = tokens.next().map(|s| s.to_string());
+        let rest = tokens.collect::<Vec<&str>>();
+
+        match self.handle_cmd(cmd.as_deref(), &rest) {
+            Err(e) => Err(e),
+            Ok(_) => Ok(()),
+        }
+    }
+
     fn handle_cmd<T>(&mut self, cmd: Option<&str>, rest: &[T]) -> Result<ControlFlow<()>>
     where
         T: AsRef<str> + Borrow<str>,
@@ -236,6 +248,9 @@ impl Uci {
             }
             Some("position") => {
                 self.cmd_position(rest)?;
+            }
+            Some("bench") => {
+                self.cmd_bench()?;
             }
             Some("go") => {
                 self.cmd_go(rest)?;
@@ -360,6 +375,14 @@ impl Uci {
         Ok(())
     }
 
+    fn cmd_bench(&mut self) -> Result<()> {
+        let limits = Limits {
+            depth: Some(7),
+            ..Default::default()
+        };
+        bench(self.tt.size_mb() as u32, 1, limits, false)
+    }
+
     fn cmd_go<T>(&mut self, tokens: &[T]) -> Result<()>
     where
         T: AsRef<str> + Borrow<str>,
@@ -367,14 +390,6 @@ impl Uci {
         if !tokens.is_empty() && tokens[0].as_ref() == "perft" {
             self.cmd_perft(&tokens[1..])?;
             return Ok(());
-        }
-
-        if !tokens.is_empty() && tokens[0].as_ref() == "bench" {
-            let limits = Limits {
-                depth: Some(7),
-                ..Default::default()
-            };
-            return bench(self.tt.size_mb() as u32, 4, limits, false);
         }
 
         let limits = if !tokens.is_empty() {

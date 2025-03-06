@@ -68,7 +68,7 @@ fn masked_perft(pos: &mut Position, depth: u8) -> usize {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::chess::position::fen::{Fen, STARTPOS};
 

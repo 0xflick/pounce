@@ -380,7 +380,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::chess::bitboard::Bitboard;
 
     #[test]

@@ -1,23 +1,15 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use arrayvec::ArrayVec;
-use threadpool::ThreadPool;
 
 use crate::chess::{Color, GameResult, Move, Position, Square};
 use crate::engine::eval;
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
+use crate::engine::time_management::SearchCop;
 use crate::engine::tt::{Entry, EntryType, Table};
-
-pub struct SearchCop {
-    pub depth: Option<u8>,
-    pub nodes: Option<u64>,
-    pub adjust: bool,
-    pub optimal_time: Option<Duration>,
-    pub max_time: Option<Duration>,
-}
 
 const MAX_DEPTH: u8 = 64;
 pub const MAX_PLY: u8 = 128;
@@ -35,179 +27,6 @@ pub fn init_reductions() {
         }
     }
 }
-
-impl SearchCop {
-    pub fn new(
-        Limits {
-            depth,
-            nodes,
-            wtime,
-            btime,
-            winc,
-            binc,
-            movestogo,
-            movetime,
-            infinite,
-        }: Limits,
-        side: Color,
-    ) -> Self {
-        if infinite {
-            return SearchCop {
-                depth,
-                nodes,
-                adjust: false,
-                optimal_time: None,
-                max_time: None,
-            };
-        }
-
-        if let Some(movetime) = movetime {
-            return SearchCop {
-                depth,
-                nodes,
-                adjust: false,
-                optimal_time: Some(Duration::from_millis(movetime as u64)),
-                max_time: Some(Duration::from_millis(movetime as u64)),
-            };
-        }
-
-        let (time_remaining, inc) = match side {
-            Color::White => (wtime, winc.unwrap_or(0) as i32),
-            Color::Black => (btime, binc.unwrap_or(0) as i32),
-        };
-
-        // if time remaining was not set, return as if infinite
-        if time_remaining.is_none() {
-            return SearchCop {
-                depth,
-                nodes,
-                adjust: false,
-                optimal_time: None,
-                max_time: None,
-            };
-        }
-
-        // inspired by weiss
-        let overhead = 10;
-
-        // plan as if there are at most 50 moves left
-        let mtg = 50.min(movestogo.unwrap_or(50)) as i32;
-
-        let time_left = 0.max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
-
-        let opt = if movestogo.is_none() {
-            // one time control for the whole game
-            let scale = 0.04;
-            (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
-        } else {
-            // multiple time controls
-            let scale = 0.7;
-            (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
-        };
-
-        let max = (opt).min((0.8 * time_left as f32) as u64);
-        let max = max.min(time_remaining.unwrap() as u64 - 3 * overhead as u64);
-
-        SearchCop {
-            depth,
-            nodes,
-            adjust: true,
-            optimal_time: Some(Duration::from_millis(opt)),
-            max_time: Some(Duration::from_millis(max)),
-        }
-    }
-
-    pub fn time_up(&self, start_time: Instant) -> bool {
-        if let Some(time) = self.max_time {
-            return start_time.elapsed() >= time;
-        }
-        false
-    }
-}
-
-pub struct SearchManager {
-    pool: ThreadPool,
-    silent: bool,
-}
-
-impl SearchManager {
-    pub fn new(num_threads: usize) -> Self {
-        SearchManager {
-            pool: ThreadPool::new(num_threads),
-            silent: false,
-        }
-    }
-
-    pub fn set_silent(&mut self, silent: bool) {
-        self.silent = silent;
-    }
-
-    pub fn set_num_threads(&mut self, num_threads: usize) {
-        self.pool.set_num_threads(num_threads);
-    }
-
-    pub fn think(&self, position: Position, limits: Limits, tt: Arc<Table>, stop: Arc<AtomicBool>) {
-        for thread_idx in 0..self.pool.max_count() {
-            let position = position.clone();
-            let tt = tt.clone();
-            let stop = stop.clone();
-            let silent = self.silent;
-            self.pool.execute(move || {
-                let mut search = Search::new(position, limits, tt, stop, thread_idx);
-                if silent {
-                    search.set_silent(true);
-                }
-                let result = search.think();
-                if thread_idx == 0 {
-                    println!("bestmove {}", result.bestmove);
-                }
-            });
-        }
-    }
-
-    pub fn think_sync(
-        &self,
-        position: Position,
-        limits: Limits,
-        tt: Arc<Table>,
-        stop: Arc<AtomicBool>,
-    ) -> (SearchResult, u64) {
-        let (tx, rx) = std::sync::mpsc::channel();
-        for thread_idx in 0..self.pool.max_count() {
-            let tx = tx.clone();
-            let position = position.clone();
-            let tt = tt.clone();
-            let stop = stop.clone();
-            let silent = self.silent;
-            self.pool.execute(move || {
-                let mut search = Search::new(position, limits, tt, stop, thread_idx);
-                if silent {
-                    search.set_silent(true);
-                }
-                let result = search.think();
-                tx.send((thread_idx, result, search.nodes)).unwrap();
-            });
-        }
-
-        self.pool.join();
-
-        let mut nodes = 0;
-        let mut result = SearchResult {
-            bestmove: Move::NONE,
-            score: 0,
-        };
-        for _ in 0..self.pool.max_count() {
-            let (thread_idx, worker_result, worker_nodes) = rx.recv().unwrap();
-            if thread_idx == 0 {
-                result = worker_result;
-            }
-            nodes += worker_nodes;
-        }
-
-        (result, nodes)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
     pub bestmove: Move,

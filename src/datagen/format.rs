@@ -322,7 +322,7 @@ impl Display for CompressedGame {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::*;
     use crate::chess::position::fen::{Fen, STARTPOS};
 

@@ -138,7 +138,7 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::init_zobrist;
     use crate::chess::movegen::init_tables;
     use crate::chess::position::fen::{Fen, STARTPOS};
