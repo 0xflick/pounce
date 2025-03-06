@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Move, MoveType, Position, Role};
 
@@ -162,7 +162,8 @@ impl Position {
 #[cfg(test)]
 mod test {
     use crate::chess::movegen::init_tables;
-    use crate::chess::{Fen, Move, Square};
+    use crate::chess::position::fen::Fen;
+    use crate::chess::{Move, Square};
     use crate::zobrist::init_zobrist;
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::types::{BishopType, Mover, QueenType, RookType};
 use crate::chess::{Position, Role, Square};
 

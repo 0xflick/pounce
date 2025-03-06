@@ -1,17 +1,15 @@
+#[cfg(feature = "datagen")]
+use std::path::PathBuf;
+
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use pounce::bench::bench;
-use pounce::chess::Fen;
-use pounce::chess::fen::STARTPOS;
 use pounce::chess::movegen::perft;
+use pounce::chess::position::fen::{Fen, STARTPOS};
+#[cfg(feature = "datagen")]
+use pounce::datagen::{self, DatagenConfig};
 use pounce::limits::Limits;
 use pounce::uci::Uci;
-
-#[cfg(feature = "datagen")]
-use {
-    pounce::datagen::{self, DatagenConfig},
-    std::path::PathBuf,
-};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

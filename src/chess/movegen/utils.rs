@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::magic::{BISHOP_ATTACKS, ROOK_ATTACKS};
 use crate::chess::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
 use crate::chess::movegen::tables::{

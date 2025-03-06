@@ -136,7 +136,7 @@ fn main() {
             writeln!(file, "// @generated with Wiz tool. Do not edit directly").unwrap();
             writeln!(file, "// Rounds: {})", args.rounds).unwrap();
             writeln!(file).unwrap();
-            writeln!(file, "use crate::bitboard::Bitboard;").unwrap();
+            writeln!(file, "use crate::chess::bitboard::Bitboard;").unwrap();
             writeln!(file, "use crate::chess::movegen::magic::Magic;").unwrap();
             writeln!(file).unwrap();
 

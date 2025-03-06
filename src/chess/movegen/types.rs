@@ -1,6 +1,6 @@
 use arrayvec::ArrayVec;
 
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::utils::{between, line};
 use crate::chess::{Color, Move, Position, Role, Square};
 

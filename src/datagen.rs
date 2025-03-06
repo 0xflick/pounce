@@ -15,10 +15,11 @@ use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-use crate::bitboard::Bitboard;
-use crate::chess::fen::STARTPOS;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
-use crate::chess::{CastleRights, Color, Fen, GameResult, Move, Piece, Position, Role, Square};
+use crate::chess::position::CastleRights;
+use crate::chess::position::fen::{Fen, STARTPOS};
+use crate::chess::{Color, GameResult, Move, Piece, Position, Role, Square};
 use crate::datagen::utils::U4Array32;
 use crate::eval;
 use crate::limits::Limits;

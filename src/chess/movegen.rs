@@ -39,7 +39,7 @@ pub fn perft(pos: &mut Position, depth: u8) -> usize {
 
 #[cfg(test)]
 fn masked_perft(pos: &mut Position, depth: u8) -> usize {
-    use crate::bitboard::Bitboard;
+    use crate::chess::bitboard::Bitboard;
 
     if depth == 0 {
         return 1;
@@ -70,8 +70,7 @@ fn masked_perft(pos: &mut Position, depth: u8) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::chess::Fen;
-    use crate::chess::fen::STARTPOS;
+    use crate::chess::position::fen::{Fen, STARTPOS};
 
     const KIWIPETE_FEN: &str =
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";

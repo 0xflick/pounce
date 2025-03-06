@@ -1,4 +1,5 @@
-use crate::chess::{Color, Position, Role, Square};
+use crate::chess::position::Position;
+use crate::chess::{Color, Role, Square};
 use crate::search;
 
 pub const INFINITY: i16 = 32_001;

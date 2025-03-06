@@ -3,8 +3,8 @@ use std::ops::{BitXor, Index, IndexMut};
 
 use thiserror::Error;
 
-use crate::bitboard::Bitboard;
 use crate::chess::Color;
+use crate::chess::bitboard::Bitboard;
 
 // A rank is a row on the chess board
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -381,7 +381,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::bitboard::Bitboard;
+    use crate::chess::bitboard::Bitboard;
 
     #[test]
     fn from_sq_a1() {

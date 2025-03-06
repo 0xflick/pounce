@@ -4,9 +4,10 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-use crate::chess::{
-    CastleRights, Color, File, ParsePieceError, ParseSquareError, Position, Rank, Square,
-};
+use crate::chess::board::ParseSquareError;
+use crate::chess::piece::ParsePieceError;
+use crate::chess::position::CastleRights;
+use crate::chess::{Color, File, Position, Rank, Square};
 
 pub const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 

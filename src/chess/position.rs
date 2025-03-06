@@ -4,16 +4,75 @@ pub mod zobrist;
 
 use std::num::NonZeroU16;
 
-pub use fen::Fen;
-use zobrist::ZobristHash;
+use bitflags::bitflags;
 
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::movegen::utils::{
     between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays,
 };
-use crate::chess::{CastleRights, Color, File, GameResult, Move, MoveType, Piece, Role, Square};
+use crate::chess::position::zobrist::ZobristHash;
+use crate::chess::{Color, File, GameResult, Move, MoveType, Piece, Role, Square};
 use crate::eval::{PSQT_EG, PSQT_MG};
+
+bitflags! {
+    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+    pub struct CastleRights: u8 {
+        const WHITE_KING_SIDE = 0b0001;
+        const WHITE_QUEEN_SIDE = 0b0010;
+        const BLACK_KING_SIDE = 0b0100;
+        const BLACK_QUEEN_SIDE = 0b1000;
+    }
+}
+
+impl CastleRights {
+    pub fn new() -> CastleRights {
+        CastleRights::all()
+    }
+}
+
+impl Default for CastleRights {
+    fn default() -> CastleRights {
+        CastleRights::new()
+    }
+}
+
+impl CastleRights {
+    pub fn discard_color(&mut self, color: Color) {
+        match color {
+            Color::White => {
+                self.remove(CastleRights::WHITE_KING_SIDE | CastleRights::WHITE_QUEEN_SIDE);
+            }
+            Color::Black => {
+                self.remove(CastleRights::BLACK_KING_SIDE | CastleRights::BLACK_QUEEN_SIDE);
+            }
+        }
+    }
+
+    pub fn discard_square(&mut self, square: Square) {
+        match square {
+            Square::A1 => self.remove(CastleRights::WHITE_QUEEN_SIDE),
+            Square::H1 => self.remove(CastleRights::WHITE_KING_SIDE),
+            Square::A8 => self.remove(CastleRights::BLACK_QUEEN_SIDE),
+            Square::H8 => self.remove(CastleRights::BLACK_KING_SIDE),
+            _ => {}
+        }
+    }
+
+    pub fn can_castle_kingside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_KING_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_KING_SIDE),
+        }
+    }
+
+    pub fn can_castle_queenside(&self, color: Color) -> bool {
+        match color {
+            Color::White => self.contains(CastleRights::WHITE_QUEEN_SIDE),
+            Color::Black => self.contains(CastleRights::BLACK_QUEEN_SIDE),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct State {

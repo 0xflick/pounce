@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::types::{Mover, RookType};
 use crate::chess::movegen::utils::get_rook_moves;
 use crate::chess::{Color, Position, Role, Square};

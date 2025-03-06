@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::types::{BishopType, Mover};
 use crate::chess::movegen::utils::get_bishop_moves;
 use crate::chess::{Color, Position, Role, Square};

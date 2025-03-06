@@ -1,5 +1,4 @@
 pub mod bench;
-pub mod bitboard;
 pub mod chess;
 pub mod limits;
 pub mod search;

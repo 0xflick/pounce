@@ -1,6 +1,6 @@
 use arrayvec::ArrayVec;
 
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Square};
 
@@ -213,8 +213,8 @@ impl MovePicker {
 
 #[cfg(test)]
 mod test {
-    use crate::chess::Fen;
     use crate::chess::movegen::init_tables;
+    use crate::chess::position::fen::Fen;
     use crate::zobrist::init_zobrist;
 
     #[test]

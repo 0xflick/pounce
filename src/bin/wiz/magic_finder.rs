@@ -1,9 +1,8 @@
+use pounce::chess::Square;
+use pounce::chess::bitboard::Bitboard;
+use pounce::chess::movegen::magic::{bishop_attacks, rook_attacks};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
-
-use pounce::bitboard::Bitboard;
-use pounce::chess::Square;
-use pounce::chess::movegen::magic::{bishop_attacks, rook_attacks};
 
 pub struct Wizard {
     rng: SmallRng,
@@ -187,8 +186,9 @@ pub fn occupancy_bb(mask: &Bitboard, index: usize) -> Bitboard {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use pounce::chess::{File, Rank};
+
+    use super::*;
 
     #[test]
     fn test_rook_mask_1() {

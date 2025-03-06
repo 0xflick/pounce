@@ -2,10 +2,9 @@ use std::fmt::{self, Display, Formatter};
 use std::ops::{Index, IndexMut};
 use std::str::FromStr;
 
-use bitflags::bitflags;
 use thiserror::Error;
 
-use crate::chess::{Color, Square};
+use crate::chess::Color;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
 #[repr(u8)]
@@ -137,65 +136,6 @@ impl FromStr for Piece {
             "q" => Ok(Piece::new(Color::Black, Role::Queen)),
             "k" => Ok(Piece::new(Color::Black, Role::King)),
             _ => Err(ParsePieceError(s.to_string())),
-        }
-    }
-}
-
-bitflags! {
-    #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-    pub struct CastleRights: u8 {
-        const WHITE_KING_SIDE = 0b0001;
-        const WHITE_QUEEN_SIDE = 0b0010;
-        const BLACK_KING_SIDE = 0b0100;
-        const BLACK_QUEEN_SIDE = 0b1000;
-    }
-}
-
-impl CastleRights {
-    pub fn new() -> CastleRights {
-        CastleRights::all()
-    }
-}
-
-impl Default for CastleRights {
-    fn default() -> CastleRights {
-        CastleRights::new()
-    }
-}
-
-impl CastleRights {
-    pub fn discard_color(&mut self, color: Color) {
-        match color {
-            Color::White => {
-                self.remove(CastleRights::WHITE_KING_SIDE | CastleRights::WHITE_QUEEN_SIDE);
-            }
-            Color::Black => {
-                self.remove(CastleRights::BLACK_KING_SIDE | CastleRights::BLACK_QUEEN_SIDE);
-            }
-        }
-    }
-
-    pub fn discard_square(&mut self, square: Square) {
-        match square {
-            Square::A1 => self.remove(CastleRights::WHITE_QUEEN_SIDE),
-            Square::H1 => self.remove(CastleRights::WHITE_KING_SIDE),
-            Square::A8 => self.remove(CastleRights::BLACK_QUEEN_SIDE),
-            Square::H8 => self.remove(CastleRights::BLACK_KING_SIDE),
-            _ => {}
-        }
-    }
-
-    pub fn can_castle_kingside(&self, color: Color) -> bool {
-        match color {
-            Color::White => self.contains(CastleRights::WHITE_KING_SIDE),
-            Color::Black => self.contains(CastleRights::BLACK_KING_SIDE),
-        }
-    }
-
-    pub fn can_castle_queenside(&self, color: Color) -> bool {
-        match color {
-            Color::White => self.contains(CastleRights::WHITE_QUEEN_SIDE),
-            Color::Black => self.contains(CastleRights::BLACK_QUEEN_SIDE),
         }
     }
 }

@@ -1,4 +1,4 @@
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::types::{FromAndMoves, MoveList, Mover, PawnType};
 use crate::chess::movegen::utils::{
     between, get_bishop_moves, get_pawn_attacks, get_pawn_moves, get_rook_moves, line,

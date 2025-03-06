@@ -1,7 +1,7 @@
 // @generated with Wiz tool. Do not edit directly
 // Rounds: 100)
 
-use crate::bitboard::Bitboard;
+use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::magic::Magic;
 
 #[rustfmt::skip]
