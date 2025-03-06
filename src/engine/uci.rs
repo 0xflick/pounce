@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::ControlFlow;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::{Context, Result, anyhow};
@@ -122,8 +122,9 @@ impl Display for UciOptionSet {
 }
 
 pub struct Uci {
-    manager: SearchManager,
+    manager: Arc<Mutex<SearchManager>>,
     options: UciOptionSet,
+    stop: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Uci {
@@ -142,9 +143,13 @@ impl Uci {
             max: 16384,
         });
 
-        let manager = SearchManager::new(1, 16);
+        let manager = Arc::new(Mutex::new(SearchManager::new(1, 16)));
 
-        Uci { manager, options }
+        Uci {
+            manager,
+            options,
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 }
 
@@ -217,13 +222,19 @@ impl Uci {
             }
             Some("setoption") => {
                 self.options.parse(rest)?;
+                match self.manager.try_lock() {
+                    Ok(mut manager) => {
+                        if let Some(hash_size) = self.options.get_int("Hash") {
+                            manager.set_tt_size_mb(hash_size as usize);
+                        }
 
-                if let Some(hash_size) = self.options.get_int("Hash") {
-                    self.manager.set_tt_size_mb(hash_size as usize);
-                }
-
-                if let Some(threads) = self.options.get_int("Threads") {
-                    self.manager.set_num_threads(threads as usize);
+                        if let Some(threads) = self.options.get_int("Threads") {
+                            manager.set_num_threads(threads as usize);
+                        }
+                    }
+                    Err(_) => {
+                        Err(anyhow!("Failed to lock search manager"))?;
+                    }
                 }
             }
             Some("quit") => {
@@ -238,26 +249,45 @@ impl Uci {
             Some("go") => {
                 self.cmd_go(rest)?;
             }
-            Some("eval") => {
-                let eval = self.manager.position.eval();
-                let psqt_mg = self.manager.position.psqt_mg;
-                let psqt_eg = self.manager.position.psqt_eg;
-                let psqt_mg_calc = self.manager.position.psqt_mg();
-                let psqt_eg_calc = self.manager.position.psqt_eg();
-                println!(
-                    "Eval: {}, PSQT MG: {} - {}, PSQT EG: {} - {}",
-                    eval, psqt_mg, psqt_mg_calc, psqt_eg, psqt_eg_calc
-                );
+            Some("eval") => match self.manager.try_lock() {
+                Ok(manager) => {
+                    let pos = &manager.position;
+                    let eval = pos.eval();
+                    let psqt_mg = pos.psqt_mg;
+                    let psqt_eg = pos.psqt_eg;
+                    let psqt_mg_calc = pos.psqt_mg();
+                    let psqt_eg_calc = pos.psqt_eg();
+                    println!(
+                        "Eval: {}, PSQT MG: {} - {}, PSQT EG: {} - {}",
+                        eval, psqt_mg, psqt_mg_calc, psqt_eg, psqt_eg_calc
+                    );
+                }
+                Err(_) => {
+                    Err(anyhow!("Failed to lock search manager"))?;
+                }
+            },
+            Some("stop") => {
+                self.cmd_stop()?;
             }
-            Some("stop") => {}
-            Some("ucinewgame") => {
-                self.manager.clear_tt();
-            }
-            Some("zobrist") => {
-                let hash = self.manager.position.zobrist_hash();
-                println!("Zobrist hash: {:x}", u64::from(hash));
-                println!("Zobrist hash: {:x}", u64::from(self.manager.position.key));
-            }
+            Some("ucinewgame") => match self.manager.try_lock() {
+                Ok(mut manager) => {
+                    let Fen(position) = STARTPOS.parse().unwrap();
+                    manager.position = position;
+                }
+                Err(_) => {
+                    Err(anyhow!("Failed to lock search manager"))?;
+                }
+            },
+            Some("zobrist") => match self.manager.try_lock() {
+                Ok(manager) => {
+                    let hash = manager.position.zobrist_hash();
+                    println!("Zobrist hash: {:x}", u64::from(hash));
+                    println!("Zobrist hash: {:x}", u64::from(manager.position.key));
+                }
+                Err(_) => {
+                    Err(anyhow!("Failed to lock search manager"))?;
+                }
+            },
             Some(val) => {
                 eprintln!("Unknown command: {}", val);
             }
@@ -303,18 +333,24 @@ impl Uci {
                 },
             }
         }
+        match self.manager.try_lock() {
+            Ok(mut manager) => {
+                if !fen.is_empty() {
+                    let fen_str = fen.join(" ");
+                    let Fen(position) = Fen::parse(fen_str.as_str())?;
+                    manager.position = position;
+                } else {
+                    let Fen(position) = STARTPOS.parse().unwrap();
+                    manager.position = position;
+                }
 
-        if !fen.is_empty() {
-            let fen_str = fen.join(" ");
-            let Fen(position) = Fen::parse(fen_str.as_str())?;
-            self.manager.position = position;
-        } else {
-            let Fen(position) = STARTPOS.parse().unwrap();
-            self.manager.position = position;
-        }
-
-        for mv in moves {
-            self.manager.position.make_move(mv);
+                for mv in moves {
+                    manager.position.make_move(mv);
+                }
+            }
+            Err(_) => {
+                return Err(anyhow!("Failed to lock search manager"));
+            }
         }
         Ok(())
     }
@@ -332,14 +368,22 @@ impl Uci {
         let mut nodes = 0;
         let now = std::time::Instant::now();
 
+        let manager = match self.manager.try_lock() {
+            Ok(manager) => manager,
+            Err(_) => {
+                return Err(anyhow!("Failed to lock search manager"));
+            }
+        };
+
         if depth > 0 {
-            let mg = MoveGen::new(&self.manager.position);
+            let mut pos = manager.position.clone();
+            let mg = MoveGen::new(&pos);
 
             for mv in mg {
-                self.manager.position.make_move(mv);
-                let count = perft(&mut self.manager.position, depth - 1);
+                pos.make_move(mv);
+                let count = perft(&mut pos, depth - 1);
                 nodes += count;
-                self.manager.position.unmake_move(mv);
+                pos.unmake_move(mv);
                 println!("{}: {}", mv, count);
             }
         }
@@ -381,27 +425,23 @@ impl Uci {
             limits.infinite = true;
             limits
         };
-        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stop_2 = stop.clone();
-        let stop_3 = stop.clone();
-        thread::spawn(move || {
-            let mut input = String::new();
-            loop {
-                std::io::stdin().read_line(&mut input).unwrap();
-                if input.trim() == "stop" {
-                    stop_2.store(true, std::sync::atomic::Ordering::Relaxed);
-                    break;
-                }
-                if stop_2.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-                input.clear();
+        self.stop.store(false, std::sync::atomic::Ordering::Relaxed);
+        let stop = self.stop.clone();
+        let manager = self.manager.clone();
+        thread::spawn(move || match manager.try_lock() {
+            Ok(manager) => {
+                manager.think_with_stop(limits, stop);
+            }
+            Err(_) => {
+                eprintln!("Failed to lock search manager");
             }
         });
 
-        self.manager.think_with_stop(limits, stop);
-        stop_3.store(true, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
 
+    fn cmd_stop(&mut self) -> Result<()> {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 }
