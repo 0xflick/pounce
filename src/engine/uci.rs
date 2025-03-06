@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::thread;
 
 use anyhow::{Context, Result, anyhow};
 use rustyline::DefaultEditor;
@@ -11,12 +11,10 @@ use rustyline::error::ReadlineError;
 
 use crate::chess::Move;
 use crate::chess::movegen::{MoveGen, perft};
-use crate::chess::position::Position;
 use crate::chess::position::fen::{Fen, STARTPOS};
 use crate::engine::SearchManager;
 use crate::engine::bench::bench;
 use crate::engine::limits::Limits;
-use crate::engine::tt::Table;
 use crate::engine::utils::engine_name;
 
 #[derive(Debug, Clone, Copy)]
@@ -124,41 +122,29 @@ impl Display for UciOptionSet {
 }
 
 pub struct Uci {
-    position: Position,
-    stop: Arc<AtomicBool>,
-    tt: Arc<Table>,
     manager: SearchManager,
     options: UciOptionSet,
 }
 
 impl Uci {
     pub fn new() -> Self {
-        let Fen(position) = STARTPOS.parse().unwrap();
-
         let mut options = UciOptionSet::new();
-        options.add_option(UciOption::Spin {
-            name: "Hash",
-            default: 64,
-            min: 1,
-            max: 16384,
-        });
         options.add_option(UciOption::Spin {
             name: "Threads",
             default: 1,
             min: 1,
             max: 128,
         });
+        options.add_option(UciOption::Spin {
+            name: "Hash",
+            default: 16,
+            min: 1,
+            max: 16384,
+        });
 
-        let tt = Table::new_mb(options.get_int("Hash").unwrap() as usize);
-        let manager = SearchManager::new(options.get_int("Threads").unwrap() as usize);
+        let manager = SearchManager::new(1, 16);
 
-        Uci {
-            position,
-            stop: Arc::new(AtomicBool::new(false)),
-            tt: Arc::new(tt),
-            manager,
-            options,
-        }
+        Uci { manager, options }
     }
 }
 
@@ -233,15 +219,12 @@ impl Uci {
                 self.options.parse(rest)?;
 
                 if let Some(hash_size) = self.options.get_int("Hash") {
-                    if self.tt.size_mb() != hash_size as usize {
-                        self.tt = Arc::new(Table::new_mb(hash_size as usize));
-                    }
+                    self.manager.set_tt_size_mb(hash_size as usize);
                 }
 
                 if let Some(threads) = self.options.get_int("Threads") {
                     self.manager.set_num_threads(threads as usize);
                 }
-                self.tt = Arc::new(Table::new_mb(self.options.get_int("Hash").unwrap() as usize));
             }
             Some("quit") => {
                 return Ok(ControlFlow::Break(()));
@@ -256,26 +239,24 @@ impl Uci {
                 self.cmd_go(rest)?;
             }
             Some("eval") => {
-                let eval = self.position.eval();
-                let psqt_mg = self.position.psqt_mg;
-                let psqt_eg = self.position.psqt_eg;
-                let psqt_mg_calc = self.position.psqt_mg();
-                let psqt_eg_calc = self.position.psqt_eg();
+                let eval = self.manager.position.eval();
+                let psqt_mg = self.manager.position.psqt_mg;
+                let psqt_eg = self.manager.position.psqt_eg;
+                let psqt_mg_calc = self.manager.position.psqt_mg();
+                let psqt_eg_calc = self.manager.position.psqt_eg();
                 println!(
                     "Eval: {}, PSQT MG: {} - {}, PSQT EG: {} - {}",
                     eval, psqt_mg, psqt_mg_calc, psqt_eg, psqt_eg_calc
                 );
             }
-            Some("stop") => {
-                self.cmd_stop();
-            }
+            Some("stop") => {}
             Some("ucinewgame") => {
-                self.tt.clear();
+                self.manager.clear_tt();
             }
             Some("zobrist") => {
-                let hash = self.position.zobrist_hash();
+                let hash = self.manager.position.zobrist_hash();
                 println!("Zobrist hash: {:x}", u64::from(hash));
-                println!("Zobrist hash: {:x}", u64::from(self.position.key));
+                println!("Zobrist hash: {:x}", u64::from(self.manager.position.key));
             }
             Some(val) => {
                 eprintln!("Unknown command: {}", val);
@@ -326,14 +307,14 @@ impl Uci {
         if !fen.is_empty() {
             let fen_str = fen.join(" ");
             let Fen(position) = Fen::parse(fen_str.as_str())?;
-            self.position = position;
+            self.manager.position = position;
         } else {
             let Fen(position) = STARTPOS.parse().unwrap();
-            self.position = position;
+            self.manager.position = position;
         }
 
         for mv in moves {
-            self.position.make_move(mv);
+            self.manager.position.make_move(mv);
         }
         Ok(())
     }
@@ -352,13 +333,13 @@ impl Uci {
         let now = std::time::Instant::now();
 
         if depth > 0 {
-            let mg = MoveGen::new(&self.position);
+            let mg = MoveGen::new(&self.manager.position);
 
             for mv in mg {
-                self.position.make_move(mv);
-                let count = perft(&mut self.position, depth - 1);
+                self.manager.position.make_move(mv);
+                let count = perft(&mut self.manager.position, depth - 1);
                 nodes += count;
-                self.position.unmake_move(mv);
+                self.manager.position.unmake_move(mv);
                 println!("{}: {}", mv, count);
             }
         }
@@ -380,7 +361,8 @@ impl Uci {
             depth: Some(7),
             ..Default::default()
         };
-        bench(self.tt.size_mb() as u32, 1, limits, false)
+        println!("Running benchmark...");
+        bench(16, 1, limits, false)
     }
 
     fn cmd_go<T>(&mut self, tokens: &[T]) -> Result<()>
@@ -399,23 +381,27 @@ impl Uci {
             limits.infinite = true;
             limits
         };
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop_2 = stop.clone();
+        let stop_3 = stop.clone();
+        thread::spawn(move || {
+            let mut input = String::new();
+            loop {
+                std::io::stdin().read_line(&mut input).unwrap();
+                if input.trim() == "stop" {
+                    stop_2.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+                if stop_2.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                input.clear();
+            }
+        });
 
-        let stop = Arc::new(AtomicBool::new(false));
-        self.stop = stop.clone();
-        let tt = self.tt.clone();
-        self.manager.think(self.position.clone(), limits, tt, stop);
-        //
-        // let position = self.position.clone();
-        //
-        // thread::spawn(move || {
-        //     let mut search = Search::new(position, limits, tt, stop.clone());
-        //     let bestmove = search.think().bestmove;
-        //     println!("bestmove {}", bestmove);
-        // });
+        self.manager.think_with_stop(limits, stop);
+        stop_3.store(true, std::sync::atomic::Ordering::Relaxed);
+
         Ok(())
-    }
-
-    fn cmd_stop(&mut self) {
-        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 }

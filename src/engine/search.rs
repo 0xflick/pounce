@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
@@ -33,64 +32,109 @@ pub struct SearchResult {
     pub score: i16,
 }
 
-pub struct Search {
-    position: Position,
-    limits: SearchCop,
-    tt: Arc<Table>,
-
-    pv: [[Move; MAX_PLY as usize]; MAX_PLY as usize],
-    pv_length: [u8; MAX_PLY as usize],
-    killers: [[Move; 2]; MAX_PLY as usize],
-    current_move: [Move; MAX_PLY as usize],
-    history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-    start_time: Instant,
-    stop: Arc<AtomicBool>,
-    silent: bool,
-    effort: [[u64; Square::NUM]; Square::NUM],
-    thread_idx: usize,
-
+pub struct Stats {
     pub nodes: u64,
+    pub effort: [[u64; Square::NUM]; Square::NUM],
+    pub pv: [[Move; MAX_PLY as usize]; MAX_PLY as usize],
+    pub pv_length: [u8; MAX_PLY as usize],
+    pub start_time: Instant,
 }
 
-impl Search {
+impl Default for Stats {
+    fn default() -> Self {
+        Self {
+            nodes: 0,
+            effort: [[0; Square::NUM]; Square::NUM],
+            pv: [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize],
+            pv_length: [0; MAX_PLY as usize],
+            start_time: Instant::now(),
+        }
+    }
+}
+
+impl Stats {
+    fn reset(&mut self) {
+        self.nodes = 0;
+        self.effort = [[0; Square::NUM]; Square::NUM];
+        self.pv = [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize];
+        self.pv_length = [0; MAX_PLY as usize];
+        self.start_time = Instant::now();
+    }
+
+    fn uci_info(&self, depth: i32, score: i16, hashfull: f64) {
+        let elapsed = self.start_time.elapsed().as_millis() + 1;
+        let nps = (self.nodes as u128 * 1000) / elapsed;
+        let pv = (0..self.pv_length[0])
+            .map(|i| self.pv[0][i as usize].to_string())
+            .collect::<Vec<String>>()
+            .join(" ");
+        if score.abs() > eval::MATE_IN_PLY {
+            let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
+
+            println!(
+                "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
+                depth, ply, elapsed, self.nodes, nps, hashfull, pv
+            );
+        } else {
+            println!(
+                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
+                depth, score, elapsed, self.nodes, nps, hashfull, pv
+            );
+        }
+    }
+}
+
+pub struct Search<'a> {
+    pub stats: Stats,
+
+    position: Position,
+
+    current_move: [Move; MAX_PLY as usize],
+    history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    killers: [[Move; 2]; MAX_PLY as usize],
+    tt: &'a Table,
+
+    tm: SearchCop,
+
+    stop: &'a AtomicBool,
+
+    silent: bool,
+    thread_idx: usize,
+}
+
+impl<'a> Search<'a> {
     pub fn new(
         position: Position,
         limits: Limits,
-        tt: Arc<Table>,
-        stop: Arc<AtomicBool>,
+        tt: &'a Table,
+        stop: &'a AtomicBool,
         thread_idx: usize,
+        silent: bool,
     ) -> Self {
         let side = position.side;
         Search {
-            position,
-            limits: SearchCop::new(limits, side),
-            tt,
-            pv: [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize],
-            pv_length: [0; MAX_PLY as usize],
-            killers: [[Move::NONE; 2]; MAX_PLY as usize],
             current_move: [Move::NONE; MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
-            start_time: Instant::now(),
+            killers: [[Move::NONE; 2]; MAX_PLY as usize],
+            tm: SearchCop::new(limits, side),
+            position,
+            silent,
+            stats: Stats::default(),
             stop,
-            silent: false,
-            effort: [[0; Square::NUM]; Square::NUM],
-            nodes: 0,
             thread_idx,
+            tt,
         }
     }
 
     pub fn think(&mut self) -> SearchResult {
-        self.start_time = Instant::now();
-
+        self.stats.reset();
         self.iterative_deepening()
     }
 
     fn iterative_deepening(&mut self) -> SearchResult {
-        let max_depth = self.limits.depth.unwrap_or(MAX_DEPTH) as i32;
+        let max_depth = self.tm.depth.unwrap_or(MAX_DEPTH) as i32;
         let mut bestmove = Move::NONE;
         let mut score = 0;
-
-        let mut scale = 1.;
 
         for depth in 1..=max_depth {
             if self.done_thinking() {
@@ -104,33 +148,20 @@ impl Search {
             }
 
             score = depth_score;
-            bestmove = self.pv[0][0];
-            self.uci_info(depth, score);
+            bestmove = self.stats.pv[0][0];
 
-            //TODO: Move this into search cop
-            if self.limits.adjust {
-                let bm_nodes = self.effort[self.pv[0][0].from()][self.pv[0][0].to()];
-                let bm_frac = bm_nodes as f32 / self.nodes as f32;
-                scale = (0.4 + 2. * (1. - bm_frac)).max(0.5);
+            if !self.silent && self.thread_idx == 0 {
+                self.stats.uci_info(depth, score, self.tt.hashfull());
             }
 
-            // stop search if we're past optimum
-            if let Some(optimal_time) = self.limits.optimal_time {
-                if self.start_time.elapsed() >= optimal_time.mul_f32(scale) {
-                    break;
-                }
-            }
-
-            // stop search if we're more than 80% of max time
-            if let Some(max_time) = self.limits.max_time {
-                if self.start_time.elapsed() >= max_time.mul_f32(0.80) {
-                    break;
-                }
+            self.tm.adjust(&self.stats);
+            if self.tm.time_up_deepening(&self.stats) {
+                break;
             }
         }
 
         if bestmove == Move::NONE {
-            bestmove = self.pv[0][0];
+            bestmove = self.stats.pv[0][0];
         }
 
         SearchResult { bestmove, score }
@@ -183,9 +214,9 @@ impl Search {
         if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
             return self.position.eval();
         }
-        self.nodes += 1;
+        self.stats.nodes += 1;
 
-        self.pv_length[ply as usize] = ply;
+        self.stats.pv_length[ply as usize] = ply;
 
         debug_assert!(alpha < beta);
         debug_assert_eq!(self.position.key, self.position.zobrist_hash());
@@ -298,7 +329,7 @@ impl Search {
             let capture = (self.position.occupancy & mv.to()).any();
 
             // store node count for effort calculation
-            let before_nodes = self.nodes;
+            let before_nodes = self.stats.nodes;
 
             self.position.make_move(mv);
             self.current_move[ply as usize] = mv;
@@ -340,19 +371,20 @@ impl Search {
 
             // store effort at root
             if is_root {
-                self.effort[mv.from()][mv.to()] = self.nodes - before_nodes;
+                self.stats.effort[mv.from()][mv.to()] = self.stats.nodes - before_nodes;
             }
 
             if score > best {
                 best = score;
                 best_move = mv;
 
-                self.pv[ply as usize][ply as usize] = mv;
-                for j in (ply + 1)..self.pv_length[ply as usize + 1] {
-                    self.pv[ply as usize][j as usize] = self.pv[ply as usize + 1][j as usize];
+                self.stats.pv[ply as usize][ply as usize] = mv;
+                for j in (ply + 1)..self.stats.pv_length[ply as usize + 1] {
+                    self.stats.pv[ply as usize][j as usize] =
+                        self.stats.pv[ply as usize + 1][j as usize];
                 }
 
-                self.pv_length[ply as usize] = self.pv_length[ply as usize + 1];
+                self.stats.pv_length[ply as usize] = self.stats.pv_length[ply as usize + 1];
 
                 if score > alpha {
                     alpha = score;
@@ -406,7 +438,7 @@ impl Search {
     }
 
     fn quiescence_search(&mut self, mut alpha: i16, beta: i16, is_pv: bool) -> i16 {
-        self.nodes += 1;
+        self.stats.nodes += 1;
 
         if self.done_thinking() {
             return 0;
@@ -523,12 +555,12 @@ impl Search {
 
     pub fn done_thinking(&self) -> bool {
         if self.stop.load(std::sync::atomic::Ordering::Relaxed)
-            || self.limits.nodes.is_some_and(|n| self.nodes >= n)
+            || self.tm.nodes.is_some_and(|n| self.stats.nodes >= n)
         {
             return true;
         }
 
-        if self.nodes % 2048 == 0 && self.limits.time_up(self.start_time) {
+        if self.stats.nodes % 2048 == 0 && self.tm.time_up(&self.stats) {
             self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
@@ -538,44 +570,6 @@ impl Search {
 
     pub fn set_silent(&mut self, silent: bool) {
         self.silent = silent;
-    }
-
-    fn uci_info(&self, depth: i32, score: i16) {
-        if self.silent || self.thread_idx > 0 {
-            return;
-        }
-
-        let elapsed = self.start_time.elapsed().as_millis() + 1;
-        let nps = (self.nodes as u128 * 1000) / elapsed;
-        let pv = (0..self.pv_length[0])
-            .map(|i| self.pv[0][i as usize].to_string())
-            .collect::<Vec<String>>()
-            .join(" ");
-        if score.abs() > eval::MATE_IN_PLY {
-            let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
-
-            println!(
-                "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
-                depth,
-                ply,
-                elapsed,
-                self.nodes,
-                nps,
-                self.tt.hashfull(),
-                pv
-            );
-        } else {
-            println!(
-                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
-                depth,
-                score,
-                elapsed,
-                self.nodes,
-                nps,
-                self.tt.hashfull(),
-                pv
-            );
-        }
     }
 }
 

@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -7,7 +5,6 @@ use anyhow::Result;
 use crate::chess::position::fen::Fen;
 use crate::engine::SearchManager;
 use crate::engine::limits::Limits;
-use crate::engine::tt::Table;
 
 const BENCHMARK_FENS: [&str; 50] = [
     "r3k2r/2pb1ppp/2pp1q2/p7/1nP1B3/1P2P3/P2N1PPP/R2QK2R w KQkq a6 0 14",
@@ -65,17 +62,18 @@ const BENCHMARK_FENS: [&str; 50] = [
 pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits, silent: bool) -> Result<()> {
     let mut total_nodes = 0;
 
-    let tt = Arc::new(Table::new_mb(hash_size_mb as usize));
-    let stop = Arc::new(AtomicBool::new(false));
+    let mut manager = SearchManager::new(num_threads, hash_size_mb as usize);
 
     let start = Instant::now();
-    let mut manager = SearchManager::new(num_threads);
-    manager.set_silent(true);
 
     for fen in BENCHMARK_FENS {
+        if !silent {
+            println!("FEN: {}", fen);
+        }
         let Fen(position) = fen.parse()?;
 
-        let (_, nodes) = manager.think_sync(position, limits, tt.clone(), stop.clone());
+        manager.position = position;
+        let (_, nodes) = manager.think(limits);
         total_nodes += nodes;
     }
 

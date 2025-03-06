@@ -1,14 +1,17 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::chess::Color;
 use crate::engine::limits::Limits;
+use crate::engine::search::Stats;
 
 pub struct SearchCop {
     pub depth: Option<u8>,
     pub nodes: Option<u64>,
-    pub adjust: bool,
+    adjust: bool,
     pub optimal_time: Option<Duration>,
     pub max_time: Option<Duration>,
+
+    scale: f32,
 }
 
 impl SearchCop {
@@ -33,6 +36,7 @@ impl SearchCop {
                 adjust: false,
                 optimal_time: None,
                 max_time: None,
+                scale: 1.0,
             };
         }
 
@@ -43,6 +47,7 @@ impl SearchCop {
                 adjust: false,
                 optimal_time: Some(Duration::from_millis(movetime as u64)),
                 max_time: Some(Duration::from_millis(movetime as u64)),
+                scale: 1.0,
             };
         }
 
@@ -59,6 +64,7 @@ impl SearchCop {
                 adjust: false,
                 optimal_time: None,
                 max_time: None,
+                scale: 1.0,
             };
         }
 
@@ -89,13 +95,39 @@ impl SearchCop {
             adjust: true,
             optimal_time: Some(Duration::from_millis(opt)),
             max_time: Some(Duration::from_millis(max)),
+            scale: 1.0,
         }
     }
 
-    pub fn time_up(&self, start_time: Instant) -> bool {
+    pub fn time_up(&self, stats: &Stats) -> bool {
         if let Some(time) = self.max_time {
-            return start_time.elapsed() >= time;
+            if stats.start_time.elapsed() >= time {
+                return true;
+            }
         }
         false
+    }
+
+    pub fn time_up_deepening(&self, stats: &Stats) -> bool {
+        if let Some(time) = self.optimal_time {
+            if stats.start_time.elapsed() >= time.mul_f32(self.scale) {
+                return true;
+            }
+        } else if let Some(time) = self.max_time {
+            if stats.start_time.elapsed() >= time.mul_f32(0.8) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub fn adjust(&mut self, stats: &Stats) {
+        if self.adjust {
+            let bm_nodes = stats.effort[stats.pv[0][0].from()][stats.pv[0][0].to()];
+            let bm_frac = bm_nodes as f32 / stats.nodes as f32;
+
+            self.scale = (0.4 + 2. * (1. - bm_frac)).max(0.5);
+        }
     }
 }

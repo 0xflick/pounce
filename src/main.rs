@@ -8,7 +8,8 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() > 1 {
-        uci.run_once(&args[1])
+        let command = args[1..].join(" ");
+        uci.run_once(&command)
     } else {
         uci.run_loop()
     }

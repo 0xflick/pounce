@@ -66,6 +66,12 @@ impl From<ZobristHash> for u64 {
     }
 }
 
+impl From<ZobristHash> for u128 {
+    fn from(hash: ZobristHash) -> u128 {
+        hash.0 as u128
+    }
+}
+
 impl From<ZobristHash> for usize {
     fn from(hash: ZobristHash) -> usize {
         hash.0 as usize

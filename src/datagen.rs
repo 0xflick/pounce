@@ -19,10 +19,8 @@ use crate::chess::movegen::MoveGen;
 use crate::chess::position::fen::{Fen, STARTPOS};
 use crate::chess::{Color, GameResult, Position};
 use crate::datagen::format::{CompressedGame, Wdl};
-use crate::engine::eval;
 use crate::engine::limits::Limits;
-use crate::engine::search::Search;
-use crate::engine::tt::Table;
+use crate::engine::{SearchManager, eval};
 
 static STOP: AtomicBool = AtomicBool::new(false);
 static TOTAL_GAMES: AtomicU32 = AtomicU32::new(0);
@@ -179,7 +177,6 @@ fn thread_worker(
     config: &DatagenConfig,
     writer: Arc<Mutex<impl std::io::Write>>,
 ) -> anyhow::Result<()> {
-    let tt = Arc::new(Table::new_mb(config.hash_size_mb as usize));
     let start = std::time::Instant::now();
     let mut last_log = std::time::Instant::now();
 
@@ -227,8 +224,7 @@ fn thread_worker(
             };
         }
 
-        tt.clear();
-        if let Ok(game) = playout(&pos, config.limits, tt.clone()) {
+        if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
             TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
             let mut writer_guard = writer.lock().unwrap();
@@ -239,11 +235,13 @@ fn thread_worker(
     Ok(())
 }
 
-fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Result<CompressedGame> {
+fn playout(
+    startpos: &Position,
+    limits: Limits,
+    hash_size_mb: usize,
+) -> anyhow::Result<CompressedGame> {
     let mut pos = startpos.clone();
     let mut rng = SmallRng::from_os_rng();
-
-    let stop = Arc::new(AtomicBool::new(false));
 
     // make random moves
     let num_random = if rng.random_bool(0.5) { 8 } else { 9 };
@@ -272,9 +270,8 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
     }
 
     // break early if eval is too extreme
-    let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone(), 0);
-    search.set_silent(true);
-    let res = search.think();
+    let mut search = SearchManager::new(1, hash_size_mb);
+    let (res, _) = search.think(limits);
     if res.score.abs() > 1_500 {
         return Err(anyhow::anyhow!("Extreme score"));
     }
@@ -312,9 +309,7 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
             break Wdl::Draw;
         }
 
-        let mut search = Search::new(pos.clone(), limits, tt.clone(), stop.clone(), 0);
-        search.set_silent(true);
-        let res = search.think();
+        let (res, _) = search.think(limits);
         // exit if we find a mate score
         if res.score < (-eval::MATE_IN_PLY) {
             // current side is losing
@@ -344,7 +339,7 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
                 -res.score
             }
         });
-        pos.make_move(res.bestmove);
+        search.position.make_move(res.bestmove);
     };
 
     game.set_win(result);

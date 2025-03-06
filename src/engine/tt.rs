@@ -1,7 +1,30 @@
-use std::sync::Mutex;
+use std::sync::atomic::AtomicU64;
 
 use crate::chess::Move;
 use crate::zobrist::ZobristHash;
+
+#[derive(Debug)]
+#[repr(C)]
+struct TTMemory {
+    key: AtomicU64,
+    data: AtomicU64,
+}
+
+impl Default for TTMemory {
+    fn default() -> TTMemory {
+        TTMemory {
+            key: AtomicU64::new(0),
+            data: AtomicU64::new(0),
+        }
+    }
+}
+
+impl TTMemory {
+    fn clear(&self) {
+        self.key.store(0, std::sync::atomic::Ordering::Relaxed);
+        self.data.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -38,6 +61,42 @@ impl Entry {
             best_move,
         }
     }
+
+    fn read_from(mem: &TTMemory) -> Entry {
+        let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
+        let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
+
+        unsafe {
+            let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data);
+            let depth = (mem_data >> 48) as u8;
+            let score = ((mem_data >> 32) & 0xffff) as i16;
+            let score_type = std::mem::transmute::<u8, EntryType>(((mem_data >> 24) & 0xff) as u8);
+            let best_move = std::mem::transmute::<u16, Move>(mem_data as u16);
+
+            Entry {
+                key,
+                depth,
+                score,
+                score_type,
+                best_move,
+            }
+        }
+    }
+
+    fn write_to(&self, mem: &TTMemory) {
+        unsafe {
+            let depth = self.depth as u64;
+            let score = self.score as u64;
+            let score_type = self.score_type as u64;
+            let best_move = std::mem::transmute::<Move, u16>(self.best_move) as u64;
+
+            let data = (depth << 48) | (score << 32) | (score_type << 24) | best_move;
+            let key = std::mem::transmute::<ZobristHash, u64>(self.key) ^ data;
+
+            mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
+            mem.data.store(data, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
 }
 
 impl Default for Entry {
@@ -53,7 +112,7 @@ impl Default for Entry {
 }
 
 pub struct Table {
-    entries: Vec<Mutex<Entry>>,
+    entries: Vec<TTMemory>,
     max_size: usize,
 }
 
@@ -61,7 +120,10 @@ impl Table {
     pub fn new(size: usize) -> Table {
         let mut entries = Vec::with_capacity(size);
         for _ in 0..size {
-            entries.push(Mutex::new(Entry::default()));
+            entries.push(TTMemory {
+                key: AtomicU64::new(0),
+                data: AtomicU64::new(0),
+            });
         }
         Table {
             entries,
@@ -75,38 +137,49 @@ impl Table {
 
     pub fn clear(&self) {
         self.entries.iter().for_each(|entry| {
-            let mut val = entry.lock().unwrap();
-            *val = Entry::default();
+            entry.clear();
         });
     }
 
     fn index(&self, key: ZobristHash) -> usize {
-        usize::from(key) % self.max_size
+        let big_key = u128::from(key);
+        let len = self.entries.len() as u128;
+        ((big_key * len) >> 64) as usize
     }
 
     pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
         let idx = self.index(key);
-        let entry = self.entries[idx].lock().unwrap();
+        let entry = Entry::read_from(&self.entries[idx]);
         match entry.key == key {
-            true => Some(*entry),
+            true => Some(entry),
             false => None,
         }
     }
 
     pub fn set(&self, entry: Entry) {
         let idx = self.index(entry.key);
-        let mut val = self.entries[idx].lock().unwrap();
-        *val = entry;
+        let val = &self.entries[idx];
+        entry.write_to(val);
     }
 
     pub fn hashfull(&self) -> f64 {
         self.entries[..1000]
             .iter()
-            .filter(|entry| entry.lock().unwrap().score_type != EntryType::None)
+            .filter(|entry| Entry::read_from(entry).key != ZobristHash::default())
             .count() as f64
     }
 
     pub fn size_mb(&self) -> usize {
         self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_table() {
+        assert_eq!(std::mem::size_of::<Entry>(), 16);
     }
 }
