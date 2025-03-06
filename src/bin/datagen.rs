@@ -25,11 +25,11 @@ enum Commands {
         #[arg(short, long)]
         num_games: u32,
 
-        #[arg(short, long, default_value_t = 1)]
-        threads: u32,
+        #[arg(short, long)]
+        threads: Option<u32>,
 
-        #[arg(short, long, default_value_t = 16)]
-        table_size: u32,
+        #[arg(long, default_value_t = 16)]
+        hash_size: u32,
 
         #[arg(long)]
         state: Option<PathBuf>,
@@ -43,25 +43,25 @@ fn main() -> Result<()> {
     pounce::init();
 
     let cli = Cli::parse();
-    match &cli.command {
+    match cli.command {
         Commands::Gen {
             depth,
             out_path,
             num_games,
-            threads: concurrency,
-            table_size,
+            threads,
+            hash_size,
             state,
         } => datagen::datagen(DatagenConfig {
             limits: Limits {
-                depth: Some(*depth),
+                depth: Some(depth),
                 ..Limits::new()
             },
-            num_games: num_games.to_owned(),
-            tt_size_mb: *table_size,
-            concurrency: concurrency.to_owned(),
-            out_path: out_path.to_owned(),
-            state_path: state.clone(),
+            num_games,
+            hash_size_mb: hash_size,
+            threads: threads.unwrap_or(num_cpus::get() as u32),
+            out_path,
+            state_path: state,
         }),
-        Commands::BinToPgn { in_file } => datagen::bin_to_pgn(in_file),
+        Commands::BinToPgn { in_file } => datagen::bin_to_pgn(&in_file),
     }
 }

@@ -35,8 +35,8 @@ static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
 pub struct DatagenConfig {
     pub limits: Limits,
     pub num_games: u32,
-    pub tt_size_mb: u32,
-    pub concurrency: u32,
+    pub hash_size_mb: u32,
+    pub threads: u32,
     pub out_path: PathBuf,
     pub state_path: Option<PathBuf>,
 }
@@ -101,8 +101,8 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
 
     println!("Starting datagen with the following configuration:");
     println!("Limits: {:?}", config.limits);
-    println!("TT size: {} MB", config.tt_size_mb);
-    println!("Concurrency: {}", config.concurrency);
+    println!("TT size: {} MB", config.hash_size_mb);
+    println!("Concurrency: {}", config.threads);
     println!("Output path: {:?}", config.out_path);
     if let Some(ref state_path) = config.state_path {
         println!("State path: {:?}", state_path);
@@ -117,23 +117,20 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         .create(true)
         .append(true)
         .open(&config.out_path)
-        .unwrap();
+        .expect("Failed to open output file");
 
     std::thread::scope(|s| {
         println!("Starting threads");
         let buf_writer = BufWriter::new(file);
         let shared_writer = Arc::new(Mutex::new(buf_writer));
-        for i in 0..config.concurrency {
+        for i in 0..config.threads {
             s.spawn({
                 let config = config.clone();
                 let writer_clone = shared_writer.clone();
                 move || thread_worker(i, &config, writer_clone)
             });
         }
-        println!(
-            "{}/{} threads started",
-            config.concurrency, config.concurrency
-        );
+        println!("{}/{} threads started", config.threads, config.threads);
         println!();
         println!("Let 'er rip!!!!");
     });
@@ -182,7 +179,7 @@ fn thread_worker(
     config: &DatagenConfig,
     writer: Arc<Mutex<impl std::io::Write>>,
 ) -> anyhow::Result<()> {
-    let tt = Arc::new(Table::new_mb(config.tt_size_mb as usize));
+    let tt = Arc::new(Table::new_mb(config.hash_size_mb as usize));
     let start = std::time::Instant::now();
     let mut last_log = std::time::Instant::now();
 
@@ -225,7 +222,7 @@ fn thread_worker(
                     config: config.to_owned(),
                 };
 
-                let state = serde_json::to_string(&state).unwrap();
+                let state = serde_json::to_string(&state).expect("Unable to serialize state");
                 std::fs::write(state_path, state)?;
             };
         }
@@ -253,10 +250,10 @@ fn playout(startpos: &Position, limits: Limits, tt: Arc<Table>) -> anyhow::Resul
 
     for _ in 0..num_random {
         let m = MoveGen::new(&pos).collect::<Vec<_>>();
-        if m.is_empty() {
-            return Err(anyhow::anyhow!("No moves"));
-        }
-        let mv = *m.choose(&mut rng).unwrap();
+        let mv = match m.choose(&mut rng) {
+            Some(mv) => *mv,
+            None => return Err(anyhow::anyhow!("No moves")),
+        };
         pos.make_move(mv);
     }
     let startpos = pos.clone();

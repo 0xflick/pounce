@@ -658,6 +658,7 @@ dependencies = [
  "clap",
  "criterion",
  "ctrlc",
+ "num_cpus",
  "rand",
  "rand_core",
  "rustyline",

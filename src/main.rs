@@ -106,8 +106,8 @@ fn main() -> Result<()> {
                     ..Limits::new()
                 },
                 num_games: num_games.to_owned(),
-                tt_size_mb: *table_size,
-                concurrency: concurrency.to_owned(),
+                hash_size_mb: *table_size,
+                threads: concurrency.to_owned(),
                 out_path: out_path.to_owned(),
                 state_path: state.clone(),
             });

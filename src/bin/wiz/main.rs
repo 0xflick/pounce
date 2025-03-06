@@ -125,7 +125,7 @@ fn main() {
             "Rook: {}/{} ({} kb), best shift: {}, worst shift: {}",
             rook_found,
             rook_total,
-            rook_size / 1204,
+            rook_size / 1024,
             rook_best_shift,
             rook_worst_shift
         );
