@@ -9,15 +9,15 @@ use anyhow::{Context, Result, anyhow};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 
-use crate::bench::bench;
 use crate::chess::Move;
 use crate::chess::movegen::{MoveGen, perft};
 use crate::chess::position::Position;
 use crate::chess::position::fen::{Fen, STARTPOS};
-use crate::limits::Limits;
-use crate::search::SearchManager;
-use crate::tt::Table;
-use crate::utils::engine_name;
+use crate::engine::bench::bench;
+use crate::engine::limits::Limits;
+use crate::engine::search::SearchManager;
+use crate::engine::tt::Table;
+use crate::engine::utils::engine_name;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UciOption {

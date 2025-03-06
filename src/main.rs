@@ -3,13 +3,14 @@ use std::path::PathBuf;
 
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
-use pounce::bench::bench;
 use pounce::chess::movegen::perft;
 use pounce::chess::position::fen::{Fen, STARTPOS};
+use pounce::engine::bench::bench;
+use pounce::engine::limits::Limits;
+use pounce::engine::uci::Uci;
+
 #[cfg(feature = "datagen")]
 use pounce::datagen::{self, DatagenConfig};
-use pounce::limits::Limits;
-use pounce::uci::Uci;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

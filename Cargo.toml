@@ -6,6 +6,11 @@ version = "1.0.0"
 build = "build.rs"
 default-run = "pounce"
 
+[[bin]]
+name = "datagen"
+path = "src/bin/datagen.rs"
+required-features = ["datagen"]
+
 [features]
 datagen = ["serde", "serde_json", "ctrlc"]
 

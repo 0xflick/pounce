@@ -4,11 +4,11 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 fn bench_search(c: &mut Criterion) {
     pounce::init();
-    let mut limit = pounce::limits::Limits::new();
+    let mut limit = pounce::engine::limits::Limits::new();
     limit.depth = Some(5);
     c.bench_function("bench", |b| {
         b.iter(|| {
-            pounce::bench::bench(16, 1, limit, true).unwrap();
+            pounce::engine::bench::bench(16, 1, limit, true).unwrap();
         })
     });
 }

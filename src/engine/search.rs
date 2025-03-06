@@ -6,10 +6,10 @@ use arrayvec::ArrayVec;
 use threadpool::ThreadPool;
 
 use crate::chess::{Color, GameResult, Move, Position, Square};
-use crate::eval;
-use crate::limits::Limits;
-use crate::movepicker::{MAX_MOVES, MovePicker};
-use crate::tt::{Entry, EntryType, Table};
+use crate::engine::eval;
+use crate::engine::limits::Limits;
+use crate::engine::movepicker::{MAX_MOVES, MovePicker};
+use crate::engine::tt::{Entry, EntryType, Table};
 
 pub struct SearchCop {
     pub depth: Option<u8>,

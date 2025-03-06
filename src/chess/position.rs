@@ -13,7 +13,7 @@ use crate::chess::movegen::utils::{
 };
 use crate::chess::position::zobrist::ZobristHash;
 use crate::chess::{Color, File, GameResult, Move, MoveType, Piece, Role, Square};
-use crate::eval::{PSQT_EG, PSQT_MG};
+use crate::engine::eval::{PSQT_EG, PSQT_MG};
 
 bitflags! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
