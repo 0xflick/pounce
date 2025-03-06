@@ -1,8 +1,8 @@
 use arrayvec::ArrayVec;
 
 use crate::bitboard::Bitboard;
+use crate::chess::movegen::utils::{between, line};
 use crate::chess::{Color, Move, Position, Role, Square};
-use crate::movegen::*;
 
 pub type MoveList = ArrayVec<FromAndMoves, 18>;
 

@@ -1,4 +1,4 @@
-mod util;
+mod utils;
 
 use std::fmt::{self, Debug, Display, Formatter};
 use std::fs::OpenOptions;
@@ -17,11 +17,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::bitboard::Bitboard;
 use crate::chess::fen::STARTPOS;
+use crate::chess::movegen::MoveGen;
 use crate::chess::{CastleRights, Color, Fen, GameResult, Move, Piece, Position, Role, Square};
-use crate::datagen::util::U4Array32;
+use crate::datagen::utils::U4Array32;
 use crate::eval;
 use crate::limits::Limits;
-use crate::movegen::MoveGen;
 use crate::search::Search;
 use crate::tt::Table;
 

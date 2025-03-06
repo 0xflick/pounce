@@ -1,8 +1,9 @@
-use types::{FromAndMoves, PawnType};
-
 use crate::bitboard::Bitboard;
+use crate::chess::movegen::types::{FromAndMoves, MoveList, Mover, PawnType};
+use crate::chess::movegen::utils::{
+    between, get_bishop_moves, get_pawn_attacks, get_pawn_moves, get_rook_moves, line,
+};
 use crate::chess::{Color, Position, Role, Square};
-use crate::movegen::*;
 
 impl Mover for PawnType {
     #[inline]

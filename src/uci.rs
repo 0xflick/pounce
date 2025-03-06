@@ -11,12 +11,12 @@ use rustyline::error::ReadlineError;
 
 use crate::bench::bench;
 use crate::chess::fen::STARTPOS;
+use crate::chess::movegen::{MoveGen, perft};
 use crate::chess::{Fen, Move, Position};
 use crate::limits::Limits;
-use crate::movegen::{MoveGen, perft};
 use crate::search::SearchManager;
 use crate::tt::Table;
-use crate::util::engine_name;
+use crate::utils::engine_name;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UciOption {

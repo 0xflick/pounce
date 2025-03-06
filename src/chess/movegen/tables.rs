@@ -1,18 +1,16 @@
 use crate::bitboard::Bitboard;
 use crate::chess::{Color, File, Square};
-use crate::movegen::magic::{BISHOP_ATTACKS, ROOK_ATTACKS};
-use crate::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
 
-static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-static mut KNIGHT_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-static mut KING_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-static mut KINGSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-static mut QUEENSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-static mut BETWEEN: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-static mut LINE: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-static mut BISHOP_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
+pub static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
+pub static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
+pub static mut KNIGHT_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
+pub static mut KING_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
+pub static mut KINGSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
+pub static mut QUEENSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
+pub static mut BETWEEN: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
+pub static mut LINE: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
+pub static mut BISHOP_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
+pub static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
 
 pub fn init_tables() {
     init_pawn_move_table();
@@ -23,74 +21,6 @@ pub fn init_tables() {
     init_line_table();
     init_bishop_rays();
     init_rook_rays();
-}
-
-#[inline(always)]
-pub fn get_pawn_moves(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_MOVES[color][sq] }
-}
-
-#[inline(always)]
-pub fn get_pawn_attacks(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_ATTACKS[color][sq] }
-}
-
-#[inline(always)]
-pub fn get_rook_moves(sq: Square, occ: Bitboard) -> Bitboard {
-    unsafe {
-        let magic = ROOK_MAGICS.get_unchecked(sq as usize);
-        let occ = occ & magic.mask;
-        *ROOK_ATTACKS.get_unchecked(magic.index(occ))
-    }
-}
-
-#[inline(always)]
-pub fn get_bishop_moves(sq: Square, occ: Bitboard) -> Bitboard {
-    unsafe {
-        let magic = BISHOP_MAGICS.get_unchecked(sq as usize);
-        let occ = occ & magic.mask;
-        *BISHOP_ATTACKS.get_unchecked(magic.index(occ))
-    }
-}
-
-#[inline(always)]
-pub fn get_knight_moves(sq: Square) -> Bitboard {
-    unsafe { KNIGHT_MOVES[sq] }
-}
-
-#[inline(always)]
-pub fn get_king_moves(sq: Square) -> Bitboard {
-    unsafe { KING_MOVES[sq] }
-}
-
-#[inline(always)]
-pub fn between(from: Square, to: Square) -> Bitboard {
-    unsafe { BETWEEN[from][to] }
-}
-
-#[inline(always)]
-pub fn line(from: Square, to: Square) -> Bitboard {
-    unsafe { LINE[from][to] }
-}
-
-#[inline(always)]
-pub fn bishop_rays(sq: Square) -> Bitboard {
-    unsafe { BISHOP_RAYS[sq] }
-}
-
-#[inline(always)]
-pub fn rook_rays(sq: Square) -> Bitboard {
-    unsafe { ROOK_RAYS[sq] }
-}
-
-#[inline(always)]
-pub fn get_kingside_castle_through_squares(color: Color) -> Bitboard {
-    unsafe { KINGSIDE_CASTLE[color] }
-}
-
-#[inline(always)]
-pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
-    unsafe { QUEENSIDE_CASTLE[color] }
 }
 
 fn init_pawn_move_table() {

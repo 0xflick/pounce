@@ -99,8 +99,8 @@ impl Position {
 
 #[cfg(test)]
 fn perft_zobrist(pos: &mut Position, depth: u8) {
+    use crate::chess::movegen::MoveGen;
     use crate::chess::position::Fen;
-    use crate::movegen::MoveGen;
 
     if depth == 0 {
         return;
@@ -141,8 +141,8 @@ mod test {
     use super::init_zobrist;
     use crate::chess::Fen;
     use crate::chess::fen::STARTPOS;
+    use crate::chess::movegen::init_tables;
     use crate::chess::position::zobrist::perft_zobrist;
-    use crate::movegen::init_tables;
 
     const KIWIPETE_FEN: &str =
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1";

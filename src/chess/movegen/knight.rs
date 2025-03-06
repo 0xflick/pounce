@@ -1,13 +1,12 @@
-use types::RookType;
-
 use crate::bitboard::Bitboard;
-use crate::chess::{Color, Role, Square};
-use crate::movegen::*;
+use crate::chess::movegen::types::{KnightType, Mover};
+use crate::chess::movegen::utils::get_knight_moves;
+use crate::chess::{Color, Position, Role, Square};
 
-impl Mover for RookType {
+impl Mover for KnightType {
     #[inline]
     fn into_piece() -> Role {
-        Role::Rook
+        Role::Knight
     }
 
     #[inline]
@@ -16,6 +15,6 @@ impl Mover for RookType {
             true => Color::Black,
             false => Color::White,
         };
-        get_rook_moves(from, pos.occupancy) & !pos.by_color[side]
+        get_knight_moves(from) & !pos.by_color[side]
     }
 }

@@ -1,13 +1,12 @@
-use types::BishopType;
-
 use crate::bitboard::Bitboard;
+use crate::chess::movegen::types::{Mover, RookType};
+use crate::chess::movegen::utils::get_rook_moves;
 use crate::chess::{Color, Position, Role, Square};
-use crate::movegen::*;
 
-impl Mover for BishopType {
+impl Mover for RookType {
     #[inline]
     fn into_piece() -> Role {
-        Role::Bishop
+        Role::Rook
     }
 
     #[inline]
@@ -16,6 +15,6 @@ impl Mover for BishopType {
             true => Color::Black,
             false => Color::White,
         };
-        get_bishop_moves(from, pos.occupancy) & !pos.by_color[side]
+        get_rook_moves(from, pos.occupancy) & !pos.by_color[side]
     }
 }

@@ -1,8 +1,8 @@
 use arrayvec::ArrayVec;
 
 use crate::bitboard::Bitboard;
+use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Square};
-use crate::movegen::MoveGen;
 
 const CAPTURE_SCORE: i16 = 30_000;
 const KILLER_1_SCORE: i16 = 29_001;
@@ -214,7 +214,7 @@ impl MovePicker {
 #[cfg(test)]
 mod test {
     use crate::chess::Fen;
-    use crate::movegen::init_tables;
+    use crate::chess::movegen::init_tables;
     use crate::zobrist::init_zobrist;
 
     #[test]

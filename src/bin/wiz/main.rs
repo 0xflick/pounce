@@ -1,8 +1,11 @@
+mod magic_finder;
+
 use std::io::Write;
 
 use clap::Parser;
 use pounce::chess::Square;
-use pounce::movegen::magic_finder::{Wizard, bishop_mask, rook_mask};
+
+use crate::magic_finder::{Wizard, bishop_mask, rook_mask};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct Magic {
@@ -130,8 +133,11 @@ fn main() {
         if bishop_found == bishop_total && rook_found == rook_total {
             // write magics to file
             let mut file = std::fs::File::create(&args.output_file).unwrap();
+            writeln!(file, "// @generated with Wiz tool. Do not edit directly").unwrap();
+            writeln!(file, "// Rounds: {})", args.rounds).unwrap();
+            writeln!(file).unwrap();
             writeln!(file, "use crate::bitboard::Bitboard;").unwrap();
-            writeln!(file, "use crate::magic::Magic;").unwrap();
+            writeln!(file, "use crate::chess::magic::Magic;").unwrap();
             writeln!(file).unwrap();
 
             writeln!(file, "#[rustfmt::skip]").unwrap();

@@ -1,28 +1,20 @@
-use magic::Magic;
-pub use tables::{
-    between, bishop_rays, get_bishop_moves, get_king_moves, get_kingside_castle_through_squares,
-    get_knight_moves, get_pawn_attacks, get_pawn_moves, get_queenside_castle_throught_squares,
-    get_rook_moves, init_tables, line, rook_rays,
-};
-pub use types::{
-    BishopType, KingType, KnightType, MoveGen, MoveList, Mover, PawnType, QueenType, RookType,
-};
-
-use crate::chess::Position;
-
-mod magic;
-mod magic_gen;
-mod tables;
-mod types;
+pub mod magic;
+pub mod utils;
 
 mod bishop;
 mod king;
 mod knight;
+mod magic_gen;
 mod pawn;
 mod queen;
 mod rook;
+mod tables;
+mod types;
 
-pub mod magic_finder;
+pub use tables::init_tables;
+pub use types::MoveGen;
+
+use crate::chess::Position;
 
 #[inline]
 pub fn perft(pos: &mut Position, depth: u8) -> usize {

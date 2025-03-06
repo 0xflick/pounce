@@ -1,10 +1,9 @@
-use magic::{bishop_attacks, occupancy_bb, rook_attacks};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-use crate::bitboard::Bitboard;
-use crate::chess::Square;
-use crate::movegen::*;
+use pounce::bitboard::Bitboard;
+use pounce::chess::Square;
+use pounce::chess::movegen::magic::{bishop_attacks, rook_attacks};
 
 pub struct Wizard {
     rng: SmallRng,
@@ -166,10 +165,31 @@ pub fn bishop_mask(sq: Square) -> Bitboard {
     mask
 }
 
+pub fn occupancy_bb(mask: &Bitboard, index: usize) -> Bitboard {
+    let mut occ = Bitboard(0);
+
+    // get indexes of all bits in mask
+    let mut bits = Vec::new();
+    let mut m = *mask;
+    while m.any() {
+        bits.push(m.0.trailing_zeros());
+        m &= m.0 - 1;
+    }
+
+    // set bits in occ according to index
+    (0..bits.len()).for_each(|i| {
+        if index & (1 << i) != 0 {
+            occ |= 1 << bits[i];
+        }
+    });
+    occ
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::{File, Rank};
+    use pounce::chess::{File, Rank};
+
     #[test]
     fn test_rook_mask_1() {
         let sq = Square::make(File::D, Rank::R4);

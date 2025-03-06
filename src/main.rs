@@ -3,9 +3,10 @@ use clap::{Parser, Subcommand};
 use pounce::bench::bench;
 use pounce::chess::Fen;
 use pounce::chess::fen::STARTPOS;
+use pounce::chess::movegen::perft;
 use pounce::limits::Limits;
-use pounce::movegen::perft;
 use pounce::uci::Uci;
+
 #[cfg(feature = "datagen")]
 use {
     pounce::datagen::{self, DatagenConfig},

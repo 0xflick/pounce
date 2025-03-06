@@ -1,6 +1,7 @@
 use crate::bitboard::Bitboard;
 use crate::chess::Square;
-use crate::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
+
+use crate::chess::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
 
 const fn calc_size(magic_arr: &[Magic; 64]) -> usize {
     let mut size = 0;
@@ -191,24 +192,4 @@ pub const fn bishop_attacks(sq: Square, occ: Bitboard) -> Bitboard {
         i += 1;
     }
     attacks
-}
-
-pub fn occupancy_bb(mask: &Bitboard, index: usize) -> Bitboard {
-    let mut occ = Bitboard(0);
-
-    // get indexes of all bits in mask
-    let mut bits = Vec::new();
-    let mut m = *mask;
-    while m.any() {
-        bits.push(m.0.trailing_zeros());
-        m &= m.0 - 1;
-    }
-
-    // set bits in occ according to index
-    (0..bits.len()).for_each(|i| {
-        if index & (1 << i) != 0 {
-            occ |= 1 << bits[i];
-        }
-    });
-    occ
 }

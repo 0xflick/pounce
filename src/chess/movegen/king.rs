@@ -1,8 +1,10 @@
-use types::{FromAndMoves, KingType};
-
 use crate::bitboard::Bitboard;
+use crate::chess::movegen::types::{FromAndMoves, KingType, MoveList, Mover};
+use crate::chess::movegen::utils::{
+    get_bishop_moves, get_king_moves, get_kingside_castle_through_squares, get_knight_moves,
+    get_pawn_attacks, get_queenside_castle_throught_squares, get_rook_moves,
+};
 use crate::chess::{Color, Position, Role, Square};
-use crate::movegen::*;
 
 impl Mover for KingType {
     #[inline]
