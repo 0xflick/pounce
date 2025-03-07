@@ -35,7 +35,7 @@ pub enum EntryType {
     UpperBound,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Entry {
     pub key: ZobristHash,
@@ -86,7 +86,8 @@ impl Entry {
     fn write_to(&self, mem: &TTMemory) {
         unsafe {
             let depth = self.depth as u64;
-            let score = self.score as u64;
+
+            let score = self.score as u64 & 0xffff;
             let score_type = self.score_type as u64;
             let best_move = std::mem::transmute::<Move, u16>(self.best_move) as u64;
 
@@ -176,10 +177,33 @@ impl Table {
 
 #[cfg(test)]
 mod tests {
+    use crate::chess::position::{
+        fen::{Fen, STARTPOS},
+        zobrist::init_zobrist,
+    };
+
     use super::*;
+
+    fn random_key() -> ZobristHash {
+        init_zobrist();
+        let Fen(pos) = STARTPOS.parse().unwrap();
+        pos.key
+    }
 
     #[test]
     fn test_table() {
         assert_eq!(std::mem::size_of::<Entry>(), 16);
+    }
+
+    #[test]
+    fn test_insert() {
+        let tt = Table::new_mb(1);
+        assert_eq!(tt.size_mb(), 1);
+        let key = random_key();
+
+        let e = Entry::new(key, 20, -150, EntryType::Exact, Move::NULL);
+
+        tt.set(e);
+        assert_eq!(tt.probe(key), Some(e));
     }
 }
