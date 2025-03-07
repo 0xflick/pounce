@@ -74,7 +74,9 @@ impl SearchCop {
         // plan as if there are at most 50 moves left
         let mtg = 50.min(movestogo.unwrap_or(50)) as i32;
 
-        let time_left = 0.max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
+        let time_left = time_remaining
+            .unwrap()
+            .max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
 
         let opt = if movestogo.is_none() {
             // one time control for the whole game
