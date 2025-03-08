@@ -177,12 +177,9 @@ impl Table {
 
 #[cfg(test)]
 mod tests {
-    use crate::chess::position::{
-        fen::{Fen, STARTPOS},
-        zobrist::init_zobrist,
-    };
-
     use super::*;
+    use crate::chess::position::fen::{Fen, STARTPOS};
+    use crate::chess::position::zobrist::init_zobrist;
 
     fn random_key() -> ZobristHash {
         init_zobrist();
