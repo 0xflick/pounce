@@ -649,9 +649,9 @@ impl Position {
 
 #[cfg(test)]
 mod test {
-    use crate::{chess::position::fen::Fen, init};
-
     use super::*;
+    use crate::chess::position::fen::Fen;
+    use crate::init;
 
     #[test]
     fn test_repetitions() {
