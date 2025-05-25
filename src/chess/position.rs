@@ -336,13 +336,15 @@ impl Position {
             key: self.key,
         };
 
+        // reset the en passant square
         let prev_ep_square = self.ep_square;
-
         self.key.toggle_ep(self.ep_square);
         self.ep_square = None;
+
         self.halfmove_clock += 1;
 
-        // reset the en passant square
+        let mut potential_ep_sq = None;
+        let mut ep_attackers = Bitboard::EMPTY;
 
         match mv.move_type(piece.role, prev_ep_square) {
             MoveType::Normal => {
@@ -354,8 +356,12 @@ impl Position {
                 self.discard(from, piece);
                 self.set(to, piece);
 
-                self.ep_square = Some(from.up(self.side).unwrap());
-                self.key.toggle_ep(self.ep_square);
+                potential_ep_sq = from.up(self.side);
+
+                ep_attackers =
+                    get_pawn_attacks(potential_ep_sq.unwrap(), self.side) & self.their(Role::Pawn);
+
+                // we handle setting the ep square below, after we've updated the checkers and pins
             }
             MoveType::EnPassant => {
                 // unwrapping is safe here because we know ep_square is never at the edge of the
@@ -432,6 +438,18 @@ impl Position {
 
         self.side = self.side.opponent();
         self.key.toggle_side();
+
+        // handle ep square here (after updating checks and pins)
+        // only set ep square if the attacker if the ep move is legal
+        if let Some(ep_sq) = potential_ep_sq {
+            if (ep_attackers & !self.pinned).any()
+                && (!self.checkers.any()
+                    || self.checkers == Bitboard::from(ep_sq.down(self.side).unwrap()))
+            {
+                self.ep_square = Some(ep_sq);
+                self.key.toggle_ep(self.ep_square);
+            }
+        }
     }
 
     pub fn unmake_move(&mut self, mv: Move) {
@@ -626,5 +644,86 @@ impl Position {
                 self.pinned |= btw & us;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::chess::position::fen::Fen;
+    use crate::init;
+
+    #[test]
+    fn test_repetitions() {
+        init();
+
+        let Fen(mut position) =
+            Fen::parse("rnb1kbnr/1pqppppp/p7/2p5/4P3/2N2Q2/PPPP1PPP/R1B1KBNR w KQkq - 0 1")
+                .unwrap();
+        let move_str = "f3g3 d7d6 c3d5 c7d8 g1f3 e7e6 d5e3 g8f6 d2d3 b8c6 c1d2 g7g6 e1c1 f8g7 f1e2 e8g8 h2h3 d6d5 e4d5 e6d5 e3g4 f6g4 h3g4 f8e8 h1e1 h7h6 c1b1 c8e6 g4g5 d8b6 b2b3 h6h5 d2f4 a8c8 a2a4";
+
+        let zero_repetition = "g7c3 f4d2 c3g7";
+        let one_repetition = "d2f4 g7c3 f4d2 c3g7";
+        let two_repetition = "d2f4";
+
+        for mv in move_str.split_whitespace() {
+            position.make_move(mv.parse::<Move>().unwrap());
+            assert!(!position.is_repetition(1));
+            assert!(!position.is_repetition(2));
+        }
+
+        for mv in zero_repetition.split_whitespace() {
+            position.make_move(mv.parse::<Move>().unwrap());
+            assert!(!position.is_repetition(1));
+        }
+
+        for mv in one_repetition.split_whitespace() {
+            position.make_move(mv.parse::<Move>().unwrap());
+            assert!(position.is_repetition(1));
+        }
+
+        for mv in two_repetition.split_whitespace() {
+            position.make_move(mv.parse::<Move>().unwrap());
+            assert!(position.is_repetition(2));
+        }
+    }
+
+    #[test]
+    fn test_en_passant_legal() {
+        init();
+
+        let Fen(mut position) =
+            Fen::parse("rnbq1bnr/pp1ppppp/2k5/8/2p5/8/PP1PPPPP/2Q1KBNR w K - 0 1").unwrap();
+
+        assert_eq!(position.ep_square, None);
+        position.make_move("b2b4".parse::<Move>().unwrap());
+
+        assert_eq!(position.ep_square, None);
+    }
+
+    #[test]
+    fn test_en_passant_not_allowed_while_checked() {
+        init();
+
+        let Fen(mut position) =
+            Fen::parse("rnbq1bnr/pp1ppppp/8/8/2p5/8/QPkPPPPP/4KBNR w K - 0 1").unwrap();
+
+        assert_eq!(position.ep_square, None);
+        position.make_move("b2b4".parse::<Move>().unwrap());
+
+        assert_eq!(position.ep_square, None);
+    }
+
+    #[test]
+    fn test_en_passant_allowed_while_checked() {
+        init();
+
+        let Fen(mut position) =
+            Fen::parse("rnbq1bnr/pp1ppppp/8/2k5/2p5/8/QP1PPPPP/4KBNR w K - 0 1").unwrap();
+
+        assert_eq!(position.ep_square, None);
+        position.make_move("b2b4".parse::<Move>().unwrap());
+
+        assert_eq!(position.ep_square, Some(Square::B3));
     }
 }

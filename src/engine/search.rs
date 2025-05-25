@@ -422,7 +422,7 @@ impl<'a> Search<'a> {
         } else if is_pv && best_move != Move::NULL {
             EntryType::Exact
         } else {
-            EntryType::LowerBound
+            EntryType::UpperBound
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
