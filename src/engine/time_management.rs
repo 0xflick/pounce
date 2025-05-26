@@ -78,18 +78,18 @@ impl SearchCop {
             .unwrap()
             .max(time_remaining.unwrap() + mtg * inc - mtg * overhead);
 
-        let opt = if movestogo.is_none() {
-            // one time control for the whole game
-            let scale = 0.04;
-            (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
-        } else {
+        let opt = if let Some(mtg) = movestogo {
             // multiple time controls
-            let scale = 0.7;
+            let scale = 0.7 / mtg as f32;
             (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
+        } else {
+            // one time control for the whole game
+            let scale = 0.015;
+            (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
         };
 
-        let max = (3 * opt).min((0.8 * time_left as f32) as u64);
-        let max = max.min(time_remaining.unwrap() as u64 - 3 * overhead as u64);
+        let max = (4 * opt).min((0.8 * time_left as f32) as u64);
+        let max = max.min(time_remaining.unwrap() as u64 - 2 * overhead as u64);
 
         SearchCop {
             depth,
@@ -130,7 +130,7 @@ impl SearchCop {
             let bm_nodes = stats.effort[stats.pv[0][0].from()][stats.pv[0][0].to()];
             let bm_frac = bm_nodes as f32 / stats.nodes as f32;
 
-            self.scale = (0.4 + 2. * (1. - bm_frac)).max(0.5);
+            self.scale = (0.4 + 1.7 * (1. - bm_frac)).max(0.5);
         }
     }
 }
