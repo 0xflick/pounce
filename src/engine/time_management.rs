@@ -11,7 +11,7 @@ pub struct SearchCop {
     pub optimal_time: Option<Duration>,
     pub max_time: Option<Duration>,
 
-    scale: f32,
+    pub scale: f32,
 }
 
 impl SearchCop {
@@ -88,7 +88,7 @@ impl SearchCop {
             (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
         };
 
-        let max = (opt).min((0.8 * time_left as f32) as u64);
+        let max = (3 * opt).min((0.8 * time_left as f32) as u64);
         let max = max.min(time_remaining.unwrap() as u64 - 3 * overhead as u64);
 
         SearchCop {
@@ -115,7 +115,8 @@ impl SearchCop {
             if stats.start_time.elapsed() >= time.mul_f32(self.scale) {
                 return true;
             }
-        } else if let Some(time) = self.max_time {
+        }
+        if let Some(time) = self.max_time {
             if stats.start_time.elapsed() >= time.mul_f32(0.8) {
                 return true;
             }

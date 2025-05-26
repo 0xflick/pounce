@@ -30,6 +30,8 @@ pub fn init_reductions() {
 pub struct SearchResult {
     pub bestmove: Move,
     pub score: i16,
+    pub depth: i32,
+    pub done_early: bool,
 }
 
 pub struct Stats {
@@ -79,6 +81,24 @@ impl Stats {
             println!(
                 "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
                 depth, score, elapsed, self.nodes, nps, hashfull, pv
+            );
+        }
+    }
+
+    pub fn uci_info_done_early(&self, mv: Move, depth: i32, score: i16, hashfull: f64) {
+        let elapsed = self.start_time.elapsed().as_millis() + 1;
+        let nps = (self.nodes as u128 * 1000) / elapsed;
+        if score.abs() > eval::MATE_IN_PLY {
+            let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
+
+            println!(
+                "info depth {} score mate {} time {} nodes {} nps {} hashfull {} pv {}",
+                depth, ply, elapsed, self.nodes, nps, hashfull, mv
+            );
+        } else {
+            println!(
+                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
+                depth, score, elapsed, self.nodes, nps, hashfull, mv
             );
         }
     }
@@ -135,6 +155,8 @@ impl<'a> Search<'a> {
         let max_depth = self.tm.depth.unwrap_or(MAX_DEPTH) as i32;
         let mut bestmove = Move::NONE;
         let mut score = 0;
+        let mut depth_reached = 0;
+        let mut done_early = false;
 
         for depth in 1..=max_depth {
             if self.done_thinking() {
@@ -144,11 +166,13 @@ impl<'a> Search<'a> {
             let depth_score = self.aspiration(depth, score);
 
             if self.done_thinking() {
+                done_early = true;
                 break;
             }
 
             score = depth_score;
             bestmove = self.stats.pv[0][0];
+            depth_reached = depth;
 
             if !self.silent && self.thread_idx == 0 {
                 self.stats.uci_info(depth, score, self.tt.hashfull());
@@ -164,7 +188,12 @@ impl<'a> Search<'a> {
             bestmove = self.stats.pv[0][0];
         }
 
-        SearchResult { bestmove, score }
+        SearchResult {
+            bestmove,
+            score,
+            depth: depth_reached,
+            done_early,
+        }
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
