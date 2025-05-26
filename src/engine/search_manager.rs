@@ -56,29 +56,36 @@ impl SearchManager {
                 let handle = s.spawn(move || {
                     let mut search = Search::new(position, limits, tt, stop, thread_idx, silent);
                     let result = search.think();
-                    (result, search.stats.nodes)
+                    (result, search.stats)
                 });
 
                 handles.push(handle);
             }
 
-            let moves_and_nodes = handles
+            let moves_and_stats = handles
                 .into_iter()
                 .map(|handle| handle.join().expect("Thread panicked"))
                 .collect::<Vec<_>>();
 
-            let nodes: u64 = moves_and_nodes.iter().map(|(_, nodes)| *nodes).sum();
-            let bestmove = moves_and_nodes
+            let nodes: u64 = moves_and_stats.iter().map(|(_, stats)| stats.nodes).sum();
+            let best = moves_and_stats
                 .iter()
                 .max_by_key(|(result, _)| result.score)
-                .map(|(result, _)| result)
-                .unwrap();
+                .expect("should have at least one result");
 
             if !self.silent {
-                println!("bestmove {}", bestmove.bestmove);
+                if best.0.done_early {
+                    best.1.uci_info_done_early(
+                        best.0.bestmove,
+                        best.0.depth,
+                        best.0.score,
+                        self.tt.hashfull(),
+                    );
+                }
+                println!("bestmove {}", best.0.bestmove);
             }
 
-            (*bestmove, nodes)
+            (best.0, nodes)
         })
     }
 
