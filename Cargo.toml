@@ -2,7 +2,7 @@
 name = "pounce"
 authors = ["alex flick"]
 edition = "2024"
-version = "1.2.0"
+version = "1.2.1"
 build = "build.rs"
 default-run = "pounce"
 
