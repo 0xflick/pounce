@@ -5,6 +5,12 @@ edition = "2024"
 version = "1.2.2"
 build = "build.rs"
 default-run = "pounce"
+repository = "https://github.com/0xflick/pounce"
+description = "A mediocre (but trying it's best) uci chess engine"
+readme = "README.md"
+license = "MIT"
+keywords = ["chess", "uci", "engine"]
+categories = ["games"]
 
 [[bin]]
 name = "datagen"
