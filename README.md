@@ -26,7 +26,7 @@ datagen binary (`datagen`) that's still WIP.
 You can build an optimized binary with:
 
 ```shell
-make pgo-relaase
+make pgo-release
 ```
 
 This requires cargo-pgo which will be installed automatically by the Makefile.
