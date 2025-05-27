@@ -10,7 +10,7 @@ pub fn engine_name() -> String {
 
     #[allow(clippy::const_is_empty)]
     let version = if GIT_VERSION.is_empty() || GIT_VERSION == "VERGEN_IDEMPOTENT_OUTPUT" {
-        return format!("pounce {}-{}-{}", release_type, date, CARGO_VERSION);
+        CARGO_VERSION.to_string()
     } else if DIRTY == "true" {
         format!("{}-dirty", GIT_VERSION)
     } else {
