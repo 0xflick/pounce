@@ -51,12 +51,12 @@ cargo build --release --features datagen --bin datagen
 
 ## Credits
 
-* Sebastian Lague's Coding Adventure [chess engine series](https://www.youtube.com/watch?v=U4ogK0MIzqk&list=PLFt_AvWsXl0cvHyu32ajwh2qU1i6hl77c)
+* Sebastian Lague's Coding Adventure [chess engine series](https://www.youtube.com/watch?v=U4ogK0MIzqk&list=PLFt_AvWsXl0cvHyu32ajwh2qU1i6hl77c).
 on YouTube for the inspiration to write a chess engine, as well as cogent
 explanations of the concepts involved.
 * The [Chess Programming Wiki](https://www.chessprogramming.org/Main_Page)
 * [Jordan Bray's Chess rust package](https://github.com/jordanbray/chess) for
-inspiration for fast move generation and bitboard representation.
+inspiration for fast move generation.
 
 Also the following engines for their inspiration and ideas:
 
