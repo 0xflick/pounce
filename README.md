@@ -65,3 +65,6 @@ Also the following engines for their inspiration and ideas:
 * [Weiss](https://github.com/TerjeKir/weiss)
 * [Viridithas](https://github.com/cosmobobak/viridithas)
 * [Carp](https://github.com/dede1751/carp)
+* [Smallbrain](https://github.com/Disservin/Smallbrain)
+
+Also [Fastchess](https://github.com/Disservin/fastchess) for sprt testing.
