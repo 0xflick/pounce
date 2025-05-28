@@ -6,7 +6,9 @@ A UCI compatible chess engine written in Rust.
 
 | Version | Estimated Elo |
 | ------- | ------------- |
-| 1.2.4   | ~2500         |
+| 1.2.4   | ~2500[^1]     |
+
+[^1]: Based on a 10+0.1 tournament against Loki@v3.0.0, Kimbo@1.0.0, and Shen Yu@2.0.1
 
 ## Features
 
