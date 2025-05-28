@@ -5,8 +5,8 @@ A UCI compatible chess engine written in Rust.
 ## Rating History
 
 | Version | Estimated Elo |
----------------------------
-| 1.2.4   | ~2500       |
+| ------- | ------------- |
+| 1.2.4   | ~2500         |
 
 ## Features
 
