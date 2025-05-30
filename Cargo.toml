@@ -45,9 +45,6 @@ thiserror = "2.0.11"
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["html_reports"] }
 
-[build-dependencies]
-vergen-gitcl = { version = "1.0.0", features = ["build", "cargo"] }
-
 [[bench]]
 name = "search_bench"
 harness = false
