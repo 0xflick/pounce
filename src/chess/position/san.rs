@@ -1,12 +1,20 @@
 use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
-use crate::chess::{Move, MoveType, Position, Role};
+use crate::chess::{Move, MoveType, Position, Role, Square};
 
 enum CheckType {
     None,
     Check,
     Checkmate,
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum ChessError {
+    #[error("No piece at from square")]
+    NoPieceAtSquare(Square),
+}
+
+type Result<T> = std::result::Result<T, ChessError>;
 
 impl Position {
     fn gives_check(&mut self, mv: Move) -> CheckType {
@@ -32,15 +40,18 @@ impl Position {
         }
     }
 
-    fn is_capture(&self, mv: Move) -> anyhow::Result<bool> {
-        Ok(self.piece_at(mv.to()).is_some()
-            || mv.move_type(
-                self.role_at(mv.from()).expect("No piece at from square"),
-                self.ep_square,
-            ) == MoveType::EnPassant)
+    fn is_capture(&self, mv: Move) -> Result<bool> {
+        if self.piece_at(mv.to()).is_some() {
+            return Ok(true);
+        }
+
+        let from_role = self
+            .role_at(mv.from())
+            .ok_or(ChessError::NoPieceAtSquare(mv.from()))?;
+        Ok(mv.move_type(from_role, self.ep_square) == MoveType::EnPassant)
     }
 
-    fn prefix_char(&self, mv: Move) -> anyhow::Result<String> {
+    fn prefix_char(&self, mv: Move) -> Result<String> {
         match self.role_at(mv.from()) {
             Some(Role::Pawn) => {
                 if self.is_capture(mv)? {
@@ -54,12 +65,14 @@ impl Position {
             Some(Role::Rook) => Ok("R".to_string()),
             Some(Role::Bishop) => Ok("B".to_string()),
             Some(Role::Knight) => Ok("N".to_string()),
-            None => Err(anyhow::anyhow!("No piece at from square")),
+            None => Err(ChessError::NoPieceAtSquare(mv.from())),
         }
     }
 
-    fn disambiguation(&self, mv: Move) -> anyhow::Result<(String, String)> {
-        let from_role = self.role_at(mv.from()).expect("No piece at from square");
+    fn disambiguation(&self, mv: Move) -> Result<(String, String)> {
+        let from_role = self
+            .role_at(mv.from())
+            .ok_or(ChessError::NoPieceAtSquare(mv.from()))?;
         if from_role == Role::Pawn {
             return Ok(("".to_string(), "".to_string()));
         }
@@ -132,7 +145,7 @@ impl Position {
         }
     }
 
-    pub fn san(&mut self, mv: Move) -> anyhow::Result<String> {
+    pub fn san(&mut self, mv: Move) -> Result<String> {
         let check_char = self.check_char(mv);
         let from_role = self.role_at(mv.from()).expect("No piece at from square");
 
