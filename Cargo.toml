@@ -26,9 +26,10 @@ required-features = ["wiz"]
 datagen = [
   "clap",
   "ctrlc",
-  "num_cpus",
   "serde",
   "serde_json",
+  "rand/os_rng",
+  "rand/std_rng",
 ]
 wiz = ["clap"]
 
@@ -38,20 +39,13 @@ arrayvec = "0.7.4"
 bitflags = "2.6.0"
 clap = { version = "4.5.15", features = ["derive"], optional = true }
 ctrlc = { version = "3.4.5", features = ["termination"], optional = true }
-num_cpus = {version =  "1.16.0", optional = true }
-rand = { version = "0.9.0", features = ["small_rng"] }
-rand_core = "0.9.2"
-rustyline = "16.0.0"
+rand = { version = "0.9.0", default-features = false, features = ["small_rng", "std"] }
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 serde_json = { version = "1.0.128", optional = true }
 thiserror = "2.0.11"
-threadpool = "1.8.1"
 
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["html_reports"] }
-
-[build-dependencies]
-vergen-gitcl = { version = "1.0.0", features = ["build", "cargo"] }
 
 [[bench]]
 name = "search_bench"

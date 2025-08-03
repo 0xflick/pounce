@@ -1,6 +1,5 @@
-use rand::Rng;
 use rand::rngs::SmallRng;
-use rand_core::SeedableRng;
+use rand::{Rng, SeedableRng};
 
 use crate::chess::position::CastleRights;
 use crate::chess::{Color, File, Piece, Position, Role, Square};

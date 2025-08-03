@@ -3,11 +3,9 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{io, thread};
 
 use anyhow::{Context, Result, anyhow};
-use rustyline::DefaultEditor;
-use rustyline::error::ReadlineError;
 
 use crate::chess::Move;
 use crate::chess::movegen::{MoveGen, perft};
@@ -163,12 +161,18 @@ impl Uci {
     pub fn run_loop(&mut self) -> Result<()> {
         println!("{}", engine_name());
 
-        let mut rl = DefaultEditor::new()?;
-
         loop {
-            match rl.readline("") {
-                Ok(line) => {
-                    rl.add_history_entry(&line)?;
+            let mut line = String::new();
+            match io::stdin().read_line(&mut line) {
+                Ok(0) => {
+                    // EOF reached
+                    break;
+                }
+                Ok(_) => {
+                    let line = line.trim(); // Remove newline and whitespace
+                    if line.is_empty() {
+                        continue;
+                    }
 
                     let mut tokens = line.split_whitespace();
                     let cmd = tokens.next().map(|s| s.to_string());
@@ -184,12 +188,12 @@ impl Uci {
                         Ok(ControlFlow::Continue(())) => {}
                     }
                 }
-                Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                    break;
+                Err(e) => {
+                    return Err(e).context("Error reading input");
                 }
-                Err(e) => return Err(e).context("Error reading input"),
             }
         }
+
         println!("Exiting...");
         Ok(())
     }

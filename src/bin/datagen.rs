@@ -58,7 +58,7 @@ fn main() -> Result<()> {
             },
             num_games,
             hash_size_mb: hash_size,
-            threads: threads.unwrap_or(num_cpus::get() as u32),
+            threads: threads.unwrap_or(1),
             out_path,
             state_path: state,
         }),
