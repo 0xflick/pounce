@@ -102,24 +102,24 @@ impl SearchCop {
     }
 
     pub fn time_up(&self, stats: &Stats) -> bool {
-        if let Some(time) = self.max_time
-            && stats.start_time.elapsed() >= time
-        {
-            return true;
+        if let Some(time) = self.max_time {
+            if stats.start_time.elapsed() >= time {
+                return true;
+            }
         }
         false
     }
 
     pub fn time_up_deepening(&self, stats: &Stats) -> bool {
-        if let Some(time) = self.optimal_time
-            && stats.start_time.elapsed() >= time.mul_f32(self.scale)
-        {
-            return true;
+        if let Some(time) = self.optimal_time {
+            if stats.start_time.elapsed() >= time.mul_f32(self.scale) {
+                return true;
+            }
         }
-        if let Some(time) = self.max_time
-            && stats.start_time.elapsed() >= time.mul_f32(0.8)
-        {
-            return true;
+        if let Some(time) = self.max_time {
+            if stats.start_time.elapsed() >= time.mul_f32(0.8) {
+                return true;
+            }
         }
 
         false

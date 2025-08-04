@@ -41,10 +41,10 @@ fn init_pawn_move_table() {
                 }
             }
 
-            if sq.rank() == color.home_rank()
-                && let Some(s) = sq.up(color).and_then(|s| s.up(color))
-            {
-                move_bb.set(s);
+            if sq.rank() == color.home_rank() {
+                if let Some(s) = sq.up(color).and_then(|s| s.up(color)) {
+                    move_bb.set(s);
+                }
             }
         }
     }
