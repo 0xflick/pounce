@@ -82,7 +82,7 @@ impl Display for Move {
         write!(f, "{}{}", self.from(), self.to())?;
         if let Some(promotion) = self.promotion() {
             let promotion = promotion.to_string().to_ascii_lowercase();
-            write!(f, "{}", promotion)?;
+            write!(f, "{promotion}")?;
         }
         Ok(())
     }
@@ -90,7 +90,7 @@ impl Display for Move {
 
 impl Debug for Move {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self)
+        write!(f, "{self}")
     }
 }
 

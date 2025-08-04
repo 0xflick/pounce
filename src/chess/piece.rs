@@ -48,7 +48,7 @@ impl Display for Role {
             Role::Queen => 'Q',
             Role::King => 'K',
         };
-        write!(f, "{}", c)
+        write!(f, "{c}")
     }
 }
 

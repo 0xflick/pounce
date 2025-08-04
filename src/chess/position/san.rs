@@ -151,7 +151,7 @@ impl Position {
 
         if mv.move_type(from_role, self.ep_square) == MoveType::Castle {
             let castle_string = if mv.to() > mv.from() { "O-O" } else { "O-O-O" };
-            return Ok(format!("{}{}", castle_string, check_char));
+            return Ok(format!("{castle_string}{check_char}"));
         }
 
         let prefix_char = self.prefix_char(mv)?;

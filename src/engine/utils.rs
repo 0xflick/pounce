@@ -7,5 +7,5 @@ pub fn engine_name() -> String {
     let date = BUILD_DATE.replace("-", "");
     let version = GIT_VERSION.to_string();
 
-    format!("pounce {}-{}-{}", release_type, date, version)
+    format!("pounce {release_type}-{date}-{version}")
 }

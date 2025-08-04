@@ -53,7 +53,7 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     if let Some(ref state_path) = config.state_path {
         let state: DatagenState = match std::fs::read_to_string(state_path) {
             Ok(s) => {
-                println!("Loaded state from {:?}", state_path);
+                println!("Loaded state from {state_path:?}");
                 let state: DatagenState = serde_json::from_str(&s)?;
                 if state.config != config {
                     return Err(anyhow::anyhow!("Config mismatch"));
@@ -72,7 +72,7 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
                 state
             }
             Err(_) => {
-                println!("Creating new state file at {:?}", state_path);
+                println!("Creating new state file at {state_path:?}");
                 println!();
                 DatagenState {
                     white_wins: 0,
@@ -103,12 +103,12 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     println!("Concurrency: {}", config.threads);
     println!("Output path: {:?}", config.out_path);
     if let Some(ref state_path) = config.state_path {
-        println!("State path: {:?}", state_path);
+        println!("State path: {state_path:?}");
     } else {
         println!("State path: None");
     }
     println!("Total games: {}", config.num_games);
-    println!("Games remaining: {}", games_remaing);
+    println!("Games remaining: {games_remaing}");
     println!();
     let file = OpenOptions::new()
         .read(true)
@@ -208,8 +208,8 @@ fn thread_worker(
                 "{}/{} Games, White wins: {}, Black wins: {}, Draws: {}",
                 total, config.num_games, white_wins, black_wins, draws
             );
-            println!("Games per minute: {:.1}", games_per_min);
-            println!("Estimated time remaining: {:.1} minutes", est_remaining);
+            println!("Games per minute: {games_per_min:.1}");
+            println!("Estimated time remaining: {est_remaining:.1} minutes");
 
             if let Some(ref state_path) = config.state_path {
                 let state = DatagenState {
@@ -354,9 +354,9 @@ fn playout(
 }
 
 pub fn bin_to_pgn(input: &PathBuf) -> anyhow::Result<()> {
-    let mut file = std::fs::File::open(input).context(format!("Failed to open {:?}", input))?;
+    let mut file = std::fs::File::open(input).context(format!("Failed to open {input:?}"))?;
     while let Ok(game) = CompressedGame::deserialize_from(&mut file) {
-        println!("{}", game);
+        println!("{game}");
     }
 
     Ok(())
