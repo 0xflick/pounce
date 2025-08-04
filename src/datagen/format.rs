@@ -299,7 +299,7 @@ impl Display for CompressedGame {
             self.initial.wdl,
             pos.to_fen(),
         );
-        writeln!(f, "{}", header)?;
+        writeln!(f, "{header}")?;
 
         let mut move_count = 0;
         for m in &self.moves {

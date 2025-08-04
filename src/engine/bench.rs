@@ -68,7 +68,7 @@ pub fn bench(hash_size_mb: u32, num_threads: usize, limits: Limits, silent: bool
 
     for fen in BENCHMARK_FENS {
         if !silent {
-            println!("FEN: {}", fen);
+            println!("FEN: {fen}");
         }
         let Fen(position) = fen.parse()?;
 

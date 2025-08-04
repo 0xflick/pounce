@@ -36,8 +36,7 @@ impl Display for UciOption {
             } => {
                 write!(
                     f,
-                    "option name {} type spin default {} min {} max {}",
-                    name, default, min, max
+                    "option name {name} type spin default {default} min {min} max {max}"
                 )
             }
         }
@@ -113,7 +112,7 @@ impl UciOptionSet {
 impl Display for UciOptionSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for option in &self.options {
-            writeln!(f, "{}", option)?;
+            writeln!(f, "{option}")?;
         }
         Ok(())
     }
@@ -180,7 +179,7 @@ impl Uci {
 
                     match self.handle_cmd(cmd.as_deref(), &rest) {
                         Err(e) => {
-                            eprintln!("Error: {:?}", e);
+                            eprintln!("Error: {e:?}");
                         }
                         Ok(ControlFlow::Break(())) => {
                             break;
@@ -262,8 +261,7 @@ impl Uci {
                     let psqt_mg_calc = pos.psqt_mg();
                     let psqt_eg_calc = pos.psqt_eg();
                     println!(
-                        "Eval: {}, PSQT MG: {} - {}, PSQT EG: {} - {}",
-                        eval, psqt_mg, psqt_mg_calc, psqt_eg, psqt_eg_calc
+                        "Eval: {eval}, PSQT MG: {psqt_mg} - {psqt_mg_calc}, PSQT EG: {psqt_eg} - {psqt_eg_calc}"
                     );
                 }
                 Err(_) => {
@@ -293,7 +291,7 @@ impl Uci {
                 }
             },
             Some(val) => {
-                eprintln!("Unknown command: {}", val);
+                eprintln!("Unknown command: {val}");
             }
             None => {}
         }
@@ -388,7 +386,7 @@ impl Uci {
                 let count = perft(&mut pos, depth - 1);
                 nodes += count;
                 pos.unmake_move(mv);
-                println!("{}: {}", mv, count);
+                println!("{mv}: {count}");
             }
         }
 

@@ -229,7 +229,7 @@ mod tests {
     fn test_fen_parse() {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         let Fen(position) = Fen::parse(fen).unwrap();
-        println!("{:?}", position);
+        println!("{position:?}");
         assert_eq!(position.side, Color::White);
         assert_eq!(position.castling, CastleRights::all());
         assert_eq!(position.ep_square, None);
