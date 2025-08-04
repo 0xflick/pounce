@@ -422,11 +422,12 @@ impl Position {
 
         // update their castling rights
         if let Some(captured) = state.captured
-            && captured.role == Role::Rook {
-                self.key.toggle_castling(self.castling);
-                self.castling.discard_square(to);
-                self.key.toggle_castling(self.castling);
-            }
+            && captured.role == Role::Rook
+        {
+            self.key.toggle_castling(self.castling);
+            self.castling.discard_square(to);
+            self.key.toggle_castling(self.castling);
+        }
 
         self.update_checks_and_pins(mv, Some(mv.promotion().unwrap_or(piece.role)));
 
@@ -442,12 +443,12 @@ impl Position {
         // only set ep square if the attacker if the ep move is legal
         if let Some(ep_sq) = potential_ep_sq
             && (ep_attackers & !self.pinned).any()
-                && (!self.checkers.any()
-                    || self.checkers == Bitboard::from(ep_sq.down(self.side).unwrap()))
-            {
-                self.ep_square = Some(ep_sq);
-                self.key.toggle_ep(self.ep_square);
-            }
+            && (!self.checkers.any()
+                || self.checkers == Bitboard::from(ep_sq.down(self.side).unwrap()))
+        {
+            self.ep_square = Some(ep_sq);
+            self.key.toggle_ep(self.ep_square);
+        }
     }
 
     pub fn unmake_move(&mut self, mv: Move) {
