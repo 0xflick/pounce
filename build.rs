@@ -19,13 +19,13 @@ fn main() {
 
 fn set_build_date() {
     let build_date = get_current_date();
-    println!("cargo::rustc-env=BUILD_DATE={}", build_date);
+    println!("cargo::rustc-env=BUILD_DATE={build_date}");
 }
 
 fn set_cargo_info() {
     // Get optimization level from environment
     let opt_level = env::var("OPT_LEVEL").unwrap_or_else(|_| "0".to_string());
-    println!("cargo::rustc-env=BUILD_OPT_LEVEL={}", opt_level);
+    println!("cargo::rustc-env=BUILD_OPT_LEVEL={opt_level}");
 }
 
 fn set_git_info() {
@@ -39,21 +39,21 @@ fn set_git_info() {
 
     // Get git describe
     if let Some(git_describe) = run_git_command(&["describe", "--always", "--dirty", "--tags"]) {
-        println!("cargo::rustc-env=BUILD_GIT_DESCRIBE={}", git_describe);
+        println!("cargo::rustc-env=BUILD_GIT_DESCRIBE={git_describe}");
     } else {
         println!("cargo::rustc-env=BUILD_GIT_DESCRIBE=unknown");
     }
 
     // Get commit hash
     if let Some(commit_hash) = run_git_command(&["rev-parse", "HEAD"]) {
-        println!("cargo::rustc-env=BUILD_GIT_SHA={}", commit_hash);
+        println!("cargo::rustc-env=BUILD_GIT_SHA={commit_hash}");
     } else {
         println!("cargo::rustc-env=BUILD_GIT_SHA=unknown");
     }
 
     // Get branch name
     if let Some(branch) = run_git_command(&["rev-parse", "--abbrev-ref", "HEAD"]) {
-        println!("cargo::rustc-env=BUILD_GIT_BRANCH={}", branch);
+        println!("cargo::rustc-env=BUILD_GIT_BRANCH={branch}");
     } else {
         println!("cargo::rustc-env=BUILD_GIT_BRANCH=unknown");
     }
@@ -64,7 +64,7 @@ fn get_current_date() -> String {
         Ok(duration) => {
             let days_since_epoch = duration.as_secs() / 86400; // 86400 seconds in a day
             let (year, month, day) = days_to_date(days_since_epoch);
-            format!("{:04}-{:02}-{:02}", year, month, day)
+            format!("{year:04}-{month:02}-{day:02}")
         }
         Err(_) => "unknown".to_string(),
     }
