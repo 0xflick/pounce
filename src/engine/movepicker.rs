@@ -26,7 +26,6 @@ struct MoveWithScore {
 
 type MoveList = ArrayVec<MoveWithScore, MAX_MOVES>;
 
-// TODO: killers, history, etc.
 enum MovePickerStage {
     TT,
     ScoreCaptures,
