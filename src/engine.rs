@@ -7,7 +7,6 @@ pub mod uci;
 
 mod movepicker;
 mod search_manager;
-mod see;
 mod time_management;
 mod utils;
 
