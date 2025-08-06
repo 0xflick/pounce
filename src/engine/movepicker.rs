@@ -3,6 +3,7 @@ use arrayvec::ArrayVec;
 use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Square};
+use crate::engine::see;
 
 const CAPTURE_SCORE: i16 = 30_000;
 const KILLER_1_SCORE: i16 = 29_001;
@@ -171,6 +172,12 @@ impl MovePicker {
                 match self.select_sorted() {
                     Some(m) => {
                         if m == self.tt_move {
+                            return self.next(position, history);
+                        }
+
+                        // in quiescence search, only return captures that are
+                        // see positive
+                        if self.mode == MovePickerMode::Quiescence && !see::see(position, m, 1) {
                             return self.next(position, history);
                         }
                         Some(m)

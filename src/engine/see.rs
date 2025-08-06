@@ -49,8 +49,8 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
     let mut side = pos.side.opponent();
 
     // these are flipped because we just made a move
-    let stm_pinned = pos.history.last().unwrap().pinned;
-    let nstm_pinned = pos.pinned;
+    let stm_pinned = pos.pinned[side];
+    let nstm_pinned = pos.pinned[side.opponent()];
 
     let stm_king = chess::Square::from(pos.king_of(side));
     let nstm_king = chess::Square::from(pos.king_of(side.opponent()));
@@ -121,33 +121,30 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
 
 fn see_best_case(pos: &chess::Position, mv: chess::Move) -> i32 {
     let to = mv.to();
-
-    // inital value of the move is the value of the piece being captured
-    let mut value = SEE_VALUES[pos.role_at(to).unwrap() as usize];
+    let from = mv.from();
 
     // now adjust the value based on the move type
-    match mv.move_type(pos.role_at(to).unwrap(), pos.ep_square) {
+    match mv.move_type(pos.role_at(from).unwrap(), pos.ep_square) {
         chess::MoveType::Promotion => {
-            value += SEE_VALUES[mv.promotion().unwrap() as usize]
-                - SEE_VALUES[chess::Role::Pawn as usize];
+            SEE_VALUES[mv.promotion().unwrap() as usize]
+                + SEE_VALUES[pos.role_at(from).unwrap() as usize]
+                - SEE_VALUES[chess::Role::Pawn as usize]
         }
         chess::MoveType::EnPassant => {
             // En passant captures are worth the same as a pawn capture
-            value = SEE_VALUES[chess::Role::Pawn as usize];
+            SEE_VALUES[chess::Role::Pawn as usize]
         }
-        _ => {}
+        _ => SEE_VALUES[pos.role_at(to).unwrap() as usize],
     }
-
-    value
 }
 
 fn all_attackers(to: chess::Square, pos: &chess::Position) -> chess::bitboard::Bitboard {
     let mut attackers = chess::bitboard::Bitboard::EMPTY;
 
     // Check for pawn attacks
-    attackers |= chess::movegen::utils::get_pawn_attacks(to, chess::Color::White)
-        & pos.by_color_role(chess::Color::White, chess::Role::Pawn);
     attackers |= chess::movegen::utils::get_pawn_attacks(to, chess::Color::Black)
+        & pos.by_color_role(chess::Color::White, chess::Role::Pawn);
+    attackers |= chess::movegen::utils::get_pawn_attacks(to, chess::Color::White)
         & pos.by_color_role(chess::Color::Black, chess::Role::Pawn);
 
     // Check for knight attacks
@@ -169,10 +166,61 @@ fn all_attackers(to: chess::Square, pos: &chess::Position) -> chess::bitboard::B
 
 #[cfg(test)]
 mod test {
-    use crate::init;
+    use super::*;
+    use crate::{chess::position::fen::Fen, init};
 
     #[test]
-    fn test_see() {
+    fn test_pxp() {
         init();
+
+        let Fen(pos) = Fen::parse("3k4/8/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w - d6 0 1").unwrap();
+
+        // pawn captures pawn with no further exchanges should be favorable
+        assert!(see(&pos, "e5d6".parse().unwrap(), 0));
+
+        // but the same move with a threshold above the value of the pawn should not be favorable
+        assert!(!see(&pos, "e5d6".parse().unwrap(), 200));
+    }
+
+    #[test]
+    fn test_pxp_retake() {
+        init();
+
+        let Fen(pos) = Fen::parse("3k4/2q5/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w - d6 0 1").unwrap();
+
+        // pawn captures pawn, but the queen can retake the pawn. this should be exactly neutral
+        assert!(see(&pos, "e5d6".parse().unwrap(), 0));
+        assert!(!see(&pos, "e5d6".parse().unwrap(), 1));
+    }
+
+    #[test]
+    fn test_pxp_no_retake() {
+        init();
+
+        let Fen(pos) = Fen::parse("3k4/2q5/8/2PpP3/8/8/PP1P1PPP/RNBQKBNR w - d6 0 1").unwrap();
+
+        // pawn captures pawn, but the queen can retake the pawn, but if it does another piece can
+        // recapture the queen. this should be favorable
+        assert!(see(&pos, "e5d6".parse().unwrap(), 50));
+        assert!(!see(&pos, "e5d6".parse().unwrap(), 200));
+    }
+
+    #[test]
+    fn test_diag_revealed() {
+        init();
+
+        let Fen(pos) = Fen::parse("1q1k4/4p3/3b4/4P3/8/3R2B1/PP1P1PPP/1N1QKBNR w - - 0 1").unwrap();
+
+        assert!(see(&pos, "e5d6".parse().unwrap(), 0));
+    }
+
+    #[test]
+    fn test_pinned() {
+        init();
+
+        let Fen(pos) =
+            Fen::parse("r2qkbnr/p2b1ppp/2n5/8/Q7/8/PPPPPPPP/RN2KBNR w KQkq - 0 1").unwrap();
+
+        assert!(!see(&pos, "a4c6".parse().unwrap(), 0));
     }
 }
