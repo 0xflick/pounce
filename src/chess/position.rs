@@ -81,6 +81,8 @@ pub struct State {
     pub halfmove_clock: u8,
     pub captured: Option<Piece>,
     pub key: ZobristHash,
+    pub pinned: [Bitboard; Color::NUM],
+    pub checkers: [Bitboard; Color::NUM],
 }
 
 #[derive(Debug, Clone)]
@@ -330,6 +332,8 @@ impl Position {
             halfmove_clock: self.halfmove_clock,
             captured: None,
             key: self.key,
+            pinned: self.pinned,
+            checkers: self.checkers,
         };
 
         // reset the en passant square
@@ -474,6 +478,9 @@ impl Position {
             self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
         }
 
+        self.pinned = past.pinned;
+        self.checkers = past.checkers;
+
         let from = mv.from();
         let to = mv.to();
         let piece = self
@@ -534,6 +541,8 @@ impl Position {
             halfmove_clock: self.halfmove_clock,
             captured: None,
             key: self.key,
+            pinned: self.pinned,
+            checkers: self.checkers,
         };
 
         debug_assert!(self.checkers[self.side].none());
@@ -570,68 +579,105 @@ impl Position {
         if self.side == Color::Black {
             self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
         }
+
+        self.pinned = past.pinned;
+        self.checkers = past.checkers;
     }
 
     #[inline]
     fn update_checks_and_pins(&mut self, mv: Move, piece: Option<Role>) {
-        // we update side at the very end of make move, so we're looking for checks
-        // we make against the opponent
-        self.checkers[self.side.opponent()] = Bitboard::EMPTY;
-        self.pinned[self.side.opponent()] = Bitboard::EMPTY;
+        // Clear all checks and pins - we'll recalculate
+        self.checkers = [Bitboard::EMPTY; Color::NUM];
+        self.pinned = [Bitboard::EMPTY; Color::NUM];
 
+        // Get both kings' positions
+        let our_king_bb = self.our_king();
+        let their_king_bb = self.their_king();
+        let our_ksq = Square::new_unchecked(our_king_bb.0.trailing_zeros() as u8);
+        let their_ksq = Square::new_unchecked(their_king_bb.0.trailing_zeros() as u8);
+
+        // Check if we're directly checking the opponent with the piece we just moved
         let dest_bb = Bitboard::from(mv.to());
 
-        let ksq = Square::new_unchecked(self.their_king().0.trailing_zeros() as u8);
-
-        if let Some(piece) = piece {
-            if piece == Role::Knight {
-                self.checkers[self.side.opponent()] |= get_knight_moves(ksq) & dest_bb;
-            } else if piece == Role::Pawn {
-                self.checkers[self.side.opponent()] |=
-                    get_pawn_attacks(ksq, self.side.opponent()) & dest_bb;
+        if let Some(piece_role) = piece {
+            match piece_role {
+                Role::Knight => {
+                    self.checkers[self.side.opponent()] |= get_knight_moves(their_ksq) & dest_bb;
+                }
+                Role::Pawn => {
+                    self.checkers[self.side.opponent()] |=
+                        get_pawn_attacks(their_ksq, self.side.opponent()) & dest_bb;
+                }
+                _ => {} // Sliding pieces handled below
             }
         }
 
-        let bishop_attackers = (self.our(Role::Bishop) | self.our(Role::Queen)) & bishop_rays(ksq);
-        let rook_attackers = (self.our(Role::Rook) | self.our(Role::Queen)) & rook_rays(ksq);
-        let attackers = bishop_attackers | rook_attackers;
+        // Update sliding attacks for both kings in a single loop
+        for (ksq, king_color) in [(our_ksq, self.side), (their_ksq, self.side.opponent())] {
+            let opponent = king_color.opponent();
 
-        for sq in attackers {
-            let btw = between(ksq, sq) & self.occupancy;
+            let bishop_attackers = (self.by_color_role(opponent, Role::Bishop)
+                | self.by_color_role(opponent, Role::Queen))
+                & bishop_rays(ksq);
+            let rook_attackers = (self.by_color_role(opponent, Role::Rook)
+                | self.by_color_role(opponent, Role::Queen))
+                & rook_rays(ksq);
 
-            if btw == Bitboard::EMPTY {
-                self.checkers[self.side.opponent()] |= Bitboard::from(sq);
-            } else if btw.count() == 1 {
-                let them = self.them();
-                self.pinned[self.side.opponent()] |= btw & them
+            for sq in bishop_attackers | rook_attackers {
+                let btw = between(ksq, sq) & self.occupancy;
+
+                if btw == Bitboard::EMPTY {
+                    self.checkers[king_color] |= Bitboard::from(sq);
+                } else if btw.count() == 1 {
+                    self.pinned[king_color] |= btw & self.by_color[king_color];
+                }
             }
+
+            // Add non-sliding attacks
+            let knight_attackers =
+                self.by_color_role(opponent, Role::Knight) & get_knight_moves(ksq);
+            let pawn_attackers =
+                self.by_color_role(opponent, Role::Pawn) & get_pawn_attacks(ksq, king_color);
+
+            self.checkers[king_color] |= knight_attackers | pawn_attackers;
         }
     }
 
     pub fn refresh_checks_and_pins(&mut self) {
-        // fully refresh checks and pins for the current side
-        self.checkers[self.side] = Bitboard::EMPTY;
-        self.pinned[self.side] = Bitboard::EMPTY;
+        // Clear all checks and pins
+        self.checkers = [Bitboard::EMPTY; Color::NUM];
+        self.pinned = [Bitboard::EMPTY; Color::NUM];
 
-        let ksq = Square::new_unchecked(self.our_king().0.trailing_zeros() as u8);
+        // Update checks and pins for each color
+        for color in [Color::White, Color::Black] {
+            let king_bb = self.by_color_role(color, Role::King);
+            let ksq = Square::new_unchecked(king_bb.0.trailing_zeros() as u8);
+            let opponent = color.opponent();
 
-        let knight_attackers = self.their(Role::Knight) & get_knight_moves(ksq);
-        let pawn_attackers = self.their(Role::Pawn) & get_pawn_attacks(ksq, self.side.opponent());
+            // Direct attacks (knights and pawns)
+            let knight_attackers =
+                self.by_color_role(opponent, Role::Knight) & get_knight_moves(ksq);
+            let pawn_attackers =
+                self.by_color_role(opponent, Role::Pawn) & get_pawn_attacks(ksq, color);
 
-        self.checkers[self.side] |= knight_attackers | pawn_attackers;
+            self.checkers[color] = knight_attackers | pawn_attackers;
 
-        let bishop_attackers =
-            (self.their(Role::Bishop) | self.their(Role::Queen)) & bishop_rays(ksq);
-        let rook_attackers = (self.their(Role::Rook) | self.their(Role::Queen)) & rook_rays(ksq);
+            // Sliding piece attacks (bishops, rooks, queens)
+            let bishop_attackers = (self.by_color_role(opponent, Role::Bishop)
+                | self.by_color_role(opponent, Role::Queen))
+                & bishop_rays(ksq);
+            let rook_attackers = (self.by_color_role(opponent, Role::Rook)
+                | self.by_color_role(opponent, Role::Queen))
+                & rook_rays(ksq);
 
-        let attackers = bishop_attackers | rook_attackers;
-        for sq in attackers {
-            let btw = between(ksq, sq) & self.occupancy;
-            if btw == Bitboard::EMPTY {
-                self.checkers[self.side] |= Bitboard::from(sq);
-            } else if btw.count() == 1 {
-                let us = self.us();
-                self.pinned[self.side] |= btw & us;
+            for sq in bishop_attackers | rook_attackers {
+                let btw = between(ksq, sq) & self.occupancy;
+
+                if btw == Bitboard::EMPTY {
+                    self.checkers[color] |= Bitboard::from(sq);
+                } else if btw.count() == 1 {
+                    self.pinned[color] |= btw & self.by_color[color];
+                }
             }
         }
     }
@@ -715,5 +761,36 @@ mod test {
         position.make_move("b2b4".parse::<Move>().unwrap());
 
         assert_eq!(position.ep_square, Some(Square::B3));
+    }
+
+    #[test]
+    fn test_pinned() {
+        init();
+
+        let Fen(mut pos) =
+            Fen::parse("rnbqkbn1/p4ppp/4r3/8/4Q3/8/PPP1RPPP/1NB1KBNR w Kq - 0 1").unwrap();
+
+        assert_eq!(pos.pinned[Color::White], Bitboard::EMPTY);
+        assert_eq!(pos.pinned[Color::Black].count(), 1);
+        assert!(pos.pinned[Color::Black].contains(Square::E6));
+
+        pos.make_move("e4c6".parse::<Move>().unwrap());
+        assert_eq!(pos.pinned[Color::Black].count(), 1);
+        assert_eq!(pos.checkers[Color::Black].count(), 1);
+        assert!(pos.checkers[Color::Black].contains(Square::C6));
+
+        pos.make_move("d8d7".parse::<Move>().unwrap());
+        assert_eq!(pos.pinned[Color::White].count(), 1);
+        assert!(pos.pinned[Color::White].contains(Square::E2));
+
+        pos.unmake_move("d8d7".parse::<Move>().unwrap());
+        assert_eq!(pos.pinned[Color::Black].count(), 1);
+        assert_eq!(pos.checkers[Color::Black].count(), 1);
+        assert!(pos.checkers[Color::Black].contains(Square::C6));
+
+        pos.unmake_move("e4c6".parse::<Move>().unwrap());
+        assert_eq!(pos.pinned[Color::White], Bitboard::EMPTY);
+        assert_eq!(pos.pinned[Color::Black].count(), 1);
+        assert!(pos.pinned[Color::Black].contains(Square::E6));
     }
 }
