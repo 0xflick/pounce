@@ -39,8 +39,8 @@ impl Mover for PawnType {
         };
         let ksq = Square::from(pos.king_of(side));
         let pieces = pos.by_color_role(side, Self::into_piece());
-        let pinned = pos.pinned;
-        let checkers = pos.checkers;
+        let pinned = pos.pinned[side];
+        let checkers = pos.checkers[side];
 
         let promotion_bb = Bitboard::from(side.opponent().home_rank());
 

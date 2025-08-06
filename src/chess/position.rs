@@ -80,8 +80,6 @@ pub struct State {
     pub ep_square: Option<Square>,
     pub halfmove_clock: u8,
     pub captured: Option<Piece>,
-    pub checkers: Bitboard,
-    pub pinned: Bitboard,
     pub key: ZobristHash,
 }
 
@@ -90,8 +88,8 @@ pub struct Position {
     pub by_color: [Bitboard; Color::NUM],
     pub by_role: [Bitboard; Role::NUM],
     pub occupancy: Bitboard,
-    pub checkers: Bitboard,
-    pub pinned: Bitboard,
+    pub checkers: [Bitboard; Color::NUM],
+    pub pinned: [Bitboard; Color::NUM],
 
     pub mailbox: [Option<Piece>; 64],
 
@@ -117,8 +115,8 @@ impl Position {
             by_color: [Bitboard::EMPTY; Color::NUM],
             by_role: [Bitboard::EMPTY; Role::NUM],
             occupancy: Bitboard::EMPTY,
-            checkers: Bitboard::EMPTY,
-            pinned: Bitboard::EMPTY,
+            checkers: [Bitboard::EMPTY; Color::NUM],
+            pinned: [Bitboard::EMPTY; Color::NUM],
             mailbox: [None; 64],
             castling: CastleRights::all(),
             ep_square: None,
@@ -197,7 +195,7 @@ impl Position {
 
     #[inline]
     pub fn in_check(&self) -> bool {
-        !self.checkers.none()
+        !self.checkers[self.side].none()
     }
 
     #[inline]
@@ -331,8 +329,6 @@ impl Position {
             ep_square: self.ep_square,
             halfmove_clock: self.halfmove_clock,
             captured: None,
-            checkers: self.checkers,
-            pinned: self.pinned,
             key: self.key,
         };
 
@@ -442,9 +438,9 @@ impl Position {
         // handle ep square here (after updating checks and pins)
         // only set ep square if the attacker if the ep move is legal
         if let Some(ep_sq) = potential_ep_sq {
-            if (ep_attackers & !self.pinned).any()
-                && (!self.checkers.any()
-                    || self.checkers == Bitboard::from(ep_sq.down(self.side).unwrap()))
+            if (ep_attackers & !self.pinned[self.side]).any()
+                && (!self.checkers[self.side].any()
+                    || self.checkers[self.side] == Bitboard::from(ep_sq.down(self.side).unwrap()))
             {
                 self.ep_square = Some(ep_sq);
                 self.key.toggle_ep(self.ep_square);
@@ -477,8 +473,6 @@ impl Position {
         if self.side == Color::Black {
             self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
         }
-        self.pinned = past.pinned;
-        self.checkers = past.checkers;
 
         let from = mv.from();
         let to = mv.to();
@@ -539,14 +533,11 @@ impl Position {
             ep_square: self.ep_square,
             halfmove_clock: self.halfmove_clock,
             captured: None,
-            checkers: self.checkers,
-            pinned: self.pinned,
             key: self.key,
         };
 
-        debug_assert!(self.checkers.none());
+        debug_assert!(self.checkers[self.side].none());
 
-        self.checkers = Bitboard::EMPTY;
         self.update_checks_and_pins(Move::NULL, None);
 
         self.key.toggle_ep(self.ep_square);
@@ -579,16 +570,14 @@ impl Position {
         if self.side == Color::Black {
             self.fullmove_number = NonZeroU16::new(self.fullmove_number.get() - 1).unwrap();
         }
-        self.pinned = past.pinned;
-        self.checkers = past.checkers;
     }
 
     #[inline]
     fn update_checks_and_pins(&mut self, mv: Move, piece: Option<Role>) {
         // we update side at the very end of make move, so we're looking for checks
         // we make against the opponent
-        self.checkers = Bitboard::EMPTY;
-        self.pinned = Bitboard::EMPTY;
+        self.checkers[self.side.opponent()] = Bitboard::EMPTY;
+        self.pinned[self.side.opponent()] = Bitboard::EMPTY;
 
         let dest_bb = Bitboard::from(mv.to());
 
@@ -596,9 +585,10 @@ impl Position {
 
         if let Some(piece) = piece {
             if piece == Role::Knight {
-                self.checkers |= get_knight_moves(ksq) & dest_bb;
+                self.checkers[self.side.opponent()] |= get_knight_moves(ksq) & dest_bb;
             } else if piece == Role::Pawn {
-                self.checkers |= get_pawn_attacks(ksq, self.side.opponent()) & dest_bb;
+                self.checkers[self.side.opponent()] |=
+                    get_pawn_attacks(ksq, self.side.opponent()) & dest_bb;
             }
         }
 
@@ -610,25 +600,25 @@ impl Position {
             let btw = between(ksq, sq) & self.occupancy;
 
             if btw == Bitboard::EMPTY {
-                self.checkers |= Bitboard::from(sq);
+                self.checkers[self.side.opponent()] |= Bitboard::from(sq);
             } else if btw.count() == 1 {
                 let them = self.them();
-                self.pinned |= btw & them
+                self.pinned[self.side.opponent()] |= btw & them
             }
         }
     }
 
     pub fn refresh_checks_and_pins(&mut self) {
         // fully refresh checks and pins for the current side
-        self.checkers = Bitboard::EMPTY;
-        self.pinned = Bitboard::EMPTY;
+        self.checkers[self.side] = Bitboard::EMPTY;
+        self.pinned[self.side] = Bitboard::EMPTY;
 
         let ksq = Square::new_unchecked(self.our_king().0.trailing_zeros() as u8);
 
         let knight_attackers = self.their(Role::Knight) & get_knight_moves(ksq);
         let pawn_attackers = self.their(Role::Pawn) & get_pawn_attacks(ksq, self.side.opponent());
 
-        self.checkers |= knight_attackers | pawn_attackers;
+        self.checkers[self.side] |= knight_attackers | pawn_attackers;
 
         let bishop_attackers =
             (self.their(Role::Bishop) | self.their(Role::Queen)) & bishop_rays(ksq);
@@ -638,10 +628,10 @@ impl Position {
         for sq in attackers {
             let btw = between(ksq, sq) & self.occupancy;
             if btw == Bitboard::EMPTY {
-                self.checkers |= Bitboard::from(sq);
+                self.checkers[self.side] |= Bitboard::from(sq);
             } else if btw.count() == 1 {
                 let us = self.us();
-                self.pinned |= btw & us;
+                self.pinned[self.side] |= btw & us;
             }
         }
     }
