@@ -1,4 +1,5 @@
-use crate::chess::{self, movegen::utils::between};
+use crate::chess::movegen::utils::between;
+use crate::chess::{self};
 
 // intial values are just the MG values for each piece
 const SEE_VALUES: [i32; chess::Role::NUM] = [126, 781, 825, 1276, 2538, 0];
@@ -167,7 +168,8 @@ fn all_attackers(to: chess::Square, pos: &chess::Position) -> chess::bitboard::B
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{chess::position::fen::Fen, init};
+    use crate::chess::position::fen::Fen;
+    use crate::init;
 
     #[test]
     fn test_pxp() {
