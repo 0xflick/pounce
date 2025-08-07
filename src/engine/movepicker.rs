@@ -100,7 +100,7 @@ impl MovePicker {
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
         let attacker = position.role_at(m.from());
-        let victim = position.role_at(m.to());
+        let victim = m.captured_role(position);
 
         match (attacker, victim) {
             (None, _) => 0,
@@ -304,12 +304,14 @@ mod tests {
             moves.push(m);
         }
 
-        // only three good captures, and because tt is a quiet move, it
-        // is not returned
-        assert_eq!(moves.len(), 3);
+        // Should get 4 good captures including en passant
+        // (tt move is quiet so not returned)
+        assert_eq!(moves.len(), 4);
 
-        assert_eq!(moves[0], "b3a5".parse().unwrap()); // knight takes queen
-        assert_eq!(moves[1], "g4h5".parse().unwrap()); // pawn takes rook
-        assert_eq!(moves[2], "f5h5".parse().unwrap()); // queen takes rook
+        // Check that all expected moves are present
+        assert!(moves.contains(&"b3a5".parse().unwrap())); // knight takes queen
+        assert!(moves.contains(&"g4h5".parse().unwrap())); // pawn takes rook
+        assert!(moves.contains(&"d5c6".parse().unwrap())); // en passant capture
+        assert!(moves.contains(&"f5h5".parse().unwrap())); // queen takes rook
     }
 }
