@@ -355,7 +355,7 @@ impl<'a> Search<'a> {
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             move_count += 1;
-            let capture = (self.position.occupancy & mv.to()).any();
+            let capture = mv.is_capture(&self.position);
 
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
@@ -523,7 +523,8 @@ impl<'a> Search<'a> {
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             // delta pruning
-            let captured = self.position.role_at(mv.to()).unwrap();
+            debug_assert!(mv.is_capture(&self.position));
+            let captured = mv.captured_role(&self.position).unwrap();
             if mv.promotion().is_none()
                 && !self.position.in_check()
                 && ((stand_pat + 500 + eval::PIECE_VALUES_EG[captured] as i16) < alpha)

@@ -2,7 +2,6 @@ mod see;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Square};
 
@@ -181,7 +180,7 @@ impl MovePicker {
                 self.stage = MovePickerStage::Captures;
                 self.scored_moves.clear();
 
-                self.move_generator.set_mask(position.occupancy);
+                self.move_generator.set_captures_only(position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
@@ -217,7 +216,7 @@ impl MovePicker {
             }
             MovePickerStage::ScoreQuiets => {
                 self.stage = MovePickerStage::Quiets;
-                self.move_generator.set_mask(Bitboard::FULL);
+                self.move_generator.disable_captures_only();
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });

@@ -66,7 +66,7 @@ impl Mover for KingType {
 
         if moves != Bitboard::EMPTY {
             unsafe {
-                movelist.push_unchecked(FromAndMoves::new(ksq, moves, false));
+                movelist.push_unchecked(FromAndMoves::new(ksq, moves, false, false));
             }
         }
     }

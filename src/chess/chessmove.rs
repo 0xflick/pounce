@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
+use crate::chess::Position;
 use crate::chess::board::ParseSquareError;
 use crate::chess::piece::ParseRoleError;
 use crate::chess::{Role, Square};
@@ -64,6 +65,27 @@ impl Move {
             }
         } else {
             MoveType::Normal
+        }
+    }
+
+    pub fn is_capture(self, pos: &Position) -> bool {
+        pos.occupancy.contains(self.to())
+            || self.move_type(Role::Pawn, pos.ep_square) == MoveType::EnPassant
+    }
+
+    pub fn is_quiet(self, pos: &Position) -> bool {
+        !self.is_capture(pos) && self.move_type(Role::Pawn, pos.ep_square) != MoveType::Promotion
+    }
+
+    pub fn is_promotion(self) -> bool {
+        self.promotion().is_some()
+    }
+
+    pub fn captured_role(self, pos: &Position) -> Option<Role> {
+        if self.move_type(Role::Pawn, pos.ep_square) == MoveType::EnPassant {
+            Some(Role::Pawn)
+        } else {
+            pos.role_at(self.to())
         }
     }
 
