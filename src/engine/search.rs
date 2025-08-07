@@ -520,13 +520,8 @@ impl<'a> Search<'a> {
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        // delta pruning margin
-        let margin =
-            if self.position.in_check() || self.position.non_pawn_material(self.position.side) {
-                15
-            } else {
-                500 + alpha as i32 - stand_pat as i32
-            };
+        // see margin
+        let margin = (alpha as i32 - stand_pat as i32 - 300).max(1);
 
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {

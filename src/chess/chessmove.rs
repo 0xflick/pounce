@@ -3,10 +3,9 @@ use std::str::FromStr;
 
 use thiserror::Error;
 
-use crate::chess::Position;
 use crate::chess::board::ParseSquareError;
 use crate::chess::piece::ParseRoleError;
-use crate::chess::{Role, Square};
+use crate::chess::{Position, Role, Square};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveType {
