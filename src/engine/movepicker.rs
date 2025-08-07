@@ -8,9 +8,9 @@ use crate::chess::{Color, Move, Position, Square};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_CAPTURE_SCORE: i16 = 29_000;
-const KILLER_1_SCORE: i16 = 15_001;
-const KILLER_2_SCORE: i16 = 15_000;
-const BAD_CAPTURE_SCORE: i16 = 10_000;
+const KILLER_1_SCORE: i16 = 28_001;
+const KILLER_2_SCORE: i16 = 28_000;
+const BAD_CAPTURE_SCORE: i16 = 27_000;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -54,6 +54,7 @@ pub struct MovePicker {
 
     scored_moves: MoveList,
     scored_index: usize,
+    sorted_index: usize,
 }
 
 impl MovePicker {
@@ -72,6 +73,7 @@ impl MovePicker {
             killers,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
+            sorted_index: 0,
         }
     }
 
@@ -112,6 +114,7 @@ impl MovePicker {
                 }
             }
         }
+        self.scored_index = self.scored_moves.len();
     }
 
     fn score_quiets(
@@ -119,7 +122,7 @@ impl MovePicker {
         position: &Position,
         history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
     ) {
-        for i in (self.scored_index + 1)..self.scored_moves.len() {
+        for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
             if m == self.killers[0] {
                 self.scored_moves[i].score = KILLER_1_SCORE as i32;
@@ -129,6 +132,7 @@ impl MovePicker {
                 self.scored_moves[i].score = history[position.side][m.from()][m.to()] as i32;
             }
         }
+        self.scored_index = self.scored_moves.len();
     }
 
     #[inline]
@@ -141,7 +145,7 @@ impl MovePicker {
         let mut best_score = i32::MIN;
         let mut best_index = 0;
 
-        for i in self.scored_index..self.scored_moves.len() {
+        for i in self.sorted_index..self.scored_moves.len() {
             let move_score = &self.scored_moves[i];
             if move_score.score > best_score {
                 best_score = move_score.score;
@@ -154,10 +158,10 @@ impl MovePicker {
         }
 
         // swap
-        self.scored_moves.swap(self.scored_index, best_index);
-        self.scored_index += 1;
+        self.scored_moves.swap(self.sorted_index, best_index);
+        self.sorted_index += 1;
 
-        Some(self.scored_moves[self.scored_index - 1].m)
+        Some(self.scored_moves[self.sorted_index - 1].m)
     }
 
     pub fn next(
