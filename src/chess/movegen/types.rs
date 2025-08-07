@@ -53,7 +53,7 @@ pub struct MoveGen {
 impl MoveGen {
     pub fn new(pos: &Position) -> Self {
         let mut moves = MoveList::new();
-        let checkers = pos.checkers;
+        let checkers = pos.checkers[pos.side];
 
         if checkers == Bitboard::EMPTY {
             match pos.side {
@@ -216,8 +216,8 @@ pub trait Mover {
         };
         let ksq = Square::from(pos.king_of(side));
         let pieces = pos.by_color_role(side, Self::into_piece());
-        let pinned = pos.pinned;
-        let checkers = pos.checkers;
+        let pinned = pos.pinned[side];
+        let checkers = pos.checkers[side];
 
         let check_mask = if CHECK {
             between(Square::from(checkers), ksq) ^ checkers

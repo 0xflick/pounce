@@ -75,6 +75,15 @@ impl Bitboard {
         Bitboard(self.0.swap_bytes())
     }
 
+    #[inline]
+    pub fn lsb(self) -> Option<Square> {
+        if self.0 == 0 {
+            None
+        } else {
+            Some(Square::new_unchecked(self.0.trailing_zeros() as u8))
+        }
+    }
+
     pub const EMPTY: Bitboard = Bitboard(0);
     pub const FULL: Bitboard = Bitboard(0xFFFFFFFFFFFFFFFF);
 }

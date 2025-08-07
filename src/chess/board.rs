@@ -238,6 +238,7 @@ impl Square {
     }
 
     pub const fn new_unchecked(square: u8) -> Square {
+        debug_assert!(square < 64);
         unsafe { std::mem::transmute(square) }
     }
 
