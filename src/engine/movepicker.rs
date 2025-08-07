@@ -50,6 +50,7 @@ pub struct MovePicker {
     mode: MovePickerMode,
     tt_move: Move,
     killers: [Move; 2],
+    margin: i32,
 
     scored_moves: MoveList,
     scored_index: usize,
@@ -62,6 +63,7 @@ impl MovePicker {
         mode: MovePickerMode,
         tt_move: Move,
         killers: [Move; 2],
+        margin: i32,
     ) -> MovePicker {
         let mg = MoveGen::new(pos);
         MovePicker {
@@ -70,23 +72,30 @@ impl MovePicker {
             mode,
             tt_move,
             killers,
+            margin,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
             sorted_index: 0,
         }
     }
 
-    pub fn new_quiescence(pos: &Position, mut tt_move: Move) -> MovePicker {
+    pub fn new_quiescence(pos: &Position, mut tt_move: Move, margin: i32) -> MovePicker {
         // If the tt move isn't a capture, we can't use it in quiescence search
         if tt_move != Move::NONE && (pos.occupancy & tt_move.to()).none() {
             tt_move = Move::NONE;
         }
 
-        MovePicker::new(pos, MovePickerMode::Quiescence, tt_move, [Move::NONE; 2])
+        MovePicker::new(
+            pos,
+            MovePickerMode::Quiescence,
+            tt_move,
+            [Move::NONE; 2],
+            margin,
+        )
     }
 
     pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers)
+        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
@@ -105,7 +114,7 @@ impl MovePicker {
             self.scored_moves[i].score = {
                 if self.scored_moves[i].m == self.tt_move {
                     TT_MOVE_SCORE as i32
-                } else if see::see(position, self.scored_moves[i].m, 1) {
+                } else if see::see(position, self.scored_moves[i].m, self.margin) {
                     self.mvv_lva(self.scored_moves[i].m, position) as i32
                         + GOOD_CAPTURE_SCORE as i32
                 } else {
@@ -171,7 +180,10 @@ impl MovePicker {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreCaptures;
-                if self.tt_move != Move::NONE {
+                if self.tt_move != Move::NONE
+                    && !(self.mode == MovePickerMode::Quiescence
+                        && self.tt_move.is_capture(position))
+                {
                     return Some(self.tt_move);
                 }
                 self.next(position, history)
@@ -196,13 +208,6 @@ impl MovePicker {
                         if m == self.tt_move {
                             return self.next(position, history);
                         }
-
-                        // in quiescence search, only return captures that are above a see
-                        // threshold
-                        if self.mode == MovePickerMode::Quiescence && !see::see(position, m, 15) {
-                            return self.next(position, history);
-                        }
-
                         Some(m)
                     }
                     None => {
@@ -242,6 +247,7 @@ impl MovePicker {
 mod tests {
     use crate::chess::movegen::init_tables;
     use crate::chess::position::fen::Fen;
+    use crate::init;
     use crate::zobrist::init_zobrist;
 
     #[test]
@@ -281,5 +287,29 @@ mod tests {
 
         // queen takes pawn and cand be recaptured
         assert_eq!(moves[5], "d4a7".parse().unwrap());
+    }
+
+    #[test]
+    fn quiescence() {
+        init();
+
+        let Fen(pos) = "2b1kbnr/5ppp/4p3/q1pP1Q1r/6P1/1NP5/PP2PP1P/R1B1KBNR w - c6 0 1"
+            .parse()
+            .unwrap();
+
+        let mut mp = super::MovePicker::new_quiescence(&pos, "e2e3".parse().unwrap(), 15);
+
+        let mut moves = Vec::new();
+        while let Some(m) = mp.next(&pos, &[[[0; 64]; 64]; 2]) {
+            moves.push(m);
+        }
+
+        // only three good captures, and because tt is a quiet move, it
+        // is not returned
+        assert_eq!(moves.len(), 3);
+
+        assert_eq!(moves[0], "b3a5".parse().unwrap()); // knight takes queen
+        assert_eq!(moves[1], "g4h5".parse().unwrap()); // pawn takes rook
+        assert_eq!(moves[2], "f5h5".parse().unwrap()); // queen takes rook
     }
 }

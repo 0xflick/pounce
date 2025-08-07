@@ -520,19 +520,16 @@ impl<'a> Search<'a> {
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move);
-        while let Some(mv) = move_picker.next(&self.position, &self.history) {
-            // delta pruning
-            debug_assert!(mv.is_capture(&self.position));
-            let captured = mv.captured_role(&self.position).unwrap();
-            if mv.promotion().is_none()
-                && !self.position.in_check()
-                && ((stand_pat + 500 + eval::PIECE_VALUES_EG[captured] as i16) < alpha)
-                && self.position.non_pawn_material(self.position.side)
-            {
-                continue;
-            }
+        // delta pruning margin
+        let margin =
+            if self.position.in_check() || self.position.non_pawn_material(self.position.side) {
+                15
+            } else {
+                500 + alpha as i32 - stand_pat as i32
+            };
 
+        let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, margin);
+        while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move(mv);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move(mv);
