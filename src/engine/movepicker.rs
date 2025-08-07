@@ -178,7 +178,7 @@ impl MovePicker {
 
                         // in quiescence search, only return captures that are above a see
                         // threshold
-                        if self.mode == MovePickerMode::Quiescence && !see::see(position, m, 50) {
+                        if self.mode == MovePickerMode::Quiescence && !see::see(position, m, 15) {
                             return self.next(position, history);
                         }
                         Some(m)
