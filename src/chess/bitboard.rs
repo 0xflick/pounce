@@ -29,12 +29,12 @@ impl Bitboard {
 
     #[inline]
     pub fn set(&mut self, sq: Square) {
-        *self |= Bitboard::from(sq);
+        *self |= sq;
     }
 
     #[inline]
     pub fn clear(&mut self, sq: Square) {
-        *self &= sq;
+        *self &= !Bitboard::from(sq);
     }
 
     #[inline]
@@ -276,7 +276,7 @@ impl Iterator for Bitboard {
             return None;
         }
         let sq = Square::new_unchecked(self.0.trailing_zeros() as u8);
-        *self ^= Bitboard::from(sq);
+        *self ^= sq;
         Some(sq)
     }
 }
