@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::chess::board::ParseSquareError;
 use crate::chess::piece::ParseRoleError;
-use crate::chess::{Role, Square};
+use crate::chess::{Position, Role, Square};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveType {
@@ -46,6 +46,7 @@ impl Move {
     }
 
     // This only works for valid moves
+    #[inline]
     pub fn move_type(self, role: Role, ep_square: Option<Square>) -> MoveType {
         if self.promotion().is_some() {
             MoveType::Promotion
@@ -65,6 +66,34 @@ impl Move {
         } else {
             MoveType::Normal
         }
+    }
+
+    #[inline]
+    pub fn is_capture(self, pos: &Position) -> bool {
+        pos.occupancy.contains(self.to())
+            || self.move_type(pos.role_at(self.from()).unwrap(), pos.ep_square)
+                == MoveType::EnPassant
+    }
+
+    pub fn is_quiet(self, pos: &Position) -> bool {
+        !self.is_capture(pos)
+            && self.move_type(pos.role_at(self.from()).unwrap(), pos.ep_square)
+                != MoveType::Promotion
+    }
+
+    pub fn is_promotion(self) -> bool {
+        self.promotion().is_some()
+    }
+
+    #[inline]
+    pub fn captured_role(self, pos: &Position) -> Option<Role> {
+        pos.role_at(self.to()).or_else(|| {
+            if self.is_capture(pos) {
+                Some(Role::Pawn)
+            } else {
+                None
+            }
+        })
     }
 
     pub const NULL: Move = Move(u16::MAX);

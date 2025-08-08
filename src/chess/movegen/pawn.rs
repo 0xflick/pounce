@@ -58,6 +58,7 @@ impl Mover for PawnType {
                         sq,
                         moves,
                         promotion_bb & Bitboard::from(sq) != Bitboard::EMPTY,
+                        false,
                     ));
                 }
             }
@@ -72,6 +73,7 @@ impl Mover for PawnType {
                             sq,
                             moves,
                             promotion_bb & Bitboard::from(sq) != Bitboard::EMPTY,
+                            false,
                         ));
                     }
                 }
@@ -85,7 +87,12 @@ impl Mover for PawnType {
             for sq in ep_source_squares {
                 if Self::legal_ep_move::<BLACK>(sq, ep, pos) {
                     unsafe {
-                        movelist.push_unchecked(FromAndMoves::new(sq, Bitboard::from(ep), false));
+                        movelist.push_unchecked(FromAndMoves::new(
+                            sq,
+                            Bitboard::from(ep),
+                            false,
+                            true,
+                        ));
                     }
                 }
             }

@@ -43,7 +43,10 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
     // "make" the move by updating the occupancy bitboard
     let mut occ = pos.occupancy ^ from | to;
     if mv.move_type(next_victim, pos.ep_square) == chess::chessmove::MoveType::EnPassant {
-        occ ^= pos.ep_square.unwrap();
+        // The captured pawn is one square behind the ep target square
+        // (in the direction of the moving pawn's starting rank)
+        let captured_pawn_sq = to.down(pos.side).unwrap();
+        occ ^= captured_pawn_sq;
     }
 
     // side is the other side, since we just made a move
@@ -224,5 +227,19 @@ mod test {
             Fen::parse("r2qkbnr/p2b1ppp/2n5/8/Q7/8/PPPPPPPP/RN2KBNR w KQkq - 0 1").unwrap();
 
         assert!(!see(&pos, "a4c6".parse().unwrap(), 0));
+    }
+
+    #[test]
+    fn en_passant() {
+        init();
+
+        let Fen(pos) =
+            Fen::parse("2b1kbnr/5ppp/4p3/q1pP1Q1r/6P1/1NP5/PP2PP1P/R1B1KBNR w - c6 0 1").unwrap();
+
+        // en passant capture is favorable
+        assert!(see(&pos, "d5c6".parse().unwrap(), 15));
+
+        // but not if the threshold is above the value of the pawn
+        assert!(!see(&pos, "d5c6".parse().unwrap(), 200));
     }
 }

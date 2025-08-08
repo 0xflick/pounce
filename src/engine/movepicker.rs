@@ -2,7 +2,6 @@ mod see;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Square};
 
@@ -51,6 +50,7 @@ pub struct MovePicker {
     mode: MovePickerMode,
     tt_move: Move,
     killers: [Move; 2],
+    margin: i32,
 
     scored_moves: MoveList,
     scored_index: usize,
@@ -63,6 +63,7 @@ impl MovePicker {
         mode: MovePickerMode,
         tt_move: Move,
         killers: [Move; 2],
+        margin: i32,
     ) -> MovePicker {
         let mg = MoveGen::new(pos);
         MovePicker {
@@ -71,28 +72,35 @@ impl MovePicker {
             mode,
             tt_move,
             killers,
+            margin,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
             sorted_index: 0,
         }
     }
 
-    pub fn new_quiescence(pos: &Position, mut tt_move: Move) -> MovePicker {
+    pub fn new_quiescence(pos: &Position, mut tt_move: Move, margin: i32) -> MovePicker {
         // If the tt move isn't a capture, we can't use it in quiescence search
-        if tt_move != Move::NONE && (pos.occupancy & tt_move.to()).none() {
+        if tt_move != Move::NONE && !tt_move.is_capture(pos) {
             tt_move = Move::NONE;
         }
 
-        MovePicker::new(pos, MovePickerMode::Quiescence, tt_move, [Move::NONE; 2])
+        MovePicker::new(
+            pos,
+            MovePickerMode::Quiescence,
+            tt_move,
+            [Move::NONE; 2],
+            margin,
+        )
     }
 
     pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers)
+        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
         let attacker = position.role_at(m.from());
-        let victim = position.role_at(m.to());
+        let victim = m.captured_role(position);
 
         match (attacker, victim) {
             (None, _) => 0,
@@ -106,7 +114,7 @@ impl MovePicker {
             self.scored_moves[i].score = {
                 if self.scored_moves[i].m == self.tt_move {
                     TT_MOVE_SCORE as i32
-                } else if see::see(position, self.scored_moves[i].m, 1) {
+                } else if see::see(position, self.scored_moves[i].m, self.margin) {
                     self.mvv_lva(self.scored_moves[i].m, position) as i32
                         + GOOD_CAPTURE_SCORE as i32
                 } else {
@@ -181,7 +189,7 @@ impl MovePicker {
                 self.stage = MovePickerStage::Captures;
                 self.scored_moves.clear();
 
-                self.move_generator.set_mask(position.occupancy);
+                self.move_generator.set_captures_only(position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
@@ -197,13 +205,6 @@ impl MovePicker {
                         if m == self.tt_move {
                             return self.next(position, history);
                         }
-
-                        // in quiescence search, only return captures that are above a see
-                        // threshold
-                        if self.mode == MovePickerMode::Quiescence && !see::see(position, m, 15) {
-                            return self.next(position, history);
-                        }
-
                         Some(m)
                     }
                     None => {
@@ -217,7 +218,7 @@ impl MovePicker {
             }
             MovePickerStage::ScoreQuiets => {
                 self.stage = MovePickerStage::Quiets;
-                self.move_generator.set_mask(Bitboard::FULL);
+                self.move_generator.disable_captures_only();
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
@@ -243,6 +244,7 @@ impl MovePicker {
 mod tests {
     use crate::chess::movegen::init_tables;
     use crate::chess::position::fen::Fen;
+    use crate::init;
     use crate::zobrist::init_zobrist;
 
     #[test]
@@ -282,5 +284,31 @@ mod tests {
 
         // queen takes pawn and cand be recaptured
         assert_eq!(moves[5], "d4a7".parse().unwrap());
+    }
+
+    #[test]
+    fn quiescence() {
+        init();
+
+        let Fen(pos) = "2b1kbnr/5ppp/4p3/q1pP1Q1r/6P1/1NP5/PP2PP1P/R1B1KBNR w - c6 0 1"
+            .parse()
+            .unwrap();
+
+        let mut mp = super::MovePicker::new_quiescence(&pos, "e2e3".parse().unwrap(), 15);
+
+        let mut moves = Vec::new();
+        while let Some(m) = mp.next(&pos, &[[[0; 64]; 64]; 2]) {
+            moves.push(m);
+        }
+
+        // Should get 4 good captures including en passant
+        // tt move is not a capture, so it should be skipped
+        assert_eq!(moves.len(), 4);
+
+        // Check that all expected moves are present
+        assert_eq!(moves[0], "b3a5".parse().unwrap()); // knight takes queen
+        assert_eq!(moves[1], "g4h5".parse().unwrap()); // pawn takes rook
+        assert_eq!(moves[2], "f5h5".parse().unwrap()); // queen takes rook
+        assert_eq!(moves[3], "d5c6".parse().unwrap()); // en passant capture
     }
 }

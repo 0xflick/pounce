@@ -11,14 +11,16 @@ pub struct FromAndMoves {
     from: Square,
     moves: Bitboard,
     is_promotion: bool,
+    is_ep: bool,
 }
 
 impl FromAndMoves {
-    pub fn new(from: Square, moves: Bitboard, is_promotion: bool) -> Self {
+    pub fn new(from: Square, moves: Bitboard, is_promotion: bool, is_ep: bool) -> Self {
         FromAndMoves {
             from,
             moves,
             is_promotion,
+            is_ep,
         }
     }
 }
@@ -48,6 +50,7 @@ pub struct MoveGen {
     index: usize,
     promotion_index: PromotionIndex,
     iter_mask: Bitboard,
+    captures_only: bool,
 }
 
 impl MoveGen {
@@ -109,12 +112,25 @@ impl MoveGen {
             index: 0,
             promotion_index: PromotionIndex::Queen,
             iter_mask: Bitboard::FULL,
+            captures_only: false,
         }
     }
 
     pub fn set_mask(&mut self, mask: Bitboard) {
         self.index = 0;
         self.iter_mask = mask;
+    }
+
+    pub fn set_captures_only(&mut self, occupancy: Bitboard) {
+        self.index = 0;
+        self.iter_mask = occupancy;
+        self.captures_only = true;
+    }
+
+    pub fn disable_captures_only(&mut self) {
+        self.index = 0;
+        self.iter_mask = Bitboard::FULL;
+        self.captures_only = false;
     }
 }
 
@@ -147,6 +163,7 @@ impl Iterator for MoveGen {
         } else if self.moves[self.index].is_promotion {
             let moves = &mut self.moves[self.index];
             let masked = moves.moves & self.iter_mask;
+
             if masked == Bitboard::EMPTY {
                 self.index += 1;
                 return self.next();
@@ -179,11 +196,21 @@ impl Iterator for MoveGen {
             }
         } else {
             let moves = &mut self.moves[self.index];
-            let masked = moves.moves & self.iter_mask;
+
+            // skip moves that are not in the mask,
+            // but make sure that if we are generating captures only,
+            // we do not skip en passant moves (which are not in the mask)
+            let masked = if self.captures_only && moves.is_ep {
+                moves.moves // Use the original moves (the EP target square)
+            } else {
+                moves.moves & self.iter_mask
+            };
+
             if masked == Bitboard::EMPTY {
                 self.index += 1;
                 return self.next();
             }
+
             let to = Square::from(masked);
 
             moves.moves ^= Bitboard::from(to);
@@ -234,6 +261,7 @@ pub trait Mover {
                         from: sq,
                         moves,
                         is_promotion: false,
+                        is_ep: false,
                     })
                 }
             }
@@ -248,6 +276,7 @@ pub trait Mover {
                             from: sq,
                             moves,
                             is_promotion: false,
+                            is_ep: false,
                         });
                     }
                 }

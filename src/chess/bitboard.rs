@@ -19,7 +19,7 @@ impl Bitboard {
 
     #[inline]
     pub fn contains(self, sq: Square) -> bool {
-        (self & Bitboard::from(sq)).any()
+        (self & sq).any()
     }
 
     #[inline]
@@ -29,7 +29,7 @@ impl Bitboard {
 
     #[inline]
     pub fn set(&mut self, sq: Square) {
-        *self |= Bitboard::from(sq);
+        *self |= sq;
     }
 
     #[inline]
@@ -39,7 +39,7 @@ impl Bitboard {
 
     #[inline]
     pub fn toggle(&mut self, sq: Square) {
-        *self ^= Bitboard::from(sq);
+        *self ^= sq;
     }
 
     #[inline]
@@ -276,7 +276,7 @@ impl Iterator for Bitboard {
             return None;
         }
         let sq = Square::new_unchecked(self.0.trailing_zeros() as u8);
-        *self ^= Bitboard::from(sq);
+        *self ^= sq;
         Some(sq)
     }
 }
