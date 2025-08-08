@@ -520,13 +520,7 @@ impl<'a> Search<'a> {
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        // set see margin for quiescence search, I think this is equivalent to delta pruning
-        let see_margin = if self.position.non_pawn_material(self.position.side) {
-            1
-        } else {
-            (alpha - 400 - stand_pat).max(1) as i32
-        };
-
+        let see_margin = (alpha - 500 - stand_pat).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move(mv);
