@@ -524,7 +524,7 @@ impl<'a> Search<'a> {
         let see_margin = if self.position.non_pawn_material(self.position.side) {
             1
         } else {
-            (alpha - 250 - stand_pat).max(1) as i32
+            (alpha - 400 - stand_pat).max(1) as i32
         };
 
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
