@@ -27,7 +27,6 @@ static TOTAL_GAMES: AtomicU32 = AtomicU32::new(0);
 static WHITE_WINS: AtomicU32 = AtomicU32::new(0);
 static BLACK_WINS: AtomicU32 = AtomicU32::new(0);
 static DRAWS: AtomicU32 = AtomicU32::new(0);
-static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct DatagenConfig {
@@ -36,11 +35,9 @@ pub struct DatagenConfig {
     pub hash_size_mb: u32,
     pub threads: u32,
     pub out_path: PathBuf,
-    pub state_path: Option<PathBuf>,
 }
 
-pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
-    // start playout threads, share global state, print results
+pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     ctrlc::set_handler(move || {
         STOP.store(true, std::sync::atomic::Ordering::Relaxed);
     })?;
@@ -48,67 +45,7 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     if let Some(parent) = config.out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    println!("Output location: {:?}", config.out_path);
 
-    if let Some(ref state_path) = config.state_path {
-        let state: DatagenState = match std::fs::read_to_string(state_path) {
-            Ok(s) => {
-                println!("Loaded state from {state_path:?}");
-                let state: DatagenState = serde_json::from_str(&s)?;
-                if state.config != config {
-                    return Err(anyhow::anyhow!("Config mismatch"));
-                }
-                println!(
-                    "Found {} previous games.\nWhite wins: {}, Black wins: {}, Draws: {}",
-                    state.white_wins + state.black_wins + state.draws,
-                    state.white_wins,
-                    state.black_wins,
-                    state.draws
-                );
-                println!();
-
-                config = state.config.to_owned();
-
-                state
-            }
-            Err(_) => {
-                println!("Creating new state file at {state_path:?}");
-                println!();
-                DatagenState {
-                    white_wins: 0,
-                    black_wins: 0,
-                    draws: 0,
-                    config: config.clone(),
-                }
-            }
-        };
-        WHITE_WINS.store(state.white_wins, std::sync::atomic::Ordering::Relaxed);
-        BLACK_WINS.store(state.black_wins, std::sync::atomic::Ordering::Relaxed);
-        DRAWS.store(state.draws, std::sync::atomic::Ordering::Relaxed);
-        TOTAL_GAMES.store(
-            state.white_wins + state.black_wins + state.draws,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        NUM_AT_RESTART.store(
-            state.white_wins + state.black_wins + state.draws,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-    }
-
-    let games_remaing = config.num_games - TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed);
-
-    println!("Starting datagen with the following configuration:");
-    println!("Limits: {:?}", config.limits);
-    println!("TT size: {} MB", config.hash_size_mb);
-    println!("Concurrency: {}", config.threads);
-    println!("Output path: {:?}", config.out_path);
-    if let Some(ref state_path) = config.state_path {
-        println!("State path: {state_path:?}");
-    } else {
-        println!("State path: None");
-    }
-    println!("Total games: {}", config.num_games);
-    println!("Games remaining: {games_remaing}");
     println!();
     let file = OpenOptions::new()
         .read(true)
@@ -118,7 +55,6 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         .expect("Failed to open output file");
 
     std::thread::scope(|s| {
-        println!("Starting threads");
         let buf_writer = BufWriter::new(file);
         let shared_writer = Arc::new(Mutex::new(buf_writer));
         for i in 0..config.threads {
@@ -130,26 +66,13 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         }
         println!("{}/{} threads started", config.threads, config.threads);
         println!();
-        println!("Let 'er rip!!!!");
     });
 
     if STOP.load(std::sync::atomic::Ordering::Relaxed) {
         println!("Stopped by user");
     } else {
-        println!("All games finished");
+        println!("Datagen finished");
     }
-
-    if let Some(ref state_path) = config.state_path {
-        println!("Saving state to {:?}", config.state_path);
-        let state = DatagenState {
-            white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
-            black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
-            draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
-            config: config.clone(),
-        };
-        let state = serde_json::to_string(&state)?;
-        std::fs::write(state_path, state)?;
-    };
 
     println!();
     println!(
@@ -159,7 +82,6 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
         DRAWS.load(std::sync::atomic::Ordering::Relaxed)
     );
-    println!("See ya!");
     Ok(())
 }
 
@@ -177,7 +99,6 @@ fn thread_worker(
     config: &DatagenConfig,
     writer: Arc<Mutex<impl std::io::Write>>,
 ) -> anyhow::Result<()> {
-    let start = std::time::Instant::now();
     let mut last_log = std::time::Instant::now();
 
     let Fen(pos) = STARTPOS.parse().unwrap();
@@ -195,33 +116,12 @@ fn thread_worker(
             let draws = DRAWS.load(std::sync::atomic::Ordering::Relaxed);
 
             let total = white_wins + black_wins + draws;
-            let num_since_restart =
-                total - NUM_AT_RESTART.load(std::sync::atomic::Ordering::Relaxed);
-
-            let games_per_min = (num_since_restart as f64)
-                / (std::time::Instant::now() - start).as_secs_f64()
-                * 60.0;
-            let est_remaining = (config.num_games - num_since_restart) as f64 / games_per_min;
 
             println!();
             println!(
                 "{}/{} Games, White wins: {}, Black wins: {}, Draws: {}",
                 total, config.num_games, white_wins, black_wins, draws
             );
-            println!("Games per minute: {games_per_min:.1}");
-            println!("Estimated time remaining: {est_remaining:.1} minutes");
-
-            if let Some(ref state_path) = config.state_path {
-                let state = DatagenState {
-                    white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                    black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                    draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
-                    config: config.to_owned(),
-                };
-
-                let state = serde_json::to_string(&state).expect("Unable to serialize state");
-                std::fs::write(state_path, state)?;
-            };
         }
 
         if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
@@ -269,9 +169,11 @@ fn playout(
         None => {}
     }
 
-    // break early if eval is too extreme
     let mut search = SearchManager::new(1, hash_size_mb);
+    search.set_silent(true);
     let (res, _) = search.think(limits);
+
+    // break early if eval is too extreme
     if res.score.abs() > 1_500 {
         return Err(anyhow::anyhow!("Extreme score"));
     }

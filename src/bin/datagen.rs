@@ -30,9 +30,6 @@ enum Commands {
 
         #[arg(long, default_value_t = 16)]
         hash_size: u32,
-
-        #[arg(long)]
-        state: Option<PathBuf>,
     },
     BinToPgn {
         in_file: PathBuf,
@@ -50,7 +47,6 @@ fn main() -> Result<()> {
             num_games,
             threads,
             hash_size,
-            state,
         } => datagen::datagen(DatagenConfig {
             limits: Limits {
                 depth: Some(depth),
@@ -60,7 +56,6 @@ fn main() -> Result<()> {
             hash_size_mb: hash_size,
             threads: threads.unwrap_or(1),
             out_path,
-            state_path: state,
         }),
         Commands::BinToPgn { in_file } => datagen::bin_to_pgn(&in_file),
     }
