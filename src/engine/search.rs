@@ -520,7 +520,7 @@ impl<'a> Search<'a> {
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        let see_margin = (alpha - 500 - stand_pat).max(1) as i32;
+        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move(mv);
