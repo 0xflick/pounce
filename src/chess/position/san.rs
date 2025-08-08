@@ -41,14 +41,7 @@ impl Position {
     }
 
     fn is_capture(&self, mv: Move) -> Result<bool> {
-        if self.piece_at(mv.to()).is_some() {
-            return Ok(true);
-        }
-
-        let from_role = self
-            .role_at(mv.from())
-            .ok_or(ChessError::NoPieceAtSquare(mv.from()))?;
-        Ok(mv.move_type(from_role, self.ep_square) == MoveType::EnPassant)
+        Ok(mv.is_capture(self))
     }
 
     fn prefix_char(&self, mv: Move) -> Result<String> {
