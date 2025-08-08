@@ -137,6 +137,7 @@ pub struct DatagenConfig {
     pub out_path: PathBuf,
     pub max_file_size_mb: Option<u64>,
     pub games_per_file: Option<u32>,
+    pub log_interval_secs: Option<u64>,
 }
 
 pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
@@ -250,7 +251,8 @@ fn thread_worker(
             return Ok(());
         }
 
-        if id == 0 && last_log.elapsed() > Duration::from_secs(60) {
+        let log_interval = Duration::from_secs(config.log_interval_secs.unwrap_or(60));
+        if id == 0 && last_log.elapsed() > log_interval {
             last_log = std::time::Instant::now();
 
             let white_wins = WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed);
@@ -261,9 +263,32 @@ fn thread_worker(
 
             println!();
             println!(
-                "{}/{} Games, White wins: {}, Black wins: {}, Draws: {}",
-                total, config.num_games, white_wins, black_wins, draws
+                "=== PROGRESS REPORT ==="
             );
+            println!(
+                "Total: {}/{} Games ({:.1}%)",
+                total, config.num_games, (total as f64 / config.num_games as f64) * 100.0
+            );
+            println!(
+                "Results - White: {}, Black: {}, Draws: {}",
+                white_wins, black_wins, draws
+            );
+            println!(
+                "Win rates - White: {:.1}%, Black: {:.1}%, Draw: {:.1}%",
+                if total > 0 { (white_wins as f64 / total as f64) * 100.0 } else { 0.0 },
+                if total > 0 { (black_wins as f64 / total as f64) * 100.0 } else { 0.0 },
+                if total > 0 { (draws as f64 / total as f64) * 100.0 } else { 0.0 }
+            );
+            if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
+                let current_file_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+                let current_file_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+                println!(
+                    "Current file: {} games, {:.2} MB",
+                    current_file_games,
+                    current_file_size as f64 / (1024.0 * 1024.0)
+                );
+            }
+            println!("=====================\n");
         }
 
         if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
