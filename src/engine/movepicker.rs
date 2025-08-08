@@ -180,10 +180,7 @@ impl MovePicker {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreCaptures;
-                if self.tt_move != Move::NONE
-                    && !(self.mode == MovePickerMode::Quiescence
-                        && self.tt_move.is_capture(position))
-                {
+                if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
                 self.next(position, history)
