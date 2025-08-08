@@ -523,7 +523,7 @@ impl<'a> Search<'a> {
         let best_case_score = {
             let mut value = eval::PIECE_VALUES_MG[Role::Pawn as usize];
 
-            for role in (0..Role::NUM).rev() {
+            for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
                 if self
                     .position
                     .by_color_role(self.position.side.opponent(), Role::new(role as u8))
