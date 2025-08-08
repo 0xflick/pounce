@@ -546,7 +546,7 @@ impl<'a> Search<'a> {
             value
         };
 
-        let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(350) as i32;
+        let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(600) as i32;
         if best_case_score < delta_margin {
             return stand_pat;
         }
