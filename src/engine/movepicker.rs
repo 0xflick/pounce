@@ -81,7 +81,7 @@ impl MovePicker {
 
     pub fn new_quiescence(pos: &Position, mut tt_move: Move, margin: i32) -> MovePicker {
         // If the tt move isn't a capture, we can't use it in quiescence search
-        if tt_move != Move::NONE && (pos.occupancy & tt_move.to()).none() {
+        if tt_move != Move::NONE && !tt_move.is_capture(pos) {
             tt_move = Move::NONE;
         }
 
@@ -302,13 +302,13 @@ mod tests {
         }
 
         // Should get 4 good captures including en passant
-        // (tt move is quiet so not returned)
+        // tt move is not a capture, so it should be skipped
         assert_eq!(moves.len(), 4);
 
         // Check that all expected moves are present
-        assert!(moves.contains(&"b3a5".parse().unwrap())); // knight takes queen
-        assert!(moves.contains(&"g4h5".parse().unwrap())); // pawn takes rook
-        assert!(moves.contains(&"d5c6".parse().unwrap())); // en passant capture
-        assert!(moves.contains(&"f5h5".parse().unwrap())); // queen takes rook
+        assert_eq!(moves[0], "b3a5".parse().unwrap()); // knight takes queen
+        assert_eq!(moves[1], "g4h5".parse().unwrap()); // pawn takes rook
+        assert_eq!(moves[2], "f5h5".parse().unwrap()); // queen takes rook
+        assert_eq!(moves[3], "d5c6".parse().unwrap()); // en passant capture
     }
 }
