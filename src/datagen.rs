@@ -46,42 +46,52 @@ impl WriterWrapper {
             WriterWrapper::Simple(writer) => {
                 game.serialize_into(writer)?;
             }
-            WriterWrapper::Rotating { base_path, current_path, writer, config } => {
+            WriterWrapper::Rotating {
+                base_path,
+                current_path,
+                writer,
+                config,
+            } => {
                 let max_size_bytes = config.max_file_size_mb.map(|mb| mb * 1024 * 1024);
                 let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
                 let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
-                
+
                 let should_rotate = max_size_bytes.map_or(false, |max| current_size >= max)
-                    || config.games_per_file.map_or(false, |max| current_games >= max);
-                
+                    || config
+                        .games_per_file
+                        .map_or(false, |max| current_games >= max);
+
                 if should_rotate {
                     writer.flush()?;
-                    
+
                     // Create timestamp for new filename
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap()
                         .as_secs();
-                    
+
                     // Move temp file to final name with timestamp
                     let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
-                    let ext = base_path.extension().map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
+                    let ext = base_path
+                        .extension()
+                        .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
                     let parent = base_path.parent().unwrap_or(Path::new("."));
-                    let final_path = parent.join(format!("{}_{}_{}{}", stem, timestamp, current_games, ext));
-                    
+                    let final_path =
+                        parent.join(format!("{}_{}_{}{}", stem, timestamp, current_games, ext));
+
                     fs::rename(&current_path, &final_path)?;
-                    
+
                     // Print notification for external watcher
                     println!("\n=== FILE COMPLETE ===");
                     println!("Path: {}", final_path.display());
                     println!("Games: {}", current_games);
                     println!("Size: {} MB", current_size as f64 / (1024.0 * 1024.0));
                     println!("===================\n");
-                    
+
                     // Reset counters
                     CURRENT_FILE_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
                     CURRENT_FILE_GAMES.store(0, std::sync::atomic::Ordering::Relaxed);
-                    
+
                     // Create new temp file
                     let new_temp_path = parent.join(format!(".{}_temp", stem));
                     let new_file = OpenOptions::new()
@@ -89,16 +99,16 @@ impl WriterWrapper {
                         .create(true)
                         .truncate(true)
                         .open(&new_temp_path)?;
-                    
+
                     *writer = BufWriter::new(new_file);
                     *current_path = new_temp_path;
                 }
-                
+
                 // Write the game
                 let size_before = writer.stream_position().unwrap_or(0);
                 game.serialize_into(writer)?;
                 let size_after = writer.stream_position().unwrap_or(0);
-                
+
                 let bytes_written = size_after - size_before;
                 CURRENT_FILE_SIZE.fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
                 CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -110,8 +120,12 @@ impl WriterWrapper {
 
 fn create_rotating_writer(config: &DatagenConfig) -> anyhow::Result<Arc<Mutex<WriterWrapper>>> {
     let parent = config.out_path.parent().unwrap_or(Path::new("."));
-    let stem = config.out_path.file_stem().unwrap_or_default().to_string_lossy();
-    
+    let stem = config
+        .out_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+
     // Create temp file for writing
     let temp_path = parent.join(format!(".{}_temp", stem));
     let file = OpenOptions::new()
@@ -119,7 +133,7 @@ fn create_rotating_writer(config: &DatagenConfig) -> anyhow::Result<Arc<Mutex<Wr
         .create(true)
         .truncate(true)
         .open(&temp_path)?;
-    
+
     Ok(Arc::new(Mutex::new(WriterWrapper::Rotating {
         base_path: config.out_path.clone(),
         current_path: temp_path,
@@ -150,7 +164,7 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     }
 
     println!();
-    
+
     let writer = if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
         create_rotating_writer(&config)?
     } else {
@@ -174,30 +188,39 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
         println!("{}/{} threads started", config.threads, config.threads);
         println!();
     });
-    
+
     // Finalize any remaining file
     if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
         let mut writer_guard = writer.lock().unwrap();
-        if let WriterWrapper::Rotating { base_path, current_path, writer, .. } = &mut *writer_guard {
+        if let WriterWrapper::Rotating {
+            base_path,
+            current_path,
+            writer,
+            ..
+        } = &mut *writer_guard
+        {
             writer.flush()?;
-            
+
             let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
             let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
-            
+
             if current_games > 0 {
                 // Move final temp file to timestamped name
                 let timestamp = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_secs();
-                
+
                 let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
-                let ext = base_path.extension().map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
+                let ext = base_path
+                    .extension()
+                    .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
                 let parent = base_path.parent().unwrap_or(Path::new("."));
-                let final_path = parent.join(format!("{}_{}_{}{}", stem, timestamp, current_games, ext));
-                
+                let final_path =
+                    parent.join(format!("{}_{}_{}{}", stem, timestamp, current_games, ext));
+
                 fs::rename(current_path, &final_path)?;
-                
+
                 // Print final notification
                 println!("\n=== FILE COMPLETE ===");
                 println!("Path: {}", final_path.display());
@@ -262,12 +285,12 @@ fn thread_worker(
             let total = white_wins + black_wins + draws;
 
             println!();
-            println!(
-                "=== PROGRESS REPORT ==="
-            );
+            println!("=== PROGRESS REPORT ===");
             println!(
                 "Total: {}/{} Games ({:.1}%)",
-                total, config.num_games, (total as f64 / config.num_games as f64) * 100.0
+                total,
+                config.num_games,
+                (total as f64 / config.num_games as f64) * 100.0
             );
             println!(
                 "Results - White: {}, Black: {}, Draws: {}",
@@ -275,13 +298,27 @@ fn thread_worker(
             );
             println!(
                 "Win rates - White: {:.1}%, Black: {:.1}%, Draw: {:.1}%",
-                if total > 0 { (white_wins as f64 / total as f64) * 100.0 } else { 0.0 },
-                if total > 0 { (black_wins as f64 / total as f64) * 100.0 } else { 0.0 },
-                if total > 0 { (draws as f64 / total as f64) * 100.0 } else { 0.0 }
+                if total > 0 {
+                    (white_wins as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                },
+                if total > 0 {
+                    (black_wins as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                },
+                if total > 0 {
+                    (draws as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                }
             );
             if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
-                let current_file_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
-                let current_file_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+                let current_file_games =
+                    CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+                let current_file_size =
+                    CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
                 println!(
                     "Current file: {} games, {:.2} MB",
                     current_file_games,

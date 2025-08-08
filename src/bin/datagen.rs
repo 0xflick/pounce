@@ -30,13 +30,19 @@ enum Commands {
 
         #[arg(long, default_value_t = 16)]
         hash_size: u32,
-        
-        #[arg(long, help = "Maximum file size in MB before rolling over to a new file")]
+
+        #[arg(
+            long,
+            help = "Maximum file size in MB before rolling over to a new file"
+        )]
         max_file_size_mb: Option<u64>,
-        
-        #[arg(long, help = "Number of games per file before rolling over to a new file")]
+
+        #[arg(
+            long,
+            help = "Number of games per file before rolling over to a new file"
+        )]
         games_per_file: Option<u32>,
-        
+
         #[arg(long, help = "Interval in seconds for progress reports (default: 60)")]
         log_interval_secs: Option<u64>,
     },
