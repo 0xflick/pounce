@@ -56,10 +56,10 @@ impl WriterWrapper {
                 let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
                 let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
 
-                let should_rotate = max_size_bytes.map_or(false, |max| current_size >= max)
+                let should_rotate = max_size_bytes.is_some_and(|max| current_size >= max)
                     || config
                         .games_per_file
-                        .map_or(false, |max| current_games >= max);
+                        .is_some_and(|max| current_games >= max);
 
                 if should_rotate {
                     writer.flush()?;
@@ -77,14 +77,14 @@ impl WriterWrapper {
                         .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
                     let parent = base_path.parent().unwrap_or(Path::new("."));
                     let final_path =
-                        parent.join(format!("{}_{}_{}{}", stem, timestamp, current_games, ext));
+                        parent.join(format!("{stem}_{timestamp}_{current_games}{ext}"));
 
                     fs::rename(&current_path, &final_path)?;
 
                     // Print notification for external watcher
                     println!("\n=== FILE COMPLETE ===");
                     println!("Path: {}", final_path.display());
-                    println!("Games: {}", current_games);
+                    println!("Games: {current_games}");
                     println!("Size: {} MB", current_size as f64 / (1024.0 * 1024.0));
                     println!("===================\n");
 
@@ -224,7 +224,7 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
                 // Print final notification
                 println!("\n=== FILE COMPLETE ===");
                 println!("Path: {}", final_path.display());
-                println!("Games: {}", current_games);
+                println!("Games: {current_games}");
                 println!("Size: {} MB", current_size as f64 / (1024.0 * 1024.0));
                 println!("===================\n");
             } else {
@@ -287,15 +287,11 @@ fn thread_worker(
             println!();
             println!("=== PROGRESS REPORT ===");
             println!(
-                "Total: {}/{} Games ({:.1}%)",
-                total,
+                "Total: {total}/{} Games ({:.1}%)",
                 config.num_games,
                 (total as f64 / config.num_games as f64) * 100.0
             );
-            println!(
-                "Results - White: {}, Black: {}, Draws: {}",
-                white_wins, black_wins, draws
-            );
+            println!("Results - White: {white_wins}, Black: {black_wins}, Draws: {draws}",);
             println!(
                 "Win rates - White: {:.1}%, Black: {:.1}%, Draw: {:.1}%",
                 if total > 0 {
@@ -320,8 +316,7 @@ fn thread_worker(
                 let current_file_size =
                     CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
                 println!(
-                    "Current file: {} games, {:.2} MB",
-                    current_file_games,
+                    "Current file: {current_file_games} games, {:.2} MB",
                     current_file_size as f64 / (1024.0 * 1024.0)
                 );
             }
