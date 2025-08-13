@@ -324,9 +324,14 @@ fn thread_worker(
         }
 
         if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
-            TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
+            // acquire lock to write the game
             let mut writer_guard = writer.lock().unwrap();
+            if TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) >= config.num_games {
+                break;
+            }
+            TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // Check if we exceeded the total number of games after incrementing
+
             writer_guard.write_game(&game)?;
         }
     }
@@ -339,27 +344,26 @@ fn playout(
     limits: Limits,
     hash_size_mb: usize,
 ) -> anyhow::Result<CompressedGame> {
-    let mut pos = startpos.clone();
+    let mut initial_pos = startpos.clone();
     let mut rng = SmallRng::from_os_rng();
 
     // make random moves
     let num_random = if rng.random_bool(0.5) { 8 } else { 9 };
 
     for _ in 0..num_random {
-        let m = MoveGen::new(&pos).collect::<Vec<_>>();
+        let m = MoveGen::new(&initial_pos).collect::<Vec<_>>();
         let mv = match m.choose(&mut rng) {
             Some(mv) => *mv,
             None => return Err(anyhow::anyhow!("No moves")),
         };
-        pos.make_move(mv);
+        initial_pos.make_move(mv);
     }
-    let startpos = pos.clone();
-    let num_moves = MoveGen::new(&pos).len();
+    let num_moves = MoveGen::new(&initial_pos).len();
     if num_moves == 0 {
         return Err(anyhow::anyhow!("No moves"));
     }
 
-    match pos.is_draw() {
+    match initial_pos.is_draw() {
         Some(GameResult::Loss) => {
             return Err(anyhow::anyhow!("Loss"));
         }
@@ -368,16 +372,15 @@ fn playout(
         None => {}
     }
 
-    let mut search = SearchManager::new(1, hash_size_mb);
+    let mut game = CompressedGame::new(&initial_pos);
+    let mut search = SearchManager::new_from_position(1, hash_size_mb, initial_pos);
     search.set_silent(true);
     let (res, _) = search.think(limits);
 
     // break early if eval is too extreme
-    if res.score.abs() > 1_500 {
+    if res.score.abs() > 1_000 {
         return Err(anyhow::anyhow!("Extreme score"));
     }
-
-    let mut game = CompressedGame::new(startpos);
 
     let mut drawish_count = 0;
 
@@ -385,10 +388,10 @@ fn playout(
         if STOP.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(anyhow::anyhow!("Stopped"));
         }
-        let num_moves = MoveGen::new(&pos).len();
+        let num_moves = MoveGen::new(&search.position).len();
         if num_moves == 0 {
-            if pos.in_check() {
-                match pos.side {
+            if search.position.in_check() {
+                match search.position.side {
                     Color::Black => break Wdl::WhiteWin,
                     Color::White => break Wdl::BlackWin,
                 }
@@ -396,8 +399,8 @@ fn playout(
             break Wdl::Draw;
         }
 
-        match pos.is_draw() {
-            Some(GameResult::Loss) => match pos.side {
+        match search.position.is_draw() {
+            Some(GameResult::Loss) => match search.position.side {
                 Color::Black => break Wdl::WhiteWin,
                 Color::White => break Wdl::BlackWin,
             },
@@ -406,7 +409,7 @@ fn playout(
             None => {}
         }
 
-        if pos.is_repetition(2) {
+        if search.position.is_repetition(2) {
             break Wdl::Draw;
         }
 
@@ -414,13 +417,13 @@ fn playout(
         // exit if we find a mate score
         if res.score < (-eval::MATE_IN_PLY) {
             // current side is losing
-            match pos.side {
+            match search.position.side {
                 Color::Black => break Wdl::WhiteWin,
                 Color::White => break Wdl::BlackWin,
             }
         } else if res.score > eval::MATE_IN_PLY {
             // current side is winning
-            match pos.side {
+            match search.position.side {
                 Color::Black => break Wdl::BlackWin,
                 Color::White => break Wdl::WhiteWin,
             }
@@ -433,13 +436,7 @@ fn playout(
             drawish_count = 0;
         }
 
-        game.push_move(res.bestmove, {
-            if pos.side == Color::White {
-                res.score
-            } else {
-                -res.score
-            }
-        });
+        game.push_move(res.bestmove, res.score);
         search.position.make_move(res.bestmove);
     };
 
