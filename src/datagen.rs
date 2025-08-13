@@ -67,7 +67,8 @@ impl WriterWrapper {
                     let size_after = writer.stream_position().unwrap_or(0);
 
                     let bytes_written = size_after - size_before;
-                    CURRENT_FILE_SIZE.fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
+                    CURRENT_FILE_SIZE
+                        .fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
                     CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
             }
