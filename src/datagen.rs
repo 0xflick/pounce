@@ -2,12 +2,12 @@ mod format;
 mod utils;
 
 use std::fmt::Debug;
-use std::fs::OpenOptions;
-use std::io::BufWriter;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::fs::{self, OpenOptions};
+use std::io::{BufWriter, Seek, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use rand::prelude::IndexedRandom;
@@ -27,7 +27,143 @@ static TOTAL_GAMES: AtomicU32 = AtomicU32::new(0);
 static WHITE_WINS: AtomicU32 = AtomicU32::new(0);
 static BLACK_WINS: AtomicU32 = AtomicU32::new(0);
 static DRAWS: AtomicU32 = AtomicU32::new(0);
-static NUM_AT_RESTART: AtomicU32 = AtomicU32::new(0);
+static CURRENT_FILE_SIZE: AtomicU64 = AtomicU64::new(0);
+static CURRENT_FILE_GAMES: AtomicU32 = AtomicU32::new(0);
+
+enum WriterWrapper {
+    Simple(BufWriter<fs::File>),
+    Rotating {
+        base_path: PathBuf,
+        current_path: PathBuf,
+        writer: BufWriter<fs::File>,
+        config: DatagenConfig,
+    },
+}
+
+impl WriterWrapper {
+    fn write_game(&mut self, game: &CompressedGame) -> anyhow::Result<()> {
+        match self {
+            WriterWrapper::Simple(writer) => {
+                game.serialize_into(writer)?;
+            }
+            WriterWrapper::Rotating { config, .. } => {
+                let max_size_bytes = config.max_file_size_mb.map(|mb| mb * 1024 * 1024);
+                let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+                let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+
+                let should_rotate = max_size_bytes.is_some_and(|max| current_size >= max)
+                    || config
+                        .games_per_file
+                        .is_some_and(|max| current_games >= max);
+
+                if should_rotate {
+                    self.finalize_current_file()?;
+                }
+
+                // Write the game after potential rotation
+                if let WriterWrapper::Rotating { writer, .. } = self {
+                    let size_before = writer.stream_position().unwrap_or(0);
+                    game.serialize_into(writer)?;
+                    let size_after = writer.stream_position().unwrap_or(0);
+
+                    let bytes_written = size_after - size_before;
+                    CURRENT_FILE_SIZE
+                        .fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
+                    CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize_current_file(&mut self) -> anyhow::Result<()> {
+        match self {
+            WriterWrapper::Simple(writer) => {
+                writer.flush()?;
+            }
+            WriterWrapper::Rotating {
+                base_path,
+                current_path,
+                writer,
+                ..
+            } => {
+                writer.flush()?;
+
+                let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+                let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+
+                if current_games > 0 {
+                    // Create timestamp for new filename
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    // Move temp file to final name with timestamp
+                    let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
+                    let ext = base_path
+                        .extension()
+                        .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
+                    let parent = base_path.parent().unwrap_or(Path::new("."));
+                    let final_path =
+                        parent.join(format!("{stem}_{timestamp}_{current_games}{ext}"));
+
+                    fs::rename(&current_path, &final_path)?;
+
+                    // Print notification for external watcher
+                    println!("\n=== FILE COMPLETE ===");
+                    println!("Path: {}", final_path.display());
+                    println!("Games: {current_games}");
+                    println!("Size: {} MB", current_size as f64 / (1024.0 * 1024.0));
+                    println!("===================\n");
+
+                    // Reset counters
+                    CURRENT_FILE_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
+                    CURRENT_FILE_GAMES.store(0, std::sync::atomic::Ordering::Relaxed);
+
+                    // Create new temp file
+                    let new_temp_path = parent.join(format!(".{stem}_temp"));
+                    let new_file = OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(true)
+                        .open(&new_temp_path)?;
+
+                    *writer = BufWriter::new(new_file);
+                    *current_path = new_temp_path;
+                } else {
+                    // No games written to temp file, remove it
+                    let _ = fs::remove_file(current_path);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn create_rotating_writer(config: &DatagenConfig) -> anyhow::Result<Arc<Mutex<WriterWrapper>>> {
+    let parent = config.out_path.parent().unwrap_or(Path::new("."));
+    let stem = config
+        .out_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+
+    // Create temp file for writing
+    let temp_path = parent.join(format!(".{stem}_temp"));
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&temp_path)?;
+
+    Ok(Arc::new(Mutex::new(WriterWrapper::Rotating {
+        base_path: config.out_path.clone(),
+        current_path: temp_path,
+        writer: BufWriter::new(file),
+        config: config.clone(),
+    })))
+}
 
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct DatagenConfig {
@@ -36,11 +172,12 @@ pub struct DatagenConfig {
     pub hash_size_mb: u32,
     pub threads: u32,
     pub out_path: PathBuf,
-    pub state_path: Option<PathBuf>,
+    pub max_file_size_mb: Option<u64>,
+    pub games_per_file: Option<u32>,
+    pub log_interval_secs: Option<u64>,
 }
 
-pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
-    // start playout threads, share global state, print results
+pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     ctrlc::set_handler(move || {
         STOP.store(true, std::sync::atomic::Ordering::Relaxed);
     })?;
@@ -48,108 +185,42 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
     if let Some(parent) = config.out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    println!("Output location: {:?}", config.out_path);
 
-    if let Some(ref state_path) = config.state_path {
-        let state: DatagenState = match std::fs::read_to_string(state_path) {
-            Ok(s) => {
-                println!("Loaded state from {state_path:?}");
-                let state: DatagenState = serde_json::from_str(&s)?;
-                if state.config != config {
-                    return Err(anyhow::anyhow!("Config mismatch"));
-                }
-                println!(
-                    "Found {} previous games.\nWhite wins: {}, Black wins: {}, Draws: {}",
-                    state.white_wins + state.black_wins + state.draws,
-                    state.white_wins,
-                    state.black_wins,
-                    state.draws
-                );
-                println!();
-
-                config = state.config.to_owned();
-
-                state
-            }
-            Err(_) => {
-                println!("Creating new state file at {state_path:?}");
-                println!();
-                DatagenState {
-                    white_wins: 0,
-                    black_wins: 0,
-                    draws: 0,
-                    config: config.clone(),
-                }
-            }
-        };
-        WHITE_WINS.store(state.white_wins, std::sync::atomic::Ordering::Relaxed);
-        BLACK_WINS.store(state.black_wins, std::sync::atomic::Ordering::Relaxed);
-        DRAWS.store(state.draws, std::sync::atomic::Ordering::Relaxed);
-        TOTAL_GAMES.store(
-            state.white_wins + state.black_wins + state.draws,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        NUM_AT_RESTART.store(
-            state.white_wins + state.black_wins + state.draws,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-    }
-
-    let games_remaing = config.num_games - TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed);
-
-    println!("Starting datagen with the following configuration:");
-    println!("Limits: {:?}", config.limits);
-    println!("TT size: {} MB", config.hash_size_mb);
-    println!("Concurrency: {}", config.threads);
-    println!("Output path: {:?}", config.out_path);
-    if let Some(ref state_path) = config.state_path {
-        println!("State path: {state_path:?}");
-    } else {
-        println!("State path: None");
-    }
-    println!("Total games: {}", config.num_games);
-    println!("Games remaining: {games_remaing}");
     println!();
-    let file = OpenOptions::new()
-        .read(true)
-        .create(true)
-        .append(true)
-        .open(&config.out_path)
-        .expect("Failed to open output file");
+
+    let writer = if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
+        create_rotating_writer(&config)?
+    } else {
+        let file = OpenOptions::new()
+            .read(true)
+            .create(true)
+            .append(true)
+            .open(&config.out_path)
+            .expect("Failed to open output file");
+        Arc::new(Mutex::new(WriterWrapper::Simple(BufWriter::new(file))))
+    };
 
     std::thread::scope(|s| {
-        println!("Starting threads");
-        let buf_writer = BufWriter::new(file);
-        let shared_writer = Arc::new(Mutex::new(buf_writer));
         for i in 0..config.threads {
             s.spawn({
                 let config = config.clone();
-                let writer_clone = shared_writer.clone();
+                let writer_clone = writer.clone();
                 move || thread_worker(i, &config, writer_clone)
             });
         }
         println!("{}/{} threads started", config.threads, config.threads);
         println!();
-        println!("Let 'er rip!!!!");
     });
+
+    // Finalize any remaining file
+    let mut writer_guard = writer.lock().unwrap();
+    writer_guard.finalize_current_file()?;
 
     if STOP.load(std::sync::atomic::Ordering::Relaxed) {
         println!("Stopped by user");
     } else {
-        println!("All games finished");
+        println!("Datagen finished");
     }
-
-    if let Some(ref state_path) = config.state_path {
-        println!("Saving state to {:?}", config.state_path);
-        let state = DatagenState {
-            white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
-            black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
-            draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
-            config: config.clone(),
-        };
-        let state = serde_json::to_string(&state)?;
-        std::fs::write(state_path, state)?;
-    };
 
     println!();
     println!(
@@ -159,7 +230,6 @@ pub fn datagen(mut config: DatagenConfig) -> anyhow::Result<()> {
         BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
         DRAWS.load(std::sync::atomic::Ordering::Relaxed)
     );
-    println!("See ya!");
     Ok(())
 }
 
@@ -175,9 +245,8 @@ struct DatagenState {
 fn thread_worker(
     id: u32,
     config: &DatagenConfig,
-    writer: Arc<Mutex<impl std::io::Write>>,
+    writer: Arc<Mutex<WriterWrapper>>,
 ) -> anyhow::Result<()> {
-    let start = std::time::Instant::now();
     let mut last_log = std::time::Instant::now();
 
     let Fen(pos) = STARTPOS.parse().unwrap();
@@ -187,7 +256,8 @@ fn thread_worker(
             return Ok(());
         }
 
-        if id == 0 && last_log.elapsed() > Duration::from_secs(60) {
+        let log_interval = Duration::from_secs(config.log_interval_secs.unwrap_or(60));
+        if id == 0 && last_log.elapsed() > log_interval {
             last_log = std::time::Instant::now();
 
             let white_wins = WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed);
@@ -195,40 +265,56 @@ fn thread_worker(
             let draws = DRAWS.load(std::sync::atomic::Ordering::Relaxed);
 
             let total = white_wins + black_wins + draws;
-            let num_since_restart =
-                total - NUM_AT_RESTART.load(std::sync::atomic::Ordering::Relaxed);
-
-            let games_per_min = (num_since_restart as f64)
-                / (std::time::Instant::now() - start).as_secs_f64()
-                * 60.0;
-            let est_remaining = (config.num_games - num_since_restart) as f64 / games_per_min;
 
             println!();
+            println!("=== PROGRESS REPORT ===");
             println!(
-                "{}/{} Games, White wins: {}, Black wins: {}, Draws: {}",
-                total, config.num_games, white_wins, black_wins, draws
+                "Total: {total}/{} Games ({:.1}%)",
+                config.num_games,
+                (total as f64 / config.num_games as f64) * 100.0
             );
-            println!("Games per minute: {games_per_min:.1}");
-            println!("Estimated time remaining: {est_remaining:.1} minutes");
-
-            if let Some(ref state_path) = config.state_path {
-                let state = DatagenState {
-                    white_wins: WHITE_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                    black_wins: BLACK_WINS.load(std::sync::atomic::Ordering::Relaxed),
-                    draws: DRAWS.load(std::sync::atomic::Ordering::Relaxed),
-                    config: config.to_owned(),
-                };
-
-                let state = serde_json::to_string(&state).expect("Unable to serialize state");
-                std::fs::write(state_path, state)?;
-            };
+            println!("Results - White: {white_wins}, Black: {black_wins}, Draws: {draws}",);
+            println!(
+                "Win rates - White: {:.1}%, Black: {:.1}%, Draw: {:.1}%",
+                if total > 0 {
+                    (white_wins as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                },
+                if total > 0 {
+                    (black_wins as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                },
+                if total > 0 {
+                    (draws as f64 / total as f64) * 100.0
+                } else {
+                    0.0
+                }
+            );
+            if config.max_file_size_mb.is_some() || config.games_per_file.is_some() {
+                let current_file_games =
+                    CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
+                let current_file_size =
+                    CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+                println!(
+                    "Current file: {current_file_games} games, {:.2} MB",
+                    current_file_size as f64 / (1024.0 * 1024.0)
+                );
+            }
+            println!("=====================\n");
         }
 
         if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
-            TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
+            // acquire lock to write the game
             let mut writer_guard = writer.lock().unwrap();
-            game.serialize_into(writer_guard.by_ref())?;
+            if TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) >= config.num_games {
+                break;
+            }
+            TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // Check if we exceeded the total number of games after incrementing
+
+            writer_guard.write_game(&game)?;
         }
     }
 
@@ -240,27 +326,26 @@ fn playout(
     limits: Limits,
     hash_size_mb: usize,
 ) -> anyhow::Result<CompressedGame> {
-    let mut pos = startpos.clone();
+    let mut initial_pos = startpos.clone();
     let mut rng = SmallRng::from_os_rng();
 
     // make random moves
     let num_random = if rng.random_bool(0.5) { 8 } else { 9 };
 
     for _ in 0..num_random {
-        let m = MoveGen::new(&pos).collect::<Vec<_>>();
+        let m = MoveGen::new(&initial_pos).collect::<Vec<_>>();
         let mv = match m.choose(&mut rng) {
             Some(mv) => *mv,
             None => return Err(anyhow::anyhow!("No moves")),
         };
-        pos.make_move(mv);
+        initial_pos.make_move(mv);
     }
-    let startpos = pos.clone();
-    let num_moves = MoveGen::new(&pos).len();
+    let num_moves = MoveGen::new(&initial_pos).len();
     if num_moves == 0 {
         return Err(anyhow::anyhow!("No moves"));
     }
 
-    match pos.is_draw() {
+    match initial_pos.is_draw() {
         Some(GameResult::Loss) => {
             return Err(anyhow::anyhow!("Loss"));
         }
@@ -269,14 +354,15 @@ fn playout(
         None => {}
     }
 
-    // break early if eval is too extreme
-    let mut search = SearchManager::new(1, hash_size_mb);
+    let mut game = CompressedGame::new(&initial_pos);
+    let mut search = SearchManager::new_from_position(1, hash_size_mb, initial_pos);
+    search.set_silent(true);
     let (res, _) = search.think(limits);
-    if res.score.abs() > 1_500 {
+
+    // break early if eval is too extreme
+    if res.score.abs() > 1_000 {
         return Err(anyhow::anyhow!("Extreme score"));
     }
-
-    let mut game = CompressedGame::new(startpos);
 
     let mut drawish_count = 0;
 
@@ -284,10 +370,10 @@ fn playout(
         if STOP.load(std::sync::atomic::Ordering::Relaxed) {
             return Err(anyhow::anyhow!("Stopped"));
         }
-        let num_moves = MoveGen::new(&pos).len();
+        let num_moves = MoveGen::new(&search.position).len();
         if num_moves == 0 {
-            if pos.in_check() {
-                match pos.side {
+            if search.position.in_check() {
+                match search.position.side {
                     Color::Black => break Wdl::WhiteWin,
                     Color::White => break Wdl::BlackWin,
                 }
@@ -295,8 +381,8 @@ fn playout(
             break Wdl::Draw;
         }
 
-        match pos.is_draw() {
-            Some(GameResult::Loss) => match pos.side {
+        match search.position.is_draw() {
+            Some(GameResult::Loss) => match search.position.side {
                 Color::Black => break Wdl::WhiteWin,
                 Color::White => break Wdl::BlackWin,
             },
@@ -305,7 +391,7 @@ fn playout(
             None => {}
         }
 
-        if pos.is_repetition(2) {
+        if search.position.is_repetition(2) {
             break Wdl::Draw;
         }
 
@@ -313,13 +399,13 @@ fn playout(
         // exit if we find a mate score
         if res.score < (-eval::MATE_IN_PLY) {
             // current side is losing
-            match pos.side {
+            match search.position.side {
                 Color::Black => break Wdl::WhiteWin,
                 Color::White => break Wdl::BlackWin,
             }
         } else if res.score > eval::MATE_IN_PLY {
             // current side is winning
-            match pos.side {
+            match search.position.side {
                 Color::Black => break Wdl::BlackWin,
                 Color::White => break Wdl::WhiteWin,
             }
@@ -332,13 +418,7 @@ fn playout(
             drawish_count = 0;
         }
 
-        game.push_move(res.bestmove, {
-            if pos.side == Color::White {
-                res.score
-            } else {
-                -res.score
-            }
-        });
+        game.push_move(res.bestmove, res.score);
         search.position.make_move(res.bestmove);
     };
 

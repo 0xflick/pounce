@@ -203,9 +203,9 @@ pub struct CompressedGame {
 }
 
 impl CompressedGame {
-    pub fn new(initial: Position) -> Self {
+    pub fn new(initial: &Position) -> Self {
         Self {
-            initial: CompressedPosition::new(&initial, 0, Wdl::Unknown),
+            initial: CompressedPosition::new(initial, 0, Wdl::Unknown),
             moves: Vec::new(),
         }
     }

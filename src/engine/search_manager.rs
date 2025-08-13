@@ -26,6 +26,15 @@ impl SearchManager {
         }
     }
 
+    pub fn new_from_position(num_threads: usize, hash_size: usize, position: Position) -> Self {
+        SearchManager {
+            num_threads,
+            silent: false,
+            tt: Table::new_mb(hash_size),
+            position,
+        }
+    }
+
     pub fn set_silent(&mut self, silent: bool) {
         self.silent = silent;
     }
