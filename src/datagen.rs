@@ -46,12 +46,7 @@ impl WriterWrapper {
             WriterWrapper::Simple(writer) => {
                 game.serialize_into(writer)?;
             }
-            WriterWrapper::Rotating {
-                base_path,
-                current_path,
-                writer,
-                config,
-            } => {
+            WriterWrapper::Rotating { config, .. } => {
                 let max_size_bytes = config.max_file_size_mb.map(|mb| mb * 1024 * 1024);
                 let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
                 let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
@@ -65,14 +60,16 @@ impl WriterWrapper {
                     self.finalize_current_file()?;
                 }
 
-                // Write the game
-                let size_before = writer.stream_position().unwrap_or(0);
-                game.serialize_into(writer)?;
-                let size_after = writer.stream_position().unwrap_or(0);
+                // Write the game after potential rotation
+                if let WriterWrapper::Rotating { writer, .. } = self {
+                    let size_before = writer.stream_position().unwrap_or(0);
+                    game.serialize_into(writer)?;
+                    let size_after = writer.stream_position().unwrap_or(0);
 
-                let bytes_written = size_after - size_before;
-                CURRENT_FILE_SIZE.fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
-                CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let bytes_written = size_after - size_before;
+                    CURRENT_FILE_SIZE.fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
+                    CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
             }
         }
         Ok(())
