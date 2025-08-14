@@ -82,3 +82,10 @@ impl<T> IndexMut<Color> for [T; Color::NUM] {
         unsafe { self.get_unchecked_mut(index as usize) }
     }
 }
+
+impl std::ops::Not for Color {
+    type Output = Color;
+    fn not(self) -> Self::Output {
+        self.opponent()
+    }
+}

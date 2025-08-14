@@ -5,7 +5,7 @@ use anyhow::Context;
 
 use crate::chess::bitboard::Bitboard;
 use crate::chess::position::CastleRights;
-use crate::chess::{Color, Move, Piece, Position, Role, Square};
+use crate::chess::{self, Color, Move, Piece, Position, Role, Square};
 use crate::datagen::utils::U4Array32;
 
 #[repr(u8)]
@@ -198,8 +198,8 @@ impl CompressedMove {
 const NULL_TERMINATOR: [u8; 4] = [0; 4];
 
 pub struct CompressedGame {
-    initial: CompressedPosition,
-    moves: Vec<CompressedMove>,
+    pub initial: CompressedPosition,
+    pub moves: Vec<CompressedMove>,
 }
 
 impl CompressedGame {
@@ -318,6 +318,64 @@ impl Display for CompressedGame {
         }
         write!(f, "{}\n\n", self.initial.wdl)?;
         Ok(())
+    }
+}
+
+impl IntoIterator for CompressedGame {
+    type Item = ScoredPosition;
+    type IntoIter = PositionIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PositionIterator {
+            game: self,
+            position: None,
+            index: 0,
+        }
+    }
+}
+
+pub struct ScoredPosition {
+    pub position: chess::Position,
+    pub score: i16,
+    pub wdl: Wdl,
+}
+
+pub struct PositionIterator {
+    game: CompressedGame,
+    position: Option<chess::Position>,
+    index: usize,
+}
+
+impl Iterator for PositionIterator {
+    type Item = ScoredPosition;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // we skip the last move because it is the final position
+        if self.index >= self.game.moves.len() - 1 {
+            return None;
+        }
+
+        if self.position.is_none() {
+            self.position = Some(self.game.initial.try_into().unwrap());
+        }
+
+        let current_position = self.position.clone().unwrap();
+
+        // the score for the current position is the score of the next move
+        let score = self.game.moves[self.index].score;
+
+        // now make the move
+        self.position
+            .as_mut()
+            .unwrap()
+            .make_move(self.game.moves[self.index].mv);
+        self.index += 1;
+
+        return Some(ScoredPosition {
+            position: current_position,
+            score,
+            wdl: self.game.initial.wdl,
+        });
     }
 }
 

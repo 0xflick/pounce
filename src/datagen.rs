@@ -1,4 +1,5 @@
-mod format;
+pub mod format;
+
 mod utils;
 
 use std::fmt::Debug;
@@ -70,6 +71,12 @@ impl WriterWrapper {
                     CURRENT_FILE_SIZE
                         .fetch_add(bytes_written, std::sync::atomic::Ordering::Relaxed);
                     CURRENT_FILE_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    writer.flush()?;
+
+                    if current_games % 1000 == 0 {
+                        writer.get_ref().sync_all()?;
+                    }
                 }
             }
         }
@@ -89,7 +96,7 @@ impl WriterWrapper {
             } => {
                 // Ensure all data is written and synced to disk
                 writer.flush()?;
-                let _ = writer.get_ref().sync_all();
+                writer.get_ref().sync_all()?;
 
                 let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
                 let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
