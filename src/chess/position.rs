@@ -681,6 +681,21 @@ impl Position {
             }
         }
     }
+
+    pub fn is_quiet(&self) -> bool {
+        if self.in_check() {
+            return false;
+        }
+
+        let mg = MoveGen::new(self);
+        for mv in mg {
+            if mv.is_capture(self) {
+                return false;
+            }
+        }
+
+        true
+    }
 }
 
 #[cfg(test)]

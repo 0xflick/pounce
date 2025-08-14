@@ -20,7 +20,7 @@ repos:
       - id: cargo-check
         name: cargo check
         description: Check the package for errors.
-        entry: cargo check
+        entry: cargo check --all-targets --all-features
         language: system
         files: \.rs$
         pass_filenames: false
