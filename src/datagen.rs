@@ -57,7 +57,7 @@ impl WriterWrapper {
                         .is_some_and(|max| current_games >= max);
 
                 if should_rotate {
-                    self.finalize_current_file()?;
+                    self.finalize_current_file(true)?; // true = create new temp file for continued writing
                 }
 
                 // Write the game after potential rotation
@@ -76,7 +76,7 @@ impl WriterWrapper {
         Ok(())
     }
 
-    fn finalize_current_file(&mut self) -> anyhow::Result<()> {
+    fn finalize_current_file(&mut self, create_new: bool) -> anyhow::Result<()> {
         match self {
             WriterWrapper::Simple(writer) => {
                 writer.flush()?;
@@ -87,7 +87,9 @@ impl WriterWrapper {
                 writer,
                 ..
             } => {
+                // Ensure all data is written and synced to disk
                 writer.flush()?;
+                let _ = writer.get_ref().sync_all();
 
                 let current_games = CURRENT_FILE_GAMES.load(std::sync::atomic::Ordering::Relaxed);
                 let current_size = CURRENT_FILE_SIZE.load(std::sync::atomic::Ordering::Relaxed);
@@ -115,22 +117,27 @@ impl WriterWrapper {
                     println!("Path: {}", final_path.display());
                     println!("Games: {current_games}");
                     println!("Size: {} MB", current_size as f64 / (1024.0 * 1024.0));
+                    if STOP.load(std::sync::atomic::Ordering::Relaxed) {
+                        println!("Note: Finalized on interruption");
+                    }
                     println!("===================\n");
 
                     // Reset counters
                     CURRENT_FILE_SIZE.store(0, std::sync::atomic::Ordering::Relaxed);
                     CURRENT_FILE_GAMES.store(0, std::sync::atomic::Ordering::Relaxed);
 
-                    // Create new temp file
-                    let new_temp_path = parent.join(format!(".{stem}_temp"));
-                    let new_file = OpenOptions::new()
-                        .write(true)
-                        .create(true)
-                        .truncate(true)
-                        .open(&new_temp_path)?;
+                    // Create new temp file only if we're rotating (not shutting down)
+                    if create_new {
+                        let new_temp_path = parent.join(format!(".{stem}_temp"));
+                        let new_file = OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(&new_temp_path)?;
 
-                    *writer = BufWriter::new(new_file);
-                    *current_path = new_temp_path;
+                        *writer = BufWriter::new(new_file);
+                        *current_path = new_temp_path;
+                    }
                 } else {
                     // No games written to temp file, remove it
                     let _ = fs::remove_file(current_path);
@@ -212,12 +219,12 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
         println!();
     });
 
-    // Finalize any remaining file
+    // Always finalize any remaining file, regardless of whether we stopped or finished normally
     let mut writer_guard = writer.lock().unwrap();
-    writer_guard.finalize_current_file()?;
+    writer_guard.finalize_current_file(false)?; // false = don't create new temp file on shutdown
 
     if STOP.load(std::sync::atomic::Ordering::Relaxed) {
-        println!("Stopped by user");
+        println!("Stopped by user - temp file finalized");
     } else {
         println!("Datagen finished");
     }
