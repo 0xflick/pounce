@@ -371,11 +371,11 @@ impl Iterator for PositionIterator {
             .make_move(self.game.moves[self.index].mv);
         self.index += 1;
 
-        return Some(ScoredPosition {
+        Some(ScoredPosition {
             position: current_position,
             score,
             wdl: self.game.initial.wdl,
-        });
+        })
     }
 }
 
