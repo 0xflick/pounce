@@ -310,7 +310,10 @@ impl Position {
 
     #[inline]
     pub fn set(&mut self, sq: Square, piece: Piece) {
-        debug_assert!(self.piece_at(sq).is_none(), "set() called on occupied square - use discard() first");
+        debug_assert!(
+            self.piece_at(sq).is_none(),
+            "set() called on occupied square - use discard() first"
+        );
         self.by_color[piece.color as usize].set(sq);
         self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
@@ -361,7 +364,7 @@ impl Position {
                     acc.on_make_move_discard(to, captured);
                     self.discard(to, captured);
                 }
-                
+
                 // Move our piece
                 acc.on_make_move_discard(from, piece);
                 self.discard(from, piece);
@@ -429,13 +432,13 @@ impl Position {
             MoveType::Promotion => {
                 state.captured = self.piece_at(to);
                 let promoted = Piece::new(self.side, mv.promotion().unwrap());
-                
+
                 // Handle captured piece first
                 if let Some(captured) = state.captured {
                     acc.on_make_move_discard(to, captured);
                     self.discard(to, captured);
                 }
-                
+
                 // Move our piece
                 acc.on_make_move_discard(from, piece);
                 self.discard(from, piece);

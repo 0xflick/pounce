@@ -1,5 +1,4 @@
-use crate::chess::position::Accumulator;
-use crate::chess::position::Position;
+use crate::chess::position::{Accumulator, Position};
 use crate::chess::{Color, Role, Square};
 use crate::engine::search::MAX_PLY;
 
