@@ -9,11 +9,12 @@ use anyhow::{Context, Result, anyhow};
 
 use crate::chess::Move;
 use crate::chess::movegen::{MoveGen, perft};
+use crate::chess::position::Accumulator;
 use crate::chess::position::fen::{Fen, STARTPOS};
-use crate::engine::SearchManager;
 use crate::engine::bench::bench;
 use crate::engine::limits::Limits;
 use crate::engine::utils::engine_name;
+use crate::engine::{SearchManager, eval};
 
 #[derive(Debug, Clone, Copy)]
 pub enum UciOption {
@@ -255,14 +256,10 @@ impl Uci {
             Some("eval") => match self.manager.try_lock() {
                 Ok(manager) => {
                     let pos = &manager.position;
-                    let eval = pos.eval();
-                    let psqt_mg = pos.psqt_mg;
-                    let psqt_eg = pos.psqt_eg;
-                    let psqt_mg_calc = pos.psqt_mg();
-                    let psqt_eg_calc = pos.psqt_eg();
-                    println!(
-                        "Eval: {eval}, PSQT MG: {psqt_mg} - {psqt_mg_calc}, PSQT EG: {psqt_eg} - {psqt_eg_calc}"
-                    );
+                    let mut psqt_accumulator = eval::PSQTAccumulator::new();
+                    psqt_accumulator.reset(pos);
+                    let eval = eval::score(pos, &psqt_accumulator);
+                    println!("Eval: {eval}");
                 }
                 Err(_) => {
                     Err(anyhow!("Failed to lock search manager"))?;

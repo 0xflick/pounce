@@ -13,7 +13,6 @@ use crate::chess::movegen::utils::{
 };
 use crate::chess::position::zobrist::ZobristHash;
 use crate::chess::{Color, File, GameResult, Move, MoveType, Piece, Role, Square};
-use crate::engine::eval::{PSQT_EG, PSQT_MG};
 
 bitflags! {
     #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -74,6 +73,34 @@ impl CastleRights {
     }
 }
 
+pub trait Accumulator {
+    fn reset(&mut self, pos: &Position);
+
+    fn on_make_move(&mut self, mv: Move);
+    fn on_unmake_move(&mut self, mv: Move);
+
+    fn on_make_move_set(&mut self, sq: Square, piece: Piece);
+    fn on_make_move_discard(&mut self, sq: Square, piece: Piece);
+
+    fn on_unmake_move_set(&mut self, sq: Square, piece: Piece);
+    fn on_unmake_move_discard(&mut self, sq: Square, piece: Piece);
+}
+
+struct NoAccumulator;
+
+impl Accumulator for NoAccumulator {
+    fn reset(&mut self, _pos: &Position) {}
+
+    fn on_make_move(&mut self, _mv: Move) {}
+    fn on_unmake_move(&mut self, _mv: Move) {}
+
+    fn on_make_move_set(&mut self, _sq: Square, _piece: Piece) {}
+    fn on_make_move_discard(&mut self, _sq: Square, _piece: Piece) {}
+
+    fn on_unmake_move_set(&mut self, _sq: Square, _piece: Piece) {}
+    fn on_unmake_move_discard(&mut self, _sq: Square, _piece: Piece) {}
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct State {
     pub castling: CastleRights,
@@ -106,9 +133,6 @@ pub struct Position {
     pub key: ZobristHash,
 
     pub history: Vec<State>,
-
-    pub psqt_mg: i32,
-    pub psqt_eg: i32,
 }
 
 impl Position {
@@ -127,8 +151,6 @@ impl Position {
             fullmove_number: NonZeroU16::new(1).unwrap(),
             key: ZobristHash::new(),
             history: Vec::new(),
-            psqt_mg: 0,
-            psqt_eg: 0,
         }
     }
 }
@@ -279,17 +301,6 @@ impl Position {
 
     #[inline]
     pub fn discard(&mut self, sq: Square, piece: Piece) {
-        match piece.color {
-            Color::White => {
-                self.psqt_mg -= PSQT_MG[piece.role][sq as usize ^ 56];
-                self.psqt_eg -= PSQT_EG[piece.role][sq as usize ^ 56];
-            }
-            Color::Black => {
-                self.psqt_mg += PSQT_MG[piece.role][sq as usize];
-                self.psqt_eg += PSQT_EG[piece.role][sq as usize];
-            }
-        };
-
         self.by_color.iter_mut().for_each(|bb| bb.clear(sq));
         self.by_role.iter_mut().for_each(|bb| bb.clear(sq));
         self.occupancy.clear(sq);
@@ -299,19 +310,7 @@ impl Position {
 
     #[inline]
     pub fn set(&mut self, sq: Square, piece: Piece) {
-        if let Some(prev) = self.piece_at(sq) {
-            self.discard(sq, prev);
-        }
-        match piece.color {
-            Color::White => {
-                self.psqt_mg += PSQT_MG[piece.role][sq as usize ^ 56];
-                self.psqt_eg += PSQT_EG[piece.role][sq as usize ^ 56];
-            }
-            Color::Black => {
-                self.psqt_mg -= PSQT_MG[piece.role][sq as usize];
-                self.psqt_eg -= PSQT_EG[piece.role][sq as usize];
-            }
-        };
+        debug_assert!(self.piece_at(sq).is_none(), "set() called on occupied square - use discard() first");
         self.by_color[piece.color as usize].set(sq);
         self.by_role[piece.role as usize].set(sq);
         self.occupancy.set(sq);
@@ -321,6 +320,13 @@ impl Position {
 
     #[inline]
     pub fn make_move(&mut self, mv: Move) {
+        self.make_move_with(mv, &mut NoAccumulator);
+    }
+
+    #[inline]
+    pub fn make_move_with<A: Accumulator>(&mut self, mv: Move, acc: &mut A) {
+        acc.on_make_move(mv);
+
         let from = mv.from();
         let to = mv.to();
 
@@ -349,11 +355,23 @@ impl Position {
         match mv.move_type(piece.role, prev_ep_square) {
             MoveType::Normal => {
                 state.captured = self.piece_at(to);
+
+                // Handle captured piece first
+                if let Some(captured) = state.captured {
+                    acc.on_make_move_discard(to, captured);
+                    self.discard(to, captured);
+                }
+                
+                // Move our piece
+                acc.on_make_move_discard(from, piece);
                 self.discard(from, piece);
+                acc.on_make_move_set(to, piece);
                 self.set(to, piece);
             }
             MoveType::DoublePawnPush => {
+                acc.on_make_move_discard(from, piece);
                 self.discard(from, piece);
+                acc.on_make_move_set(to, piece);
                 self.set(to, piece);
 
                 potential_ep_sq = from.up(self.side);
@@ -376,6 +394,10 @@ impl Position {
                 self.discard(from, piece);
                 self.discard(captured_pawn_square, state.captured.unwrap());
                 self.set(to, piece);
+
+                acc.on_make_move_discard(from, piece);
+                acc.on_make_move_discard(captured_pawn_square, state.captured.unwrap());
+                acc.on_make_move_set(to, piece);
             }
             MoveType::Castle => {
                 self.halfmove_clock = 0;
@@ -385,20 +407,39 @@ impl Position {
                     let rook = self.piece_at(rook_from).unwrap();
                     self.discard(rook_from, rook);
                     self.set(rook_to, rook);
+
+                    acc.on_make_move_discard(rook_from, rook);
+                    acc.on_make_move_set(rook_to, rook);
                 } else {
                     let rook_from = Square::make(File::A, self.side.back_rank());
                     let rook_to = Square::make(File::D, self.side.back_rank());
                     let rook = self.piece_at(rook_from).unwrap();
                     self.discard(rook_from, rook);
                     self.set(rook_to, rook);
+
+                    acc.on_make_move_discard(rook_from, rook);
+                    acc.on_make_move_set(rook_to, rook);
                 }
                 self.discard(from, piece);
                 self.set(to, piece);
+
+                acc.on_make_move_discard(from, piece);
+                acc.on_make_move_set(to, piece);
             }
             MoveType::Promotion => {
                 state.captured = self.piece_at(to);
                 let promoted = Piece::new(self.side, mv.promotion().unwrap());
+                
+                // Handle captured piece first
+                if let Some(captured) = state.captured {
+                    acc.on_make_move_discard(to, captured);
+                    self.discard(to, captured);
+                }
+                
+                // Move our piece
+                acc.on_make_move_discard(from, piece);
                 self.discard(from, piece);
+                acc.on_make_move_set(to, promoted);
                 self.set(to, promoted);
             }
         }
@@ -452,7 +493,15 @@ impl Position {
         }
     }
 
+    #[inline]
     pub fn unmake_move(&mut self, mv: Move) {
+        self.unmake_move_with(mv, &mut NoAccumulator);
+    }
+
+    #[inline]
+    pub fn unmake_move_with<A: Accumulator>(&mut self, mv: Move, acc: &mut A) {
+        acc.on_unmake_move(mv);
+
         self.side = self.side.opponent();
         self.key.toggle_side();
 
@@ -491,8 +540,13 @@ impl Position {
             MoveType::Normal | MoveType::DoublePawnPush => {
                 self.discard(to, piece);
                 self.set(from, piece);
+
+                acc.on_unmake_move_discard(to, piece);
+                acc.on_unmake_move_set(from, piece);
+
                 if let Some(captured) = past.captured {
                     self.set(to, captured);
+                    acc.on_unmake_move_set(to, captured);
                 }
             }
             MoveType::EnPassant => {
@@ -505,6 +559,10 @@ impl Position {
                 self.discard(to, piece);
                 self.set(from, piece);
                 self.set(captured_pawn_square, captured_pawn);
+
+                acc.on_unmake_move_discard(to, piece);
+                acc.on_unmake_move_set(from, piece);
+                acc.on_unmake_move_set(captured_pawn_square, captured_pawn);
             }
             MoveType::Castle => {
                 if from.file().direction(to.file()) == 2 {
@@ -513,28 +571,50 @@ impl Position {
                     let rook = self.piece_at(rook_to).expect("castling always has a rook");
                     self.discard(rook_to, rook);
                     self.set(rook_from, rook);
+
+                    acc.on_unmake_move_discard(rook_to, rook);
+                    acc.on_unmake_move_set(rook_from, rook);
                 } else {
                     let rook_from = Square::make(File::A, self.side.back_rank());
                     let rook_to = Square::make(File::D, self.side.back_rank());
                     let rook = self.piece_at(rook_to).expect("castling always has a rook");
                     self.discard(rook_to, rook);
                     self.set(rook_from, rook);
+
+                    acc.on_unmake_move_discard(rook_to, rook);
+                    acc.on_unmake_move_set(rook_from, rook);
                 }
                 self.discard(to, piece);
                 self.set(from, piece);
+
+                acc.on_unmake_move_discard(to, piece);
+                acc.on_unmake_move_set(from, piece);
             }
             MoveType::Promotion => {
                 let promoted = Piece::new(self.side, mv.promotion().unwrap());
                 self.discard(to, promoted);
                 self.set(from, Piece::new(self.side, Role::Pawn));
+
+                acc.on_unmake_move_discard(to, promoted);
+                acc.on_unmake_move_set(from, Piece::new(self.side, Role::Pawn));
+
                 if let Some(captured) = past.captured {
                     self.set(to, captured);
+                    acc.on_unmake_move_set(to, captured);
                 }
             }
         }
     }
 
+    #[inline]
     pub fn make_null_move(&mut self) {
+        self.make_null_move_with(&mut NoAccumulator);
+    }
+
+    #[inline]
+    pub fn make_null_move_with<A: Accumulator>(&mut self, acc: &mut A) {
+        acc.on_make_move(Move::NULL);
+
         let state = State {
             castling: self.castling,
             ep_square: self.ep_square,
@@ -562,7 +642,15 @@ impl Position {
         self.side = self.side.opponent();
     }
 
+    #[inline]
     pub fn unmake_null_move(&mut self) {
+        self.unmake_null_move_with(&mut NoAccumulator);
+    }
+
+    #[inline]
+    pub fn unmake_null_move_with<A: Accumulator>(&mut self, acc: &mut A) {
+        acc.on_unmake_move(Move::NULL);
+
         self.side = self.side.opponent();
         self.key.toggle_side();
 
