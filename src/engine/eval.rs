@@ -87,6 +87,16 @@ impl Accumulator for PSQTAccumulator {
 }
 
 pub fn score(pos: &Position, PSQTAccumulator { psqt_mg, psqt_eg }: &PSQTAccumulator) -> i16 {
+    #[cfg(debug_assertions)]
+    {
+        // make sure the accumulator is in sync with the position
+        let mut clean_psqt = PSQTAccumulator::new();
+        clean_psqt.reset(pos);
+
+        assert_eq!(clean_psqt.psqt_mg, *psqt_mg);
+        assert_eq!(clean_psqt.psqt_eg, *psqt_eg);
+    }
+
     let wpawns = pos.by_color_role(Color::White, Role::Pawn).count() as i32;
     let wknights = pos.by_color_role(Color::White, Role::Knight).count() as i32;
     let wbishops = pos.by_color_role(Color::White, Role::Bishop).count() as i32;
