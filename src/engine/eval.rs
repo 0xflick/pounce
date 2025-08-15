@@ -20,6 +20,7 @@ impl PSQTAccumulator {
         }
     }
 
+    #[inline]
     fn set(&mut self, sq: Square, piece: crate::chess::Piece) {
         match piece.color {
             Color::White => {
@@ -33,6 +34,7 @@ impl PSQTAccumulator {
         }
     }
 
+    #[inline]
     fn discard(&mut self, sq: Square, piece: crate::chess::Piece) {
         match piece.color {
             Color::White => {
@@ -54,6 +56,7 @@ impl Default for PSQTAccumulator {
 }
 
 impl Accumulator for PSQTAccumulator {
+    #[inline]
     fn reset(&mut self, pos: &Position) {
         self.psqt_mg = 0;
         self.psqt_eg = 0;
@@ -65,27 +68,34 @@ impl Accumulator for PSQTAccumulator {
         }
     }
 
+    #[inline]
     fn on_make_move(&mut self, _: crate::chess::Move) {}
 
+    #[inline]
     fn on_unmake_move(&mut self, _: crate::chess::Move) {}
 
+    #[inline]
     fn on_make_move_set(&mut self, sq: Square, piece: crate::chess::Piece) {
         self.set(sq, piece);
     }
 
+    #[inline]
     fn on_make_move_discard(&mut self, sq: Square, piece: crate::chess::Piece) {
         self.discard(sq, piece);
     }
 
+    #[inline]
     fn on_unmake_move_set(&mut self, sq: Square, piece: crate::chess::Piece) {
         self.set(sq, piece);
     }
 
+    #[inline]
     fn on_unmake_move_discard(&mut self, sq: Square, piece: crate::chess::Piece) {
         self.discard(sq, piece);
     }
 }
 
+#[inline]
 pub fn score(pos: &Position, PSQTAccumulator { psqt_mg, psqt_eg }: &PSQTAccumulator) -> i16 {
     #[cfg(debug_assertions)]
     {
