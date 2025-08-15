@@ -67,7 +67,7 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     // Write all collected games to file
     let games_guard = games.lock().unwrap();
     let total_games = games_guard.len();
-    
+
     if total_games > 0 {
         // Create timestamp for filename
         let timestamp = SystemTime::now()
@@ -75,8 +75,13 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
             .unwrap()
             .as_secs();
 
-        let stem = config.out_path.file_stem().unwrap_or_default().to_string_lossy();
-        let ext = config.out_path
+        let stem = config
+            .out_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let ext = config
+            .out_path
             .extension()
             .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
         let parent = config.out_path.parent().unwrap_or(Path::new("."));
@@ -121,7 +126,6 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     );
     Ok(())
 }
-
 
 fn thread_worker(
     id: u32,
@@ -334,7 +338,12 @@ pub fn count_bins(inputs: &[PathBuf]) -> anyhow::Result<()> {
     for input in inputs {
         match count_bin(input) {
             Ok((games, positions)) => {
-                println!("{}: {} games, {} positions", input.display(), games, positions);
+                println!(
+                    "{}: {} games, {} positions",
+                    input.display(),
+                    games,
+                    positions
+                );
                 total_games += games;
                 total_positions += positions;
             }
@@ -346,7 +355,10 @@ pub fn count_bins(inputs: &[PathBuf]) -> anyhow::Result<()> {
 
     if inputs.len() > 1 {
         println!();
-        println!("Total: {} games, {} positions", total_games, total_positions);
+        println!(
+            "Total: {} games, {} positions",
+            total_games, total_positions
+        );
     }
 
     Ok(())
