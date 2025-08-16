@@ -10,7 +10,7 @@ pub use board::{File, Rank, Square};
 pub use chessmove::{Move, MoveType};
 pub use color::Color;
 pub use piece::{Piece, Role};
-pub use position::Position;
+pub use position::{Accumulator, Position};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum GameResult {

@@ -1,4 +1,4 @@
-use crate::chess::position::Position;
+use crate::chess::position::{Accumulator, Position};
 use crate::chess::{Color, Role, Square};
 use crate::engine::search::MAX_PLY;
 
@@ -7,81 +7,145 @@ pub const MATE: i16 = 32_000;
 pub const MATE_IN_PLY: i16 = MATE - MAX_PLY as i16;
 pub const DRAW: i16 = 0;
 
-impl Position {
-    pub fn eval(&self) -> i16 {
-        debug_assert_eq!(self.psqt_mg(), self.psqt_mg);
-        debug_assert_eq!(self.psqt_eg(), self.psqt_eg);
+pub struct PSQTAccumulator {
+    psqt_mg: i32,
+    psqt_eg: i32,
+}
 
-        let wpawns = self.by_color_role(Color::White, Role::Pawn).count() as i32;
-        let wknights = self.by_color_role(Color::White, Role::Knight).count() as i32;
-        let wbishops = self.by_color_role(Color::White, Role::Bishop).count() as i32;
-        let wrooks = self.by_color_role(Color::White, Role::Rook).count() as i32;
-        let wqueens = self.by_color_role(Color::White, Role::Queen).count() as i32;
-
-        let bpawns = self.by_color_role(Color::Black, Role::Pawn).count() as i32;
-        let bknights = self.by_color_role(Color::Black, Role::Knight).count() as i32;
-        let bbishops = self.by_color_role(Color::Black, Role::Bishop).count() as i32;
-        let brooks = self.by_color_role(Color::Black, Role::Rook).count() as i32;
-        let bqueens = self.by_color_role(Color::Black, Role::Queen).count() as i32;
-
-        let score_mg = (wpawns - bpawns) * PIECE_VALUES_MG[Role::Pawn]
-            + (wknights - bknights) * PIECE_VALUES_MG[Role::Knight]
-            + (wbishops - bbishops) * PIECE_VALUES_MG[Role::Bishop]
-            + (wrooks - brooks) * PIECE_VALUES_MG[Role::Rook]
-            + (wqueens - bqueens) * PIECE_VALUES_MG[Role::Queen]
-            + self.psqt_mg;
-
-        let score_eg = (wpawns - bpawns) * PIECE_VALUES_EG[Role::Pawn]
-            + (wknights - bknights) * PIECE_VALUES_EG[Role::Knight]
-            + (wbishops - bbishops) * PIECE_VALUES_EG[Role::Bishop]
-            + (wrooks - brooks) * PIECE_VALUES_EG[Role::Rook]
-            + (wqueens - bqueens) * PIECE_VALUES_EG[Role::Queen]
-            + self.psqt_eg;
-
-        let phase = (wknights + bknights)
-            + (wbishops + bbishops)
-            + (wrooks + brooks) * 2
-            + (wqueens + bqueens) * 4;
-
-        let phase = 24 - phase;
-        let phase = (phase * 256 + (24 / 2)) / 24;
-
-        let score = (score_mg * (256 - phase) + score_eg * phase) / 256;
-
-        match self.side {
-            Color::White => score as i16,
-            Color::Black => -score as i16,
+impl PSQTAccumulator {
+    pub fn new() -> Self {
+        PSQTAccumulator {
+            psqt_mg: 0,
+            psqt_eg: 0,
         }
     }
 
-    pub fn psqt_mg(&self) -> i32 {
-        let mut score = 0;
-        for color in Color::ALL {
-            for role in Role::ALL {
-                for square in self.by_color_role(color, role) {
-                    match color {
-                        Color::White => score += PSQT_MG[role][square as usize ^ 56],
-                        Color::Black => score -= PSQT_MG[role][square],
-                    }
-                }
+    #[inline]
+    fn set(&mut self, sq: Square, piece: crate::chess::Piece) {
+        match piece.color {
+            Color::White => {
+                self.psqt_mg += PSQT_MG[piece.role][sq as usize ^ 56];
+                self.psqt_eg += PSQT_EG[piece.role][sq as usize ^ 56];
+            }
+            Color::Black => {
+                self.psqt_mg -= PSQT_MG[piece.role][sq];
+                self.psqt_eg -= PSQT_EG[piece.role][sq];
             }
         }
-        score
     }
 
-    pub fn psqt_eg(&self) -> i32 {
-        let mut score = 0;
-        for color in Color::ALL {
-            for role in Role::ALL {
-                for square in self.by_color_role(color, role) {
-                    match color {
-                        Color::White => score += PSQT_EG[role][square as usize ^ 56],
-                        Color::Black => score -= PSQT_EG[role][square],
-                    }
-                }
+    #[inline]
+    fn discard(&mut self, sq: Square, piece: crate::chess::Piece) {
+        match piece.color {
+            Color::White => {
+                self.psqt_mg -= PSQT_MG[piece.role][sq as usize ^ 56];
+                self.psqt_eg -= PSQT_EG[piece.role][sq as usize ^ 56];
+            }
+            Color::Black => {
+                self.psqt_mg += PSQT_MG[piece.role][sq];
+                self.psqt_eg += PSQT_EG[piece.role][sq];
             }
         }
-        score
+    }
+}
+
+impl Default for PSQTAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Accumulator for PSQTAccumulator {
+    #[inline]
+    fn reset(&mut self, pos: &Position) {
+        self.psqt_mg = 0;
+        self.psqt_eg = 0;
+
+        for (square, maybe_piece) in pos.mailbox.iter().enumerate() {
+            if let Some(piece) = maybe_piece {
+                self.set(Square::new(square as u8), *piece);
+            }
+        }
+    }
+
+    #[inline]
+    fn on_make_move(&mut self, _: crate::chess::Move) {}
+
+    #[inline]
+    fn on_unmake_move(&mut self, _: crate::chess::Move) {}
+
+    #[inline]
+    fn on_make_move_set(&mut self, sq: Square, piece: crate::chess::Piece) {
+        self.set(sq, piece);
+    }
+
+    #[inline]
+    fn on_make_move_discard(&mut self, sq: Square, piece: crate::chess::Piece) {
+        self.discard(sq, piece);
+    }
+
+    #[inline]
+    fn on_unmake_move_set(&mut self, sq: Square, piece: crate::chess::Piece) {
+        self.set(sq, piece);
+    }
+
+    #[inline]
+    fn on_unmake_move_discard(&mut self, sq: Square, piece: crate::chess::Piece) {
+        self.discard(sq, piece);
+    }
+}
+
+#[inline]
+pub fn score(pos: &Position, PSQTAccumulator { psqt_mg, psqt_eg }: &PSQTAccumulator) -> i16 {
+    #[cfg(debug_assertions)]
+    {
+        // make sure the accumulator is in sync with the position
+        let mut clean_psqt = PSQTAccumulator::new();
+        clean_psqt.reset(pos);
+
+        assert_eq!(clean_psqt.psqt_mg, *psqt_mg);
+        assert_eq!(clean_psqt.psqt_eg, *psqt_eg);
+    }
+
+    let wpawns = pos.by_color_role(Color::White, Role::Pawn).count() as i32;
+    let wknights = pos.by_color_role(Color::White, Role::Knight).count() as i32;
+    let wbishops = pos.by_color_role(Color::White, Role::Bishop).count() as i32;
+    let wrooks = pos.by_color_role(Color::White, Role::Rook).count() as i32;
+    let wqueens = pos.by_color_role(Color::White, Role::Queen).count() as i32;
+
+    let bpawns = pos.by_color_role(Color::Black, Role::Pawn).count() as i32;
+    let bknights = pos.by_color_role(Color::Black, Role::Knight).count() as i32;
+    let bbishops = pos.by_color_role(Color::Black, Role::Bishop).count() as i32;
+    let brooks = pos.by_color_role(Color::Black, Role::Rook).count() as i32;
+    let bqueens = pos.by_color_role(Color::Black, Role::Queen).count() as i32;
+
+    let score_mg = (wpawns - bpawns) * PIECE_VALUES_MG[Role::Pawn]
+        + (wknights - bknights) * PIECE_VALUES_MG[Role::Knight]
+        + (wbishops - bbishops) * PIECE_VALUES_MG[Role::Bishop]
+        + (wrooks - brooks) * PIECE_VALUES_MG[Role::Rook]
+        + (wqueens - bqueens) * PIECE_VALUES_MG[Role::Queen]
+        + psqt_mg;
+
+    let score_eg = (wpawns - bpawns) * PIECE_VALUES_EG[Role::Pawn]
+        + (wknights - bknights) * PIECE_VALUES_EG[Role::Knight]
+        + (wbishops - bbishops) * PIECE_VALUES_EG[Role::Bishop]
+        + (wrooks - brooks) * PIECE_VALUES_EG[Role::Rook]
+        + (wqueens - bqueens) * PIECE_VALUES_EG[Role::Queen]
+        + psqt_eg;
+
+    let phase = (wknights + bknights)
+        + (wbishops + bbishops)
+        + (wrooks + brooks) * 2
+        + (wqueens + bqueens) * 4;
+
+    let phase = 24 - phase;
+    let phase = (phase * 256 + (24 / 2)) / 24;
+
+    let score = (score_mg * (256 - phase) + score_eg * phase) / 256;
+
+    match pos.side {
+        Color::White => score as i16,
+        Color::Black => -score as i16,
     }
 }
 
