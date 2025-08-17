@@ -4,6 +4,7 @@ use std::thread;
 
 use crate::chess::Position;
 use crate::chess::position::fen::{self, Fen};
+use crate::engine::eval::nnue;
 use crate::engine::limits::Limits;
 use crate::engine::search::{Search, SearchResult};
 use crate::engine::tt::Table;
@@ -13,25 +14,23 @@ pub struct SearchManager {
     silent: bool,
     pub position: Position,
     tt: Table,
+    net: nnue::PerspectiveNet<256>,
 }
 
 impl SearchManager {
     pub fn new(num_threads: usize, hash_size: usize) -> Self {
         let Fen(position) = fen::STARTPOS.parse().unwrap();
-        SearchManager {
-            num_threads,
-            silent: false,
-            tt: Table::new_mb(hash_size),
-            position,
-        }
+        Self::new_from_position(num_threads, hash_size, position)
     }
 
     pub fn new_from_position(num_threads: usize, hash_size: usize, position: Position) -> Self {
+        let net = nnue::PerspectiveNet::load("nets/net1.pnn").expect("Failed to load NNUE network");
         SearchManager {
             num_threads,
             silent: false,
             tt: Table::new_mb(hash_size),
             position,
+            net,
         }
     }
 
@@ -63,7 +62,8 @@ impl SearchManager {
                 let stop = &stop;
 
                 let handle = s.spawn(move || {
-                    let mut search = Search::new(position, limits, tt, stop, thread_idx, silent);
+                    let mut search =
+                        Search::new(position, limits, tt, stop, thread_idx, silent, &self.net);
                     let result = search.think();
                     (result, search.stats)
                 });

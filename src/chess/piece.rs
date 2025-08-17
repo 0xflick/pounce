@@ -94,6 +94,14 @@ impl Piece {
     pub fn new(color: Color, role: Role) -> Piece {
         Piece { color, role }
     }
+
+    #[inline]
+    pub fn flip(&self) -> Piece {
+        Piece {
+            color: self.color.opponent(),
+            role: self.role,
+        }
+    }
 }
 
 impl Display for Piece {

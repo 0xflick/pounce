@@ -1,3 +1,5 @@
+pub mod nnue;
+
 use crate::chess::position::{Accumulator, Position};
 use crate::chess::{Color, Role, Square};
 use crate::engine::search::MAX_PLY;
@@ -93,6 +95,11 @@ impl Accumulator for PSQTAccumulator {
     fn on_unmake_move_discard(&mut self, sq: Square, piece: crate::chess::Piece) {
         self.discard(sq, piece);
     }
+}
+
+#[inline]
+pub fn score_nnue(pos: &Position, acc: &nnue::NNUEAccumulator<'_, 256>) -> i16 {
+    (acc.net.forward(acc, pos.side) * 284.0) as i16
 }
 
 #[inline]

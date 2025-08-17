@@ -305,6 +305,11 @@ impl Square {
         Square::A8, Square::B8, Square::C8, Square::D8, Square::E8, Square::F8, Square::G8, Square::H8,
     ];
 
+    #[inline]
+    pub fn flip(&self) -> Square {
+        Square::new_unchecked(*self as u8 ^ 56)
+    }
+
     pub const NUM: usize = 64;
 }
 
