@@ -1,4 +1,4 @@
-use std::io::{Result, Error, ErrorKind};
+use std::io::{Error, ErrorKind, Result};
 
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
@@ -141,59 +141,67 @@ enum ModelType {
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
         let buffer = include_bytes!("../../../nets/net1.pnn");
-        
+
         // Validate header
         if buffer.len() < HEADER_SIZE {
             return Err(Error::new(ErrorKind::InvalidData, "File too small"));
         }
-        
+
         if buffer[0..4] != MAGIC_NUMBER {
             return Err(Error::new(ErrorKind::InvalidData, "Invalid magic number"));
         }
-        
+
         let version = u16::from_le_bytes([buffer[4], buffer[5]]);
         let model_type = u16::from_le_bytes([buffer[6], buffer[7]]);
-        let hidden_size = u32::from_le_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]) as usize;
+        let hidden_size =
+            u32::from_le_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]) as usize;
 
         if version != 1 {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Unsupported version: {}", version)
+                format!("Unsupported version: {}", version),
             ));
         }
-        
+
         if model_type != ModelType::Net768 as u16 {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Unexpected model type: {}", model_type)
+                format!("Unexpected model type: {}", model_type),
             ));
         }
-        
+
         if hidden_size != HIDDEN_SIZE {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("Hidden size mismatch: file has {}, expected {}", hidden_size, HIDDEN_SIZE)
+                format!(
+                    "Hidden size mismatch: file has {}, expected {}",
+                    hidden_size, HIDDEN_SIZE
+                ),
             ));
         }
-        
+
         // Calculate expected file size
-        let expected_size = HEADER_SIZE + 
+        let expected_size = HEADER_SIZE +
             (768 * HIDDEN_SIZE * 4) +  // persp_weights
             (HIDDEN_SIZE * 4) +         // persp_bias
             (2 * HIDDEN_SIZE * 4) +     // output_weights
-            4;                          // output_bias
-            
+            4; // output_bias
+
         if buffer.len() != expected_size {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!("File size mismatch: expected {} bytes, got {}", expected_size, buffer.len())
+                format!(
+                    "File size mismatch: expected {} bytes, got {}",
+                    expected_size,
+                    buffer.len()
+                ),
             ));
         }
-        
+
         // Parse weights using chunks
         let data = &buffer[HEADER_SIZE..];
         let mut chunks = data.chunks_exact(4);
-        
+
         // Read persp_weights transposed
         let mut persp_weights = [[0.0f32; 768]; HIDDEN_SIZE];
         for feature_idx in 0..768 {
@@ -203,14 +211,14 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
                 hidden_column[feature_idx] = val;
             }
         }
-        
+
         // Read persp_bias
         let mut persp_bias = [0.0f32; HIDDEN_SIZE];
         for val in persp_bias.iter_mut() {
             let bytes = chunks.next().unwrap();
             *val = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
-        
+
         // Read output_weights
         let mut output_weights = [[0.0f32; 2]; HIDDEN_SIZE];
 
@@ -225,11 +233,16 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
             let bytes = chunks.next().unwrap();
             col[1] = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
         }
-        
+
         // Read output_bias
         let bytes = chunks.next().unwrap();
         let output_bias = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        
-        Ok(Self::new(persp_weights, persp_bias, output_weights, output_bias))
+
+        Ok(Self::new(
+            persp_weights,
+            persp_bias,
+            output_weights,
+            output_bias,
+        ))
     }
 }

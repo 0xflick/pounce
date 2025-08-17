@@ -261,7 +261,7 @@ impl Uci {
                     let eval = eval::score(pos, &psqt_accumulator);
                     println!("Eval: {eval}");
 
-                    let net = eval::nnue::PerspectiveNet::<256>::load()?;
+                    let net = eval::nnue::PerspectiveNet::<32>::load()?;
                     let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
                     nnue_accumulator.reset(pos);
                     let nnue_eval = eval::score_nnue(pos, &nnue_accumulator);

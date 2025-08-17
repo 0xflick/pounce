@@ -14,7 +14,7 @@ pub struct SearchManager {
     silent: bool,
     pub position: Position,
     tt: Table,
-    net: nnue::PerspectiveNet<256>,
+    net: nnue::PerspectiveNet<32>,
 }
 
 impl SearchManager {

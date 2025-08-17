@@ -338,6 +338,7 @@ pub struct ScoredPosition {
     pub position: chess::Position,
     pub score: i16,
     pub wdl: Wdl,
+    pub mv: Move, // the next move to be played from this position
 }
 
 pub struct PositionIterator {
@@ -363,18 +364,17 @@ impl Iterator for PositionIterator {
 
         // the score for the current position is the score of the next move
         let score = self.game.moves[self.index].score;
+        let mv = self.game.moves[self.index].mv;
 
         // now make the move
-        self.position
-            .as_mut()
-            .unwrap()
-            .make_move(self.game.moves[self.index].mv);
+        self.position.as_mut().unwrap().make_move(mv);
         self.index += 1;
 
         Some(ScoredPosition {
             position: current_position,
             score,
             wdl: self.game.initial.wdl,
+            mv,
         })
     }
 }

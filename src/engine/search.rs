@@ -108,7 +108,7 @@ pub struct Search<'a> {
     pub stats: Stats,
 
     position: Position,
-    accum: eval::nnue::NNUEAccumulator<'a, 256>,
+    accum: eval::nnue::NNUEAccumulator<'a, 32>,
 
     current_move: [Move; MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
@@ -131,7 +131,7 @@ impl<'a> Search<'a> {
         stop: &'a AtomicBool,
         thread_idx: usize,
         silent: bool,
-        net: &'a nnue::PerspectiveNet<256>,
+        net: &'a nnue::PerspectiveNet<32>,
     ) -> Self {
         let side = position.side;
         let mut accum = eval::nnue::NNUEAccumulator::new(net);
