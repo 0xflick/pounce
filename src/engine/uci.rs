@@ -260,6 +260,12 @@ impl Uci {
                     psqt_accumulator.reset(pos);
                     let eval = eval::score(pos, &psqt_accumulator);
                     println!("Eval: {eval}");
+
+                    let net = eval::nnue::PerspectiveNet::<32>::load()?;
+                    let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
+                    nnue_accumulator.reset(pos);
+                    let nnue_eval = eval::score_nnue(pos, &nnue_accumulator);
+                    println!("NNUE Eval: {nnue_eval}");
                 }
                 Err(_) => {
                     Err(anyhow!("Failed to lock search manager"))?;

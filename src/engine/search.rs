@@ -4,7 +4,7 @@ use std::time::Instant;
 use arrayvec::ArrayVec;
 
 use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
-use crate::engine::eval;
+use crate::engine::eval::{self, nnue};
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
 use crate::engine::time_management::SearchCop;
@@ -108,7 +108,7 @@ pub struct Search<'a> {
     pub stats: Stats,
 
     position: Position,
-    psqt_accum: eval::PSQTAccumulator,
+    accum: eval::nnue::NNUEAccumulator<'a, 32>,
 
     current_move: [Move; MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
@@ -131,12 +131,13 @@ impl<'a> Search<'a> {
         stop: &'a AtomicBool,
         thread_idx: usize,
         silent: bool,
+        net: &'a nnue::PerspectiveNet<32>,
     ) -> Self {
         let side = position.side;
-        let mut psqt_accum = eval::PSQTAccumulator::new();
-        psqt_accum.reset(&position);
+        let mut accum = eval::nnue::NNUEAccumulator::new(net);
+        accum.reset(&position);
         Search {
-            psqt_accum,
+            accum,
             current_move: [Move::NONE; MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
@@ -245,7 +246,7 @@ impl<'a> Search<'a> {
             return 0;
         }
         if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
-            return eval::score(&self.position, &self.psqt_accum);
+            return eval::score_nnue(&self.position, &self.accum);
         }
         self.stats.nodes += 1;
 
@@ -271,7 +272,7 @@ impl<'a> Search<'a> {
         if self.position.in_check() {
             depth += 1;
             if depth >= MAX_DEPTH as i32 {
-                return eval::score(&self.position, &self.psqt_accum);
+                return eval::score_nnue(&self.position, &self.accum);
             }
         }
 
@@ -307,7 +308,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        let static_eval = tt_eval.unwrap_or(eval::score(&self.position, &self.psqt_accum));
+        let static_eval = tt_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
 
         // internal iterative reduction
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
@@ -322,13 +323,13 @@ impl<'a> Search<'a> {
             && static_eval >= beta
             && (ply < 1 || self.current_move[(ply - 1) as usize] != Move::NULL)
         {
-            self.position.make_null_move_with(&mut self.psqt_accum);
+            self.position.make_null_move_with(&mut self.accum);
             self.current_move[ply as usize] = Move::NULL;
 
             let reduced_depth = depth - (3 + (depth / 5));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
-            self.position.unmake_null_move_with(&mut self.psqt_accum);
+            self.position.unmake_null_move_with(&mut self.accum);
             self.current_move[ply as usize] = Move::NONE;
 
             if null_score >= beta {
@@ -364,7 +365,7 @@ impl<'a> Search<'a> {
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
-            self.position.make_move_with(mv, &mut self.psqt_accum);
+            self.position.make_move_with(mv, &mut self.accum);
             self.current_move[ply as usize] = mv;
 
             let mut score = -eval::INFINITY;
@@ -399,7 +400,7 @@ impl<'a> Search<'a> {
                 score = -self.search(depth - 1, -beta, -alpha, ply + 1, true, false);
             }
 
-            self.position.unmake_move_with(mv, &mut self.psqt_accum);
+            self.position.unmake_move_with(mv, &mut self.accum);
             self.current_move[ply as usize] = Move::NONE;
 
             // store effort at root
@@ -512,7 +513,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        let stand_pat = eval::score(&self.position, &self.psqt_accum);
+        let stand_pat = eval::score_nnue(&self.position, &self.accum);
         if stand_pat >= beta {
             return stand_pat;
         }
@@ -558,9 +559,9 @@ impl<'a> Search<'a> {
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
-            self.position.make_move_with(mv, &mut self.psqt_accum);
+            self.position.make_move_with(mv, &mut self.accum);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
-            self.position.unmake_move_with(mv, &mut self.psqt_accum);
+            self.position.unmake_move_with(mv, &mut self.accum);
 
             if score > best {
                 best = score;
