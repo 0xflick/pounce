@@ -140,7 +140,7 @@ enum ModelType {
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        let buffer = include_bytes!("../../../nets/net1.pnn");
+        let buffer = include_bytes!("../../../nets/net2.pnn");
 
         // Validate header
         if buffer.len() < HEADER_SIZE {
