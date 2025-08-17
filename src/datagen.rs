@@ -39,10 +39,7 @@ pub struct DatagenConfig {
     pub log_interval_secs: Option<u64>,
 }
 
-fn save_games_to_file(
-    games: &[CompressedGame],
-    base_path: &PathBuf,
-) -> anyhow::Result<PathBuf> {
+fn save_games_to_file(games: &[CompressedGame], base_path: &PathBuf) -> anyhow::Result<PathBuf> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -112,7 +109,9 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
                             let games_to_save = std::mem::take(&mut *games_guard);
                             drop(games_guard);
 
-                            if let Ok(final_path) = save_games_to_file(&games_to_save, &config.out_path) {
+                            if let Ok(final_path) =
+                                save_games_to_file(&games_to_save, &config.out_path)
+                            {
                                 println!("\n=== FILE SAVED ===");
                                 println!("Path: {}", final_path.display());
                                 println!("Games: {}", games_to_save.len());
