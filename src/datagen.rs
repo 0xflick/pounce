@@ -39,7 +39,7 @@ pub struct DatagenConfig {
     pub log_interval_secs: Option<u64>,
 }
 
-fn save_games_to_file(games: &[CompressedGame], base_path: &PathBuf) -> anyhow::Result<PathBuf> {
+fn save_games_to_file(games: &[CompressedGame], base_path: &Path) -> anyhow::Result<PathBuf> {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
