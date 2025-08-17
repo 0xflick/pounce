@@ -23,13 +23,16 @@ enum Commands {
         out_path: PathBuf,
 
         #[arg(short, long)]
-        duration_mins: u32,
+        num_games: u32,
 
         #[arg(short, long)]
         threads: Option<u32>,
 
         #[arg(long, default_value_t = 16)]
         hash_size: u32,
+
+        #[arg(long, help = "Interval in seconds to save collected games to file")]
+        save_interval_secs: u64,
 
         #[arg(long, help = "Interval in seconds for progress reports (default: 60)")]
         log_interval_secs: Option<u64>,
@@ -50,19 +53,21 @@ fn main() -> Result<()> {
         Commands::Gen {
             depth,
             out_path,
-            duration_mins,
+            num_games,
             threads,
             hash_size,
+            save_interval_secs,
             log_interval_secs,
         } => datagen::datagen(DatagenConfig {
             limits: Limits {
                 depth: Some(depth),
                 ..Limits::new()
             },
-            duration_mins,
+            num_games,
             hash_size_mb: hash_size,
             threads: threads.unwrap_or(1),
             out_path,
+            save_interval_secs,
             log_interval_secs,
         }),
         Commands::BinToPgn { in_file } => datagen::bin_to_pgn(&in_file),

@@ -31,11 +31,44 @@ static DRAWS: AtomicU32 = AtomicU32::new(0);
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Clone)]
 pub struct DatagenConfig {
     pub limits: Limits,
-    pub duration_mins: u32,
+    pub num_games: u32,
     pub hash_size_mb: u32,
     pub threads: u32,
     pub out_path: PathBuf,
+    pub save_interval_secs: u64,
     pub log_interval_secs: Option<u64>,
+}
+
+fn save_games_to_file(
+    games: &[CompressedGame],
+    base_path: &PathBuf,
+) -> anyhow::Result<PathBuf> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    let stem = base_path.file_stem().unwrap_or_default().to_string_lossy();
+    let ext = base_path
+        .extension()
+        .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
+    let parent = base_path.parent().unwrap_or(Path::new("."));
+    let final_path = parent.join(format!("{stem}_{timestamp}_{}{ext}", games.len()));
+
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&final_path)?;
+    let mut writer = BufWriter::new(file);
+
+    for game in games {
+        game.serialize_into(&mut writer)?;
+    }
+    writer.flush()?;
+    writer.get_ref().sync_all()?;
+
+    Ok(final_path)
 }
 
 pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
@@ -50,64 +83,67 @@ pub fn datagen(config: DatagenConfig) -> anyhow::Result<()> {
     println!();
 
     let games: Arc<Mutex<Vec<CompressedGame>>> = Arc::new(Mutex::new(Vec::new()));
-    let start_time = std::time::Instant::now();
 
     std::thread::scope(|s| {
         for i in 0..config.threads {
             s.spawn({
                 let config = config.clone();
                 let games_clone = games.clone();
-                move || thread_worker(i, &config, games_clone, start_time)
+                move || thread_worker(i, &config, games_clone)
             });
         }
+
+        // Spawn save interval thread
+        s.spawn({
+            let config = config.clone();
+            let games_clone = games.clone();
+            move || {
+                let mut last_save = std::time::Instant::now();
+                let save_interval = Duration::from_secs(config.save_interval_secs);
+
+                while TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) < config.num_games
+                    && !STOP.load(std::sync::atomic::Ordering::Relaxed)
+                {
+                    if last_save.elapsed() >= save_interval {
+                        last_save = std::time::Instant::now();
+
+                        let mut games_guard = games_clone.lock().unwrap();
+                        if !games_guard.is_empty() {
+                            let games_to_save = std::mem::take(&mut *games_guard);
+                            drop(games_guard);
+
+                            if let Ok(final_path) = save_games_to_file(&games_to_save, &config.out_path) {
+                                println!("\n=== FILE SAVED ===");
+                                println!("Path: {}", final_path.display());
+                                println!("Games: {}", games_to_save.len());
+                                println!("==================\n");
+                            }
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+        });
+
         println!("{}/{} threads started", config.threads, config.threads);
         println!();
     });
 
-    // Write all collected games to file
-    let games_guard = games.lock().unwrap();
-    let total_games = games_guard.len();
+    // Save any remaining games
+    let mut games_guard = games.lock().unwrap();
+    if !games_guard.is_empty() {
+        let games_to_save = std::mem::take(&mut *games_guard);
+        drop(games_guard);
 
-    if total_games > 0 {
-        // Create timestamp for filename
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let stem = config
-            .out_path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy();
-        let ext = config
-            .out_path
-            .extension()
-            .map_or("".to_string(), |e| format!(".{}", e.to_string_lossy()));
-        let parent = config.out_path.parent().unwrap_or(Path::new("."));
-        let final_path = parent.join(format!("{stem}_{timestamp}_{total_games}{ext}"));
-
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&final_path)?;
-        let mut writer = BufWriter::new(file);
-
-        for game in games_guard.iter() {
-            game.serialize_into(&mut writer)?;
+        if let Ok(final_path) = save_games_to_file(&games_to_save, &config.out_path) {
+            println!("\n=== FINAL FILE SAVED ===");
+            println!("Path: {}", final_path.display());
+            println!("Games: {}", games_to_save.len());
+            if STOP.load(std::sync::atomic::Ordering::Relaxed) {
+                println!("Note: Finalized on interruption");
+            }
+            println!("=======================\n");
         }
-        writer.flush()?;
-        writer.get_ref().sync_all()?;
-
-        // Print notification
-        println!("\n=== FILE COMPLETE ===");
-        println!("Path: {}", final_path.display());
-        println!("Games: {total_games}");
-        if STOP.load(std::sync::atomic::Ordering::Relaxed) {
-            println!("Note: Finalized on interruption");
-        }
-        println!("===================\n");
     }
 
     if STOP.load(std::sync::atomic::Ordering::Relaxed) {
@@ -131,14 +167,12 @@ fn thread_worker(
     id: u32,
     config: &DatagenConfig,
     games: Arc<Mutex<Vec<CompressedGame>>>,
-    start_time: std::time::Instant,
 ) -> anyhow::Result<()> {
     let mut last_log = std::time::Instant::now();
-    let duration = Duration::from_secs(config.duration_mins as u64 * 60);
 
     let Fen(pos) = STARTPOS.parse().unwrap();
 
-    while start_time.elapsed() < duration {
+    while TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) < config.num_games {
         if STOP.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
@@ -152,19 +186,14 @@ fn thread_worker(
             let draws = DRAWS.load(std::sync::atomic::Ordering::Relaxed);
 
             let total = white_wins + black_wins + draws;
-            let elapsed = start_time.elapsed();
-            let remaining = duration.saturating_sub(elapsed);
 
             println!();
             println!("=== PROGRESS REPORT ===");
             println!(
-                "Time: {:.1}/{:.1} minutes ({:.1}%)",
-                elapsed.as_secs_f64() / 60.0,
-                config.duration_mins,
-                (elapsed.as_secs_f64() / (config.duration_mins as f64 * 60.0)) * 100.0
+                "Total: {total}/{} Games ({:.1}%)",
+                config.num_games,
+                (total as f64 / config.num_games as f64) * 100.0
             );
-            println!("Remaining: {:.1} minutes", remaining.as_secs_f64() / 60.0);
-            println!("Total games: {total}");
             println!("Results - White: {white_wins}, Black: {black_wins}, Draws: {draws}",);
             println!(
                 "Win rates - White: {:.1}%, Black: {:.1}%, Draw: {:.1}%",
@@ -189,6 +218,9 @@ fn thread_worker(
 
         if let Ok(game) = playout(&pos, config.limits, config.hash_size_mb as usize) {
             let mut games_guard = games.lock().unwrap();
+            if TOTAL_GAMES.load(std::sync::atomic::Ordering::Relaxed) >= config.num_games {
+                break;
+            }
             games_guard.push(game);
             TOTAL_GAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
