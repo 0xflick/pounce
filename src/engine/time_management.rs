@@ -117,7 +117,6 @@ impl SearchCop {
         {
             return true;
         }
-
         if let Some(time) = self.max_time
             && stats.start_time.elapsed() >= time.mul_f32(0.8)
         {
