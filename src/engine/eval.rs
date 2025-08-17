@@ -98,7 +98,7 @@ impl Accumulator for PSQTAccumulator {
 }
 
 #[inline]
-pub fn score_nnue(pos: &Position, acc: &nnue::NNUEAccumulator<'_, 32>) -> i16 {
+pub fn score_nnue(pos: &Position, acc: &nnue::NNUEAccumulator<'_, 64>) -> i16 {
     (acc.net.forward(acc, pos.side) * 252.0) as i16
 }
 
