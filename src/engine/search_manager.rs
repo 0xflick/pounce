@@ -24,7 +24,7 @@ impl SearchManager {
     }
 
     pub fn new_from_position(num_threads: usize, hash_size: usize, position: Position) -> Self {
-        let net = nnue::PerspectiveNet::load("nets/net1.pnn").expect("Failed to load NNUE network");
+        let net = nnue::PerspectiveNet::load().expect("Failed to load NNUE network");
         SearchManager {
             num_threads,
             silent: false,

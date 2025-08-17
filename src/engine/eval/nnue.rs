@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{Read, Result, Error, ErrorKind};
+use std::io::{Result, Error, ErrorKind};
 
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
@@ -138,11 +137,10 @@ enum ModelType {
     _Unknown = 0,
     Net768,
 }
+
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
-    pub fn load(path: &str) -> Result<Self> {
-        let mut file = File::open(path)?;
-        let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer)?;
+    pub fn load() -> Result<Self> {
+        let buffer = include_bytes!("../../../nets/net1.pnn");
         
         // Validate header
         if buffer.len() < HEADER_SIZE {
