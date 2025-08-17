@@ -31,23 +31,17 @@ enum Commands {
         #[arg(long, default_value_t = 16)]
         hash_size: u32,
 
-        #[arg(
-            long,
-            help = "Maximum file size in MB before rolling over to a new file"
-        )]
-        max_file_size_mb: Option<u64>,
-
-        #[arg(
-            long,
-            help = "Number of games per file before rolling over to a new file"
-        )]
-        games_per_file: Option<u32>,
+        #[arg(long, help = "Interval in seconds to save collected games to file")]
+        save_interval_secs: u64,
 
         #[arg(long, help = "Interval in seconds for progress reports (default: 60)")]
         log_interval_secs: Option<u64>,
     },
     BinToPgn {
         in_file: PathBuf,
+    },
+    Count {
+        in_files: Vec<PathBuf>,
     },
 }
 
@@ -62,8 +56,7 @@ fn main() -> Result<()> {
             num_games,
             threads,
             hash_size,
-            max_file_size_mb,
-            games_per_file,
+            save_interval_secs,
             log_interval_secs,
         } => datagen::datagen(DatagenConfig {
             limits: Limits {
@@ -74,10 +67,10 @@ fn main() -> Result<()> {
             hash_size_mb: hash_size,
             threads: threads.unwrap_or(1),
             out_path,
-            max_file_size_mb,
-            games_per_file,
+            save_interval_secs,
             log_interval_secs,
         }),
         Commands::BinToPgn { in_file } => datagen::bin_to_pgn(&in_file),
+        Commands::Count { in_files } => datagen::count_bins(&in_files),
     }
 }
