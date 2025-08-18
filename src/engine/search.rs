@@ -389,7 +389,7 @@ impl<'a> Search<'a> {
                     4 => 600,
                     _ => 0,
                 };
-                
+
                 if static_eval + futility_margin < alpha {
                     continue;
                 }
