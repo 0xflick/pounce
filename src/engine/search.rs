@@ -361,8 +361,8 @@ impl<'a> Search<'a> {
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
-            let queen_promotion = mv.promotion().is_some_and(|r| r == Role::Queen);
-            let quiet = !capture && !queen_promotion;
+            let promotion = mv.promotion().is_some();
+            let quiet = !capture && !promotion;
 
             // Late Move Pruning: skip late quiet moves at shallow depths
             if !is_pv
@@ -378,9 +378,10 @@ impl<'a> Search<'a> {
 
             // Forward Futility Pruning: skip quiet moves when position is too bad
             if !is_pv && quiet && !self.position.in_check() && depth <= 4 {
-                let futility_margin = 50 + 75 * depth as i16;
+                let futility_margin = 150 + 100 * depth as i16;
 
                 if static_eval + futility_margin < alpha {
+                    best = best.max(static_eval + futility_margin);
                     continue;
                 }
             }
