@@ -352,7 +352,7 @@ impl Iterator for PositionIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         // we skip the last move because it is the final position
-        if self.index >= self.game.moves.len() - 1 {
+        if self.index >= self.game.moves.len().saturating_sub(1) {
             return None;
         }
 
