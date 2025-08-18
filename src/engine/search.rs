@@ -361,10 +361,12 @@ impl<'a> Search<'a> {
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
+            let queen_promotion = mv.promotion().is_some_and(|r| r == Role::Queen);
+            let quiet = !capture && !queen_promotion;
 
             // Late Move Pruning: skip late quiet moves at shallow depths
             if !is_pv
-                && !capture
+                && quiet
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
@@ -376,19 +378,13 @@ impl<'a> Search<'a> {
 
             // Forward Futility Pruning: skip quiet moves when position is too bad
             if !is_pv
-                && !capture
+                && quiet
                 && !self.position.in_check()
                 && depth <= 4
                 && mv != self.killers[ply as usize][0]
                 && mv != self.killers[ply as usize][1]
             {
-                let futility_margin = match depth {
-                    1 => 200,
-                    2 => 300,
-                    3 => 450,
-                    4 => 600,
-                    _ => 0,
-                };
+                let futility_margin = 50 + 100 * depth as i16;
 
                 if static_eval + futility_margin < alpha {
                     continue;
@@ -413,8 +409,8 @@ impl<'a> Search<'a> {
                     rdepth += 1;
                 }
 
-                // reduce more in non-capture moves
-                if move_count > 15 && !capture {
+                // reduce more in quiet moves
+                if move_count > 15 && quiet {
                     rdepth -= 1;
                 }
 
@@ -471,6 +467,8 @@ impl<'a> Search<'a> {
                 }
             }
 
+            // TODO: Update this to use skip promotions, but we need to handle promotions
+            // in move ordering first
             if !capture && quiets.len() < quiets.capacity() {
                 quiets.push(mv);
             }
