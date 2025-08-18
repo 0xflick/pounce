@@ -377,14 +377,8 @@ impl<'a> Search<'a> {
             }
 
             // Forward Futility Pruning: skip quiet moves when position is too bad
-            if !is_pv
-                && quiet
-                && !self.position.in_check()
-                && depth <= 4
-                && mv != self.killers[ply as usize][0]
-                && mv != self.killers[ply as usize][1]
-            {
-                let futility_margin = 50 + 100 * depth as i16;
+            if !is_pv && quiet && !self.position.in_check() && depth <= 4 {
+                let futility_margin = 50 + 75 * depth as i16;
 
                 if static_eval + futility_margin < alpha {
                     continue;
