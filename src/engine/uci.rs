@@ -256,11 +256,6 @@ impl Uci {
             Some("eval") => match self.manager.try_lock() {
                 Ok(manager) => {
                     let pos = &manager.position;
-                    let mut psqt_accumulator = eval::PSQTAccumulator::new();
-                    psqt_accumulator.reset(pos);
-                    let eval = eval::score(pos, &psqt_accumulator);
-                    println!("Eval: {eval}");
-
                     let net = eval::nnue::PerspectiveNet::<64>::load()?;
                     let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
                     nnue_accumulator.reset(pos);

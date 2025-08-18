@@ -362,6 +362,18 @@ impl<'a> Search<'a> {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
 
+            // Late Move Pruning: skip late quiet moves at shallow depths
+            if !is_pv
+                && !capture
+                && !self.position.in_check()
+                && depth <= 3
+                && move_count > (3 + depth * depth) as u8
+                && mv != self.killers[ply as usize][0]
+                && mv != self.killers[ply as usize][1]
+            {
+                continue;
+            }
+
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
@@ -526,7 +538,7 @@ impl<'a> Search<'a> {
         let mut best_move = Move::NONE;
 
         let best_case_score = {
-            let mut value = eval::PIECE_VALUES_MG[Role::Pawn as usize];
+            let mut value = eval::PIECE_VALUES[Role::Pawn as usize];
 
             for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
                 if self
@@ -534,7 +546,7 @@ impl<'a> Search<'a> {
                     .by_color_role(self.position.side.opponent(), Role::new(role as u8))
                     .any()
                 {
-                    value = eval::PIECE_VALUES_MG[role];
+                    value = eval::PIECE_VALUES[role];
                     break;
                 }
             }
@@ -544,8 +556,8 @@ impl<'a> Search<'a> {
                 & self.position.side.opponent().home_rank())
             .any()
             {
-                value += eval::PIECE_VALUES_MG[Role::Queen as usize]
-                    - eval::PIECE_VALUES_MG[Role::Pawn as usize];
+                value += eval::PIECE_VALUES[Role::Queen as usize]
+                    - eval::PIECE_VALUES[Role::Pawn as usize];
             }
 
             value
