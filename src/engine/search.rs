@@ -374,6 +374,27 @@ impl<'a> Search<'a> {
                 continue;
             }
 
+            // Forward Futility Pruning: skip quiet moves when position is too bad
+            if !is_pv
+                && !capture
+                && !self.position.in_check()
+                && depth <= 4
+                && mv != self.killers[ply as usize][0]
+                && mv != self.killers[ply as usize][1]
+            {
+                let futility_margin = match depth {
+                    1 => 200,
+                    2 => 300,
+                    3 => 450,
+                    4 => 600,
+                    _ => 0,
+                };
+                
+                if static_eval + futility_margin < alpha {
+                    continue;
+                }
+            }
+
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
