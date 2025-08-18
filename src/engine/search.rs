@@ -526,7 +526,7 @@ impl<'a> Search<'a> {
         let mut best_move = Move::NONE;
 
         let best_case_score = {
-            let mut value = eval::PIECE_VALUES_MG[Role::Pawn as usize];
+            let mut value = eval::PIECE_VALUES[Role::Pawn as usize];
 
             for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
                 if self
@@ -534,7 +534,7 @@ impl<'a> Search<'a> {
                     .by_color_role(self.position.side.opponent(), Role::new(role as u8))
                     .any()
                 {
-                    value = eval::PIECE_VALUES_MG[role];
+                    value = eval::PIECE_VALUES[role];
                     break;
                 }
             }
@@ -544,8 +544,8 @@ impl<'a> Search<'a> {
                 & self.position.side.opponent().home_rank())
             .any()
             {
-                value += eval::PIECE_VALUES_MG[Role::Queen as usize]
-                    - eval::PIECE_VALUES_MG[Role::Pawn as usize];
+                value += eval::PIECE_VALUES[Role::Queen as usize]
+                    - eval::PIECE_VALUES[Role::Pawn as usize];
             }
 
             value
