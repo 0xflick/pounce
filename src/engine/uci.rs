@@ -256,7 +256,8 @@ impl Uci {
             Some("eval") => match self.manager.try_lock() {
                 Ok(manager) => {
                     let pos = &manager.position;
-                    let net = eval::nnue::PerspectiveNet::<{ eval::nnue::NNUE_HIDDEN_SIZE }>::load()?;
+                    let net =
+                        eval::nnue::PerspectiveNet::<{ eval::nnue::NNUE_HIDDEN_SIZE }>::load()?;
                     let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
                     nnue_accumulator.reset(pos);
                     let nnue_eval = eval::score_nnue(pos, &nnue_accumulator);
