@@ -362,6 +362,18 @@ impl<'a> Search<'a> {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
 
+            // Late Move Pruning: skip late quiet moves at shallow depths
+            if !is_pv
+                && !capture
+                && !self.position.in_check()
+                && depth <= 3
+                && move_count > (3 + depth * depth) as u8
+                && mv != self.killers[ply as usize][0]
+                && mv != self.killers[ply as usize][1]
+            {
+                continue;
+            }
+
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
