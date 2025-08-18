@@ -2,6 +2,9 @@ use std::io::{Error, ErrorKind, Result};
 
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
+pub type HiddenSize = usize;
+pub const NNUE_HIDDEN_SIZE: HiddenSize = 64;
+
 pub struct NNUEAccumulator<'a, const HIDDEN_SIZE: usize> {
     white_persp: [f32; HIDDEN_SIZE],
     black_persp: [f32; HIDDEN_SIZE],
@@ -140,7 +143,7 @@ enum ModelType {
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        let buffer = include_bytes!("../../../nets/net2.pnn");
+        let buffer = include_bytes!("../../../nets/net.pnn");
 
         // Validate header
         if buffer.len() < HEADER_SIZE {
