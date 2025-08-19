@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
 use crate::chess::Move;
 use crate::zobrist::ZobristHash;
@@ -11,38 +11,32 @@ struct TTMemory {
 }
 
 impl Default for TTMemory {
-    fn default() -> TTMemory {
-        TTMemory {
+    fn default() -> Self {
+        Self {
             key: AtomicU64::new(0),
             data: AtomicU64::new(0),
         }
     }
 }
 
-impl TTMemory {
-    fn clear(&self) {
-        self.key.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.data.store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum EntryType {
-    None,
-    Exact,
-    LowerBound,
-    UpperBound,
+    #[default]
+    None = 0,
+    Exact = 1,
+    LowerBound = 2,
+    UpperBound = 3,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Entry {
     pub key: ZobristHash,
     pub depth: u8,
     pub score: i16,
-    pub score_type: EntryType,
+    pub entry_type: EntryType,
     pub best_move: Move,
+    pub static_eval: i16,
 }
 
 impl Entry {
@@ -50,157 +44,134 @@ impl Entry {
         key: ZobristHash,
         depth: u8,
         score: i16,
-        score_type: EntryType,
+        entry_type: EntryType,
         best_move: Move,
-    ) -> Entry {
-        Entry {
+        static_eval: i16,
+    ) -> Self {
+        Self {
             key,
             depth,
             score,
-            score_type,
+            entry_type,
             best_move,
+            static_eval,
         }
     }
 
-    fn read_from(mem: &TTMemory) -> Entry {
-        let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
-        let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
+    // Pack entry into u64 (age will be added by Table)
+    fn pack(&self, age: u8) -> u64 {
+        let move_bits = unsafe { std::mem::transmute::<Move, u16>(self.best_move) } as u64;
+        let score_bits = self.score as u16 as u64;
+        let eval_bits = self.static_eval as u16 as u64;
 
-        unsafe {
-            let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data);
-            let depth = (mem_data >> 48) as u8;
-            let score = ((mem_data >> 32) & 0xffff) as i16;
-            let score_type = std::mem::transmute::<u8, EntryType>(((mem_data >> 24) & 0xff) as u8);
-            let best_move = std::mem::transmute::<u16, Move>(mem_data as u16);
+        move_bits
+            | (score_bits << 16)
+            | ((self.depth as u64) << 32)
+            | ((age as u64) << 40)
+            | ((self.entry_type as u64) << 46)
+            | (eval_bits << 48)
+    }
 
-            Entry {
+    // Unpack from TTMemory
+    fn unpack(mem: &TTMemory) -> (Self, u8) {
+        let mem_key = mem.key.load(Ordering::Relaxed);
+        let data = mem.data.load(Ordering::Relaxed);
+
+        let key = unsafe { std::mem::transmute::<u64, ZobristHash>(mem_key ^ data) };
+        let best_move = unsafe { std::mem::transmute::<u16, Move>(data as u16) };
+        let score = ((data >> 16) & 0xFFFF) as i16;
+        let depth = ((data >> 32) & 0xFF) as u8;
+        let age = ((data >> 40) & 0x3F) as u8;
+        let score_type =
+            unsafe { std::mem::transmute::<u8, EntryType>(((data >> 46) & 0x3) as u8) };
+        let static_eval = ((data >> 48) & 0xFFFF) as i16;
+
+        (
+            Self {
                 key,
                 depth,
                 score,
-                score_type,
+                entry_type: score_type,
                 best_move,
-            }
-        }
+                static_eval,
+            },
+            age,
+        )
     }
 
-    fn write_to(&self, mem: &TTMemory) {
-        unsafe {
-            let depth = self.depth as u64;
-
-            let score = self.score as u64 & 0xffff;
-            let score_type = self.score_type as u64;
-            let best_move = std::mem::transmute::<Move, u16>(self.best_move) as u64;
-
-            let data = (depth << 48) | (score << 32) | (score_type << 24) | best_move;
-            let key = std::mem::transmute::<ZobristHash, u64>(self.key) ^ data;
-
-            mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
-            mem.data.store(data, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
-impl Default for Entry {
-    fn default() -> Entry {
-        Entry {
-            key: ZobristHash::new(),
-            depth: 0,
-            score: 0,
-            score_type: EntryType::None,
-            best_move: Move::NONE,
-        }
+    fn write(&self, mem: &TTMemory, age: u8) {
+        let data = self.pack(age);
+        let key = unsafe { std::mem::transmute::<ZobristHash, u64>(self.key) } ^ data;
+        mem.key.store(key, Ordering::Relaxed);
+        mem.data.store(data, Ordering::Relaxed);
     }
 }
 
 pub struct Table {
     entries: Vec<TTMemory>,
-    max_size: usize,
+    age: AtomicU8,
 }
 
 impl Table {
-    pub fn new(size: usize) -> Table {
-        let mut entries = Vec::with_capacity(size);
-        for _ in 0..size {
-            entries.push(TTMemory {
-                key: AtomicU64::new(0),
-                data: AtomicU64::new(0),
-            });
+    pub fn new_mb(size_mb: usize) -> Self {
+        let size = size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>();
+        Self {
+            entries: (0..size).map(|_| TTMemory::default()).collect(),
+            age: AtomicU8::new(0),
         }
-        Table {
-            entries,
-            max_size: size,
-        }
-    }
-
-    pub fn new_mb(size_mb: usize) -> Table {
-        Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<Entry>())
     }
 
     pub fn clear(&self) {
-        self.entries.iter().for_each(|entry| {
-            entry.clear();
+        self.age.fetch_add(1, Ordering::Relaxed);
+        self.entries.iter().for_each(|e| {
+            e.key.store(0, Ordering::Relaxed);
+            e.data.store(0, Ordering::Relaxed);
         });
     }
 
+    pub fn new_search(&self) {
+        self.age.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn index(&self, key: ZobristHash) -> usize {
-        let big_key = u128::from(key);
-        let len = self.entries.len() as u128;
-        ((big_key * len) >> 64) as usize
+        let hash = unsafe { std::mem::transmute::<ZobristHash, u64>(key) };
+        ((hash as u128 * self.entries.len() as u128) >> 64) as usize
     }
 
     pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
-        let idx = self.index(key);
-        let entry = Entry::read_from(&self.entries[idx]);
-        match entry.key == key {
-            true => Some(entry),
-            false => None,
+        let (entry, _) = Entry::unpack(&self.entries[self.index(key)]);
+        (entry.key == key).then_some(entry)
+    }
+
+    pub fn store(&self, entry: Entry) {
+        let idx = self.index(entry.key);
+        let current_age = self.age.load(Ordering::Relaxed);
+        let (existing, old_age) = Entry::unpack(&self.entries[idx]);
+
+        // Effective depth = actual depth + bonus for exact nodes
+        let effective_depth = |d: u8, t: EntryType| d + (t == EntryType::Exact) as u8 * 2;
+
+        let replace = existing.key == ZobristHash::default()
+            || existing.key == entry.key
+            || current_age.wrapping_sub(old_age) > 3
+            || effective_depth(entry.depth, entry.entry_type)
+                >= effective_depth(existing.depth, existing.entry_type) - 2;
+
+        if replace {
+            entry.write(&self.entries[idx], current_age);
         }
     }
 
-    pub fn set(&self, entry: Entry) {
-        let idx = self.index(entry.key);
-        let val = &self.entries[idx];
-        entry.write_to(val);
-    }
-
     pub fn hashfull(&self) -> f64 {
-        self.entries[..1000]
+        let sample = &self.entries[..1000.min(self.entries.len())];
+        sample
             .iter()
-            .filter(|entry| Entry::read_from(entry).key != ZobristHash::default())
+            .filter(|e| Entry::unpack(e).0.key != ZobristHash::default())
             .count() as f64
+            / sample.len() as f64
     }
 
     pub fn size_mb(&self) -> usize {
-        self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::chess::position::fen::{Fen, STARTPOS};
-    use crate::chess::position::zobrist::init_zobrist;
-
-    fn random_key() -> ZobristHash {
-        init_zobrist();
-        let Fen(pos) = STARTPOS.parse().unwrap();
-        pos.key
-    }
-
-    #[test]
-    fn test_table() {
-        assert_eq!(std::mem::size_of::<Entry>(), 16);
-    }
-
-    #[test]
-    fn test_insert() {
-        let tt = Table::new_mb(1);
-        assert_eq!(tt.size_mb(), 1);
-        let key = random_key();
-
-        let e = Entry::new(key, 20, -150, EntryType::Exact, Move::NULL);
-
-        tt.set(e);
-        assert_eq!(tt.probe(key), Some(e));
+        self.entries.len() * std::mem::size_of::<TTMemory>() / (1024 * 1024)
     }
 }

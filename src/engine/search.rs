@@ -283,9 +283,12 @@ impl<'a> Search<'a> {
 
         // Probe the transposition table
         let mut tt_eval = None;
+        let mut tt_static_eval = None;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
+            tt_static_eval = Some(entry.static_eval);
+
             let score = denormalize_score(entry.score, ply);
             tt_eval = Some(score);
             if entry.depth as i32 >= depth
@@ -293,7 +296,7 @@ impl<'a> Search<'a> {
                 && self.current_move[ply as usize - 1] != Move::NULL
                 && self.position.halfmove_clock < 80
             {
-                match entry.score_type {
+                match entry.entry_type {
                     // Exact score
                     EntryType::Exact => return score,
                     // Lower bound
@@ -308,7 +311,8 @@ impl<'a> Search<'a> {
             }
         }
 
-        let static_eval = tt_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
+        let static_eval = tt_eval
+            .unwrap_or(tt_static_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum)));
 
         // internal iterative reduction
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
@@ -472,12 +476,13 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            self.tt.set(Entry::new(
+            self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
+                static_eval,
             ));
         }
         best
@@ -504,11 +509,13 @@ impl<'a> Search<'a> {
 
         // Probe tt
         let mut tt_move = Move::NONE;
+        let mut tt_static_eval = None;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
+            tt_static_eval = Some(entry.static_eval);
             if !is_pv {
                 let score = denormalize_score(entry.score, MAX_PLY);
-                match entry.score_type {
+                match entry.entry_type {
                     EntryType::Exact => return score,
                     EntryType::LowerBound => {
                         if score >= beta {
@@ -525,16 +532,17 @@ impl<'a> Search<'a> {
             }
         }
 
-        let stand_pat = eval::score_nnue(&self.position, &self.accum);
-        if stand_pat >= beta {
-            return stand_pat;
+        let static_eval = tt_static_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
+
+        if static_eval >= beta {
+            return static_eval;
         }
 
-        if stand_pat > alpha {
-            alpha = stand_pat;
+        if static_eval > alpha {
+            alpha = static_eval;
         }
 
-        let mut best = stand_pat;
+        let mut best = static_eval;
         let mut best_move = Move::NONE;
 
         let best_case_score = {
@@ -563,12 +571,12 @@ impl<'a> Search<'a> {
             value
         };
 
-        let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
+        let delta_margin = alpha.saturating_sub(static_eval).saturating_sub(425) as i32;
         if best_case_score < delta_margin {
-            return stand_pat;
+            return static_eval;
         }
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        let see_margin = alpha.saturating_sub(static_eval).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
@@ -594,12 +602,13 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            self.tt.set(Entry::new(
+            self.tt.store(Entry::new(
                 self.position.key,
                 0,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
+                static_eval,
             ));
         }
 

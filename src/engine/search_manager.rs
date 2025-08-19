@@ -52,6 +52,7 @@ impl SearchManager {
 
     pub fn think_with_stop(&self, limits: Limits, stop: Arc<AtomicBool>) -> (SearchResult, u64) {
         stop.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.tt.new_search();
         thread::scope(|s| {
             let mut handles = Vec::with_capacity(self.num_threads);
 
