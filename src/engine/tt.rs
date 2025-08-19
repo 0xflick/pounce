@@ -146,20 +146,22 @@ impl Table {
     pub fn store(&self, entry: Entry) {
         let idx = self.index(entry.key);
         let current_age = self.age.load(Ordering::Relaxed);
-        let (existing, old_age) = Entry::unpack(&self.entries[idx]);
 
-        // Effective depth = actual depth + bonus for exact nodes
-        let effective_depth = |d: u8, t: EntryType| d + (t == EntryType::Exact) as u8 * 2;
+        // Always replace (old behavior)
+        entry.write(&self.entries[idx], current_age);
 
-        let replace = existing.key == ZobristHash::default()
-            || existing.key == entry.key
-            || current_age.wrapping_sub(old_age) > 3
-            || effective_depth(entry.depth, entry.entry_type)
-                >= effective_depth(existing.depth, existing.entry_type) - 2;
-
-        if replace {
-            entry.write(&self.entries[idx], current_age);
-        }
+        // New replacement logic (commented out for testing)
+        // let (existing, old_age) = Entry::unpack(&self.entries[idx]);
+        // // Effective depth = actual depth + bonus for exact nodes
+        // let effective_depth = |d: u8, t: EntryType| d + (t == EntryType::Exact) as u8 * 2;
+        // let replace = existing.key == ZobristHash::default()
+        //     || existing.key == entry.key
+        //     || current_age.wrapping_sub(old_age) > 3
+        //     || effective_depth(entry.depth, entry.entry_type)
+        //         >= effective_depth(existing.depth, existing.entry_type) - 2;
+        // if replace {
+        //     entry.write(&self.entries[idx], current_age);
+        // }
     }
 
     pub fn hashfull(&self) -> f64 {
