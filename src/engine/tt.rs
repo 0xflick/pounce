@@ -71,43 +71,53 @@ impl Entry {
     const TYPE_BITS: u32 = 2;
     const TYPE_MASK: u64 = (1 << Self::TYPE_BITS) - 1;
 
-    fn read_from(mem: &TTMemory) -> Self {
-        let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
-        let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
-
+    fn pack(&self) -> u64 {
         unsafe {
-            let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data);
-
-            let depth = ((mem_data >> Self::DEPTH_SHIFT) & Self::DEPTH_MASK) as u8;
-            let score = ((mem_data >> Self::SCORE_SHIFT) & Self::SCORE_MASK) as i16;
-            let score_type = std::mem::transmute::<u8, EntryType>(
-                ((mem_data >> Self::TYPE_SHIFT) & Self::TYPE_MASK) as u8,
-            );
-            let best_move = std::mem::transmute::<u16, Move>((mem_data & Self::MOVE_MASK) as u16);
-
-            Self {
-                key,
-                depth,
-                score,
-                score_type,
-                best_move,
-            }
+            ((std::mem::transmute::<Move, u16>(self.best_move) as u64) & Self::MOVE_MASK)
+                | (((self.score as u64) & Self::SCORE_MASK) << Self::SCORE_SHIFT)
+                | (((self.depth as u64) & Self::DEPTH_MASK) << Self::DEPTH_SHIFT)
+                | ((self.score_type as u8 as u64 & Self::TYPE_MASK) << Self::TYPE_SHIFT)
         }
     }
 
-    fn write_to(&self, mem: &TTMemory) {
+    fn unpack(mem_key: u64, data: u64) -> Self {
         unsafe {
-            let data = ((std::mem::transmute::<Move, u16>(self.best_move) as u64)
-                & Self::MOVE_MASK)
-                | (((self.score as u64) & Self::SCORE_MASK) << Self::SCORE_SHIFT)
-                | (((self.depth as u64) & Self::DEPTH_MASK) << Self::DEPTH_SHIFT)
-                | ((self.score_type as u8 as u64 & Self::TYPE_MASK) << Self::TYPE_SHIFT);
+            let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ data);
+            let best_move = std::mem::transmute::<u16, Move>((data & Self::MOVE_MASK) as u16);
+            let score = ((data >> Self::SCORE_SHIFT) & Self::SCORE_MASK) as i16;
+            let depth = ((data >> Self::DEPTH_SHIFT) & Self::DEPTH_MASK) as u8;
+            let score_type = std::mem::transmute::<u8, EntryType>(
+                ((data >> Self::TYPE_SHIFT) & Self::TYPE_MASK) as u8,
+            );
 
-            let key = std::mem::transmute::<ZobristHash, u64>(self.key) ^ data;
-
-            mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
-            mem.data.store(data, std::sync::atomic::Ordering::Relaxed);
+            Self::new(key, depth, score, score_type, best_move)
         }
+    }
+
+    fn write(&self, mem: &TTMemory) {
+        let data = self.pack();
+        let key = u64::from(self.key) ^ data;
+        mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
+        mem.data.store(data, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl From<&Entry> for TTMemory {
+    fn from(entry: &Entry) -> Self {
+        let data = entry.pack();
+        let key = u64::from(entry.key) ^ data;
+        TTMemory {
+            key: AtomicU64::new(key),
+            data: AtomicU64::new(data),
+        }
+    }
+}
+
+impl From<&TTMemory> for Entry {
+    fn from(mem: &TTMemory) -> Self {
+        let key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
+        let data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
+        Self::unpack(key, data)
     }
 }
 
@@ -141,7 +151,7 @@ impl Table {
 
     pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
         let idx = self.index(key);
-        let entry = Entry::read_from(&self.entries[idx]);
+        let entry = Entry::from(&self.entries[idx]);
         match entry.key == key {
             true => Some(entry),
             false => None,
@@ -150,14 +160,13 @@ impl Table {
 
     pub fn set(&self, entry: Entry) {
         let idx = self.index(entry.key);
-        let val = &self.entries[idx];
-        entry.write_to(val);
+        entry.write(&self.entries[idx]);
     }
 
     pub fn hashfull(&self) -> f64 {
         self.entries[..1000]
             .iter()
-            .filter(|entry| Entry::read_from(entry).key != ZobristHash::default())
+            .filter(|mem| Entry::from(*mem).key != ZobristHash::default())
             .count() as f64
     }
 }
@@ -165,14 +174,6 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::position::fen::{Fen, STARTPOS};
-    use crate::chess::position::zobrist::init_zobrist;
-
-    fn random_key() -> ZobristHash {
-        init_zobrist();
-        let Fen(pos) = STARTPOS.parse().unwrap();
-        pos.key
-    }
 
     #[test]
     fn test_table() {
