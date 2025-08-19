@@ -472,7 +472,7 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            self.tt.set(Entry::new(
+            self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
                 normalize_score(best, ply),
@@ -594,7 +594,7 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            self.tt.set(Entry::new(
+            self.tt.store(Entry::new(
                 self.position.key,
                 0,
                 normalize_score(best, MAX_PLY),
