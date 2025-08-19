@@ -237,7 +237,7 @@ impl<'a> Search<'a> {
         &mut self,
         mut depth: i32,
         mut alpha: i16,
-        mut beta: i16,
+        beta: i16,
         ply: u8,
         is_pv: bool,
         is_root: bool,
@@ -248,9 +248,15 @@ impl<'a> Search<'a> {
         if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
             return eval::score_nnue(&self.position, &self.accum);
         }
-        self.stats.nodes += 1;
 
         self.stats.pv_length[ply as usize] = ply;
+
+        if depth <= 0 {
+            return self.quiescence_search(alpha, beta, is_pv);
+        }
+
+        // Go to quiescence search if depth is 0
+        self.stats.nodes += 1;
 
         debug_assert!(alpha < beta);
         debug_assert_eq!(self.position.key, self.position.zobrist_hash());
@@ -269,41 +275,54 @@ impl<'a> Search<'a> {
             }
         }
 
-        // Go to quiescence search if depth is 0
-        if depth <= 0 {
-            return self.quiescence_search(alpha, beta, is_pv);
-        }
-
-        // Probe the transposition table
-        let mut tt_eval = None;
-        let mut tt_move = Move::NONE;
-        if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
-            let score = denormalize_score(entry.score, ply);
-            tt_eval = Some(score);
-            if entry.depth as i32 >= depth
-                && !is_pv
-                && self.current_move[ply as usize - 1] != Move::NULL
+        let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
+            if !is_pv
                 && self.position.halfmove_clock < 80
+                && hit.depth as i32 >= depth
+                && (hit.score_type == EntryType::Exact
+                    || (hit.score_type == EntryType::LowerBound
+                        && denormalize_score(hit.score, ply) > alpha)
+                    || (hit.score_type == EntryType::UpperBound
+                        && denormalize_score(hit.score, ply) < beta))
             {
-                match entry.score_type {
-                    // Exact score
-                    EntryType::Exact => return score,
-                    // Lower bound
-                    EntryType::LowerBound => alpha = alpha.max(score),
-                    // Upper bound
-                    EntryType::UpperBound => beta = beta.min(score),
-                    EntryType::None => {}
-                }
-                if alpha >= beta {
-                    return score;
-                }
+                return denormalize_score(hit.score, ply);
             }
+            Some(hit)
+        } else {
+            None
+        };
+
+        let static_eval;
+        if self.position.in_check() {
+            static_eval = eval::NO_VALUE;
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            ..
+        }) = &tt_hit
+        {
+            if *tt_score != eval::NO_VALUE {
+                static_eval = denormalize_score(*tt_score, ply);
+            } else if *tt_static_eval != eval::NO_VALUE {
+                static_eval = *tt_static_eval;
+            } else {
+                static_eval = eval::NO_VALUE;
+            }
+        } else {
+            static_eval = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                depth as u8,
+                static_eval,
+                static_eval,
+                EntryType::Exact,
+                Move::NONE,
+            ));
         }
 
-        let static_eval = tt_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        // internal iterative reduction
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
@@ -506,7 +525,7 @@ impl<'a> Search<'a> {
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            if !is_pv {
+            if !is_pv && entry.score_type != EntryType::None {
                 let score = denormalize_score(entry.score, MAX_PLY);
                 match entry.score_type {
                     EntryType::Exact => return score,
@@ -643,9 +662,9 @@ impl<'a> Search<'a> {
 }
 
 fn normalize_score(score: i16, ply: u8) -> i16 {
-    if score > eval::MATE_IN_PLY {
+    if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score + ply as i16
-    } else if score < -eval::MATE_IN_PLY {
+    } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {
         score - ply as i16
     } else {
         score
@@ -653,9 +672,9 @@ fn normalize_score(score: i16, ply: u8) -> i16 {
 }
 
 fn denormalize_score(score: i16, ply: u8) -> i16 {
-    if score >= eval::MATE_IN_PLY {
+    if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score - ply as i16
-    } else if score <= -eval::MATE_IN_PLY {
+    } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {
         score + ply as i16
     } else {
         score
