@@ -269,13 +269,6 @@ impl<'a> Search<'a> {
             }
         }
 
-        if self.position.in_check() {
-            depth += 1;
-            if depth >= MAX_DEPTH as i32 {
-                return eval::score_nnue(&self.position, &self.accum);
-            }
-        }
-
         // Go to quiescence search if depth is 0
         if depth <= 0 {
             return self.quiescence_search(alpha, beta, is_pv);
@@ -404,12 +397,18 @@ impl<'a> Search<'a> {
                 move_count > 1 || !is_pv
             };
 
+            // TODO: extensions
+            let mut new_depth = depth;
+            if self.position.in_check() {
+                new_depth += 1;
+            }
+
             if needs_full_search {
-                score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
+                score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
 
             if is_pv && (move_count == 1 || score > alpha && score < beta) {
-                score = -self.search(depth - 1, -beta, -alpha, ply + 1, true, false);
+                score = -self.search(new_depth - 1, -beta, -alpha, ply + 1, true, false);
             }
 
             self.position.unmake_move_with(mv, &mut self.accum);
@@ -475,6 +474,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
+                eval::NO_VALUE,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
@@ -597,6 +597,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
+                eval::NO_VALUE,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,

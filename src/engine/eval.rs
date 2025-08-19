@@ -4,6 +4,7 @@ use crate::chess::Role;
 use crate::chess::position::Position;
 use crate::engine::search::MAX_PLY;
 
+pub const NO_VALUE: i16 = 32_002;
 pub const INFINITY: i16 = 32_001;
 pub const MATE: i16 = 32_000;
 pub const MATE_IN_PLY: i16 = MATE - MAX_PLY as i16;
