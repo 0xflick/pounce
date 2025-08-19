@@ -282,12 +282,12 @@ impl<'a> Search<'a> {
         }
 
         // Probe the transposition table
-        let mut tt_eval = None;
         let mut tt_static_eval = None;
+        let mut tt_eval = None;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
             tt_static_eval = Some(entry.static_eval);
+            tt_move = entry.best_move;
 
             let score = denormalize_score(entry.score, ply);
             tt_eval = Some(score);
@@ -509,10 +509,8 @@ impl<'a> Search<'a> {
 
         // Probe tt
         let mut tt_move = Move::NONE;
-        let mut tt_static_eval = None;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
-            tt_static_eval = Some(entry.static_eval);
             if !is_pv {
                 let score = denormalize_score(entry.score, MAX_PLY);
                 match entry.entry_type {
@@ -532,7 +530,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        let static_eval = tt_static_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
+        let static_eval = eval::score_nnue(&self.position, &self.accum);
 
         if static_eval >= beta {
             return static_eval;
