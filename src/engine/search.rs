@@ -282,11 +282,9 @@ impl<'a> Search<'a> {
         }
 
         // Probe the transposition table
-        let mut tt_static_eval = None;
         let mut tt_eval = None;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_static_eval = Some(entry.static_eval);
             tt_move = entry.best_move;
 
             let score = denormalize_score(entry.score, ply);
@@ -311,8 +309,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        let static_eval = tt_eval
-            .unwrap_or(tt_static_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum)));
+        let static_eval = tt_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
 
         // internal iterative reduction
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
