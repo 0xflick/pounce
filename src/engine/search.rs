@@ -611,21 +611,23 @@ impl<'a> Search<'a> {
             }
         }
 
+        if self.position.in_check() && best == -eval::INFINITY {
+            return -5000;
+        }
+
         let entry_type = if best >= beta {
             EntryType::LowerBound
         } else if best > original_alpha {
             EntryType::Exact
-        } else if best > -eval::INFINITY {
-            EntryType::UpperBound
         } else {
-            EntryType::None
+            EntryType::UpperBound
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                eval::NO_VALUE,
+                stand_pat,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
