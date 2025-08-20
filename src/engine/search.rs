@@ -552,15 +552,6 @@ impl<'a> Search<'a> {
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
-
-            self.tt.store(Entry::new(
-                self.position.key,
-                0,
-                stand_pat,
-                stand_pat,
-                EntryType::None,
-                Move::NONE,
-            ));
         }
 
         if stand_pat >= beta {
@@ -643,15 +634,10 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            let static_score = if stand_pat == -eval::INFINITY {
-                eval::NO_VALUE
-            } else {
-                stand_pat
-            };
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                static_score,
+                stand_pat,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
