@@ -281,9 +281,9 @@ impl<'a> Search<'a> {
                 && hit.depth as i32 >= depth
                 && (hit.score_type == EntryType::Exact
                     || (hit.score_type == EntryType::LowerBound
-                        && denormalize_score(hit.score, ply) > alpha)
+                        && denormalize_score(hit.score, ply) >= beta)
                     || (hit.score_type == EntryType::UpperBound
-                        && denormalize_score(hit.score, ply) < beta))
+                        && denormalize_score(hit.score, ply) <= alpha))
             {
                 return denormalize_score(hit.score, ply);
             }
@@ -326,6 +326,8 @@ impl<'a> Search<'a> {
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
+
+        let original_alpha = alpha;
 
         // Null move pruning
         if !is_pv
@@ -483,7 +485,7 @@ impl<'a> Search<'a> {
 
         let entry_type = if best >= beta {
             EntryType::LowerBound
-        } else if is_pv && best_move != Move::NULL {
+        } else if best > original_alpha {
             EntryType::Exact
         } else {
             EntryType::UpperBound
@@ -493,7 +495,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
-                eval::NO_VALUE,
+                static_eval,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
