@@ -605,12 +605,13 @@ impl<'a> Search<'a> {
         }
 
         // if we are in check we want to search all moves
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+
         let see_margin = if self.position.in_check() {
-            -eval::INFINITY as i32
+            1
         } else {
             alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32
         };
-        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
@@ -629,12 +630,8 @@ impl<'a> Search<'a> {
             }
         }
 
-        if best == -eval::INFINITY {
-            // return pseudo mate score
-            return -5000;
-        } else if best == stand_pat {
-            // no moves that improve the position found
-            return stand_pat;
+        if best == -eval::INFINITY && self.position.in_check() {
+            return -eval::MATE + MAX_PLY as i16;
         }
 
         let entry_type = if best >= beta {
