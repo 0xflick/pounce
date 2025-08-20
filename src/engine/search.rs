@@ -484,19 +484,19 @@ impl<'a> Search<'a> {
         let entry_type = if best >= beta {
             // Score is a lower bound (might be higher)
             EntryType::LowerBound
-        } else if best <= alpha {
-            // Score is an upper bound (might be lower)
-            EntryType::UpperBound
-        } else {
+        } else if best > alpha {
             // Exact score
             EntryType::Exact
+        } else {
+            // Score is an upper bound (might be lower)
+            EntryType::UpperBound
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
-                eval::NO_VALUE,
+                static_eval,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
