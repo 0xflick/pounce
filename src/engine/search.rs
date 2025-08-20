@@ -595,11 +595,10 @@ impl<'a> Search<'a> {
             return stand_pat;
         }
 
-        // if we are in check we want to search all moves
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
         let see_margin = if self.position.in_check() {
-            1
+            -eval::INFINITY as i32 // we want to search all captures in check
         } else {
             alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32
         };

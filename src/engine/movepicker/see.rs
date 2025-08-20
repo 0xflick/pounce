@@ -12,7 +12,7 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
     let to = mv.to();
 
     // the intial value of the move is the value of the piece being captured
-    let mut value = see_best_case(pos, mv) - threshold;
+    let mut value = see_best_case(pos, mv).saturating_sub(threshold);
 
     // if the best case is already below the threshold, we can stop early
     // the best being we just capture the piece we are attacking without any further exchanges
@@ -30,7 +30,7 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
     };
 
     // the worst case is then losing the piece we moved, without being able to capture the piece
-    value -= SEE_VALUES[next_victim as usize];
+    value = value.saturating_sub(SEE_VALUES[next_victim as usize]);
 
     // if the worse case is above the threshold, we can stop early
     if value >= 0 {
@@ -107,7 +107,9 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
         side = side.opponent();
 
         // adjust balance
-        value = -value - 1 - SEE_VALUES[next_victim as usize];
+        value = -value
+            .saturating_sub(1)
+            .saturating_sub(SEE_VALUES[next_victim as usize]);
 
         if value > 0 {
             if next_victim == chess::Role::King && (attackers & pos.by_color[side]).any() {
