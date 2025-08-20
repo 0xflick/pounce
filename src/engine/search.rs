@@ -391,6 +391,12 @@ impl<'a> Search<'a> {
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
+            // TODO: extensions
+            let mut new_depth = depth;
+            if self.position.in_check() {
+                new_depth += 1;
+            }
+
             self.position.make_move_with(mv, &mut self.accum);
             self.current_move[ply as usize] = mv;
 
@@ -417,12 +423,6 @@ impl<'a> Search<'a> {
             } else {
                 move_count > 1 || !is_pv
             };
-
-            // TODO: extensions
-            let mut new_depth = depth;
-            if self.position.in_check() {
-                new_depth += 1;
-            }
 
             if needs_full_search {
                 score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
