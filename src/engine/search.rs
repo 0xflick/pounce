@@ -281,9 +281,9 @@ impl<'a> Search<'a> {
                 && hit.depth as i32 >= depth
                 && (hit.score_type == EntryType::Exact
                     || (hit.score_type == EntryType::LowerBound
-                        && denormalize_score(hit.score, ply) > alpha)
+                        && denormalize_score(hit.score, ply) >= beta)
                     || (hit.score_type == EntryType::UpperBound
-                        && denormalize_score(hit.score, ply) < beta))
+                        && denormalize_score(hit.score, ply) <= alpha))
             {
                 return denormalize_score(hit.score, ply);
             }
@@ -527,9 +527,9 @@ impl<'a> Search<'a> {
                 && self.position.halfmove_clock < 80
                 && (hit.score_type == EntryType::Exact
                     || (hit.score_type == EntryType::LowerBound
-                        && denormalize_score(hit.score, MAX_PLY) > alpha)
+                        && denormalize_score(hit.score, MAX_PLY) >= beta)
                     || (hit.score_type == EntryType::UpperBound
-                        && denormalize_score(hit.score, MAX_PLY) < beta))
+                        && denormalize_score(hit.score, MAX_PLY) <= alpha))
             {
                 return denormalize_score(hit.score, MAX_PLY);
             }
