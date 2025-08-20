@@ -524,9 +524,15 @@ impl<'a> Search<'a> {
         }
 
         // Probe tt
+        let stand_pat;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
             tt_move = entry.best_move;
+            if entry.static_eval != eval::NO_VALUE {
+                stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
+            } else {
+                stand_pat = eval::score_nnue(&self.position, &self.accum);
+            }
             if !is_pv && entry.score_type != EntryType::None {
                 let score = denormalize_score(entry.score, MAX_PLY);
                 match entry.score_type {
@@ -544,13 +550,10 @@ impl<'a> Search<'a> {
                     _ => {}
                 }
             }
+        } else {
+            stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
 
-        let stand_pat = if self.position.in_check() {
-            -eval::INFINITY
-        } else {
-            eval::score_nnue(&self.position, &self.accum)
-        };
         if stand_pat >= beta {
             return stand_pat;
         }
@@ -609,10 +612,6 @@ impl<'a> Search<'a> {
                     }
                 }
             }
-        }
-
-        if self.position.in_check() && best == -eval::INFINITY {
-            return -5000;
         }
 
         let entry_type = if best >= beta {
