@@ -85,13 +85,14 @@ impl MovePicker {
             tt_move = Move::NONE;
         }
 
-        MovePicker::new(
-            pos,
-            MovePickerMode::Quiescence,
-            tt_move,
-            [Move::NONE; 2],
-            margin,
-        )
+        let mode = if pos.in_check() {
+            // if in check, we need to search all moves
+            MovePickerMode::Normal
+        } else {
+            MovePickerMode::Quiescence
+        };
+
+        MovePicker::new(pos, mode, tt_move, [Move::NONE; 2], margin)
     }
 
     pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {

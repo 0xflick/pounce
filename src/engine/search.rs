@@ -316,7 +316,7 @@ impl<'a> Search<'a> {
                 depth as u8,
                 static_eval,
                 static_eval,
-                EntryType::None,
+                EntryType::Exact,
                 Move::NONE,
             ));
         }
@@ -599,11 +599,7 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        let see_margin = if self.position.in_check() {
-            -eval::INFINITY as i32 // we want to search all captures in check
-        } else {
-            alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32
-        };
+        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
