@@ -523,34 +523,35 @@ impl<'a> Search<'a> {
             return eval::DRAW;
         }
 
+        let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
+            if !is_pv
+                && self.position.halfmove_clock < 80
+                && (hit.score_type == EntryType::Exact
+                    || (hit.score_type == EntryType::LowerBound
+                        && denormalize_score(hit.score, MAX_PLY) >= beta)
+                    || (hit.score_type == EntryType::UpperBound
+                        && denormalize_score(hit.score, MAX_PLY) <= alpha))
+            {
+                return denormalize_score(hit.score, MAX_PLY);
+            }
+            Some(hit)
+        } else {
+            None
+        };
+
         // Probe tt
         let stand_pat;
-        let mut tt_move = Move::NONE;
-        if let Some(entry) = self.tt.probe(self.position.key) {
+        let tt_move;
+
+        if let Some(entry) = tt_hit {
             tt_move = entry.best_move;
             if entry.static_eval != eval::NO_VALUE {
                 stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
             } else {
                 stand_pat = eval::score_nnue(&self.position, &self.accum);
             }
-            if !is_pv && entry.score_type != EntryType::None {
-                let score = denormalize_score(entry.score, MAX_PLY);
-                match entry.score_type {
-                    EntryType::Exact => return score,
-                    EntryType::LowerBound => {
-                        if score >= beta {
-                            return score;
-                        }
-                    }
-                    EntryType::UpperBound => {
-                        if score <= alpha {
-                            return score;
-                        }
-                    }
-                    _ => {}
-                }
-            }
         } else {
+            tt_move = Move::NONE;
             stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
 
