@@ -543,7 +543,11 @@ impl<'a> Search<'a> {
         let stand_pat;
         let tt_move;
 
-        if let Some(entry) = tt_hit {
+        if self.position.in_check() {
+            // we might be getting mated, so can't rely on static eval
+            stand_pat = -eval::INFINITY;
+            tt_move = Move::NONE;
+        } else if let Some(entry) = tt_hit {
             tt_move = entry.best_move;
             if entry.static_eval != eval::NO_VALUE {
                 stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
@@ -555,7 +559,7 @@ impl<'a> Search<'a> {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
 
-        if stand_pat >= beta {
+        if stand_pat != -eval::INFINITY && stand_pat >= beta {
             return stand_pat;
         }
 
@@ -592,7 +596,7 @@ impl<'a> Search<'a> {
         };
 
         let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
-        if best_case_score < delta_margin {
+        if !self.position.in_check() && best_case_score < delta_margin {
             return stand_pat;
         }
 
@@ -613,6 +617,11 @@ impl<'a> Search<'a> {
                     }
                 }
             }
+        }
+
+        if best == -eval::INFINITY {
+            // return a pseudo mate score
+            return -5000;
         }
 
         let entry_type = if best >= beta {
