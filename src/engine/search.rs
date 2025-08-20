@@ -482,11 +482,14 @@ impl<'a> Search<'a> {
         }
 
         let entry_type = if best >= beta {
+            // Score is a lower bound (might be higher)
             EntryType::LowerBound
-        } else if is_pv && best_move != Move::NULL {
-            EntryType::Exact
-        } else {
+        } else if best <= alpha {
+            // Score is an upper bound (might be lower)
             EntryType::UpperBound
+        } else {
+            // Exact score
+            EntryType::Exact
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
@@ -538,8 +541,11 @@ impl<'a> Search<'a> {
             None
         };
 
+        let eval;
         let static_eval;
         if self.position.in_check() {
+            // we might be getting mated!
+            eval = -eval::INFINITY;
             static_eval = eval::NO_VALUE;
         } else if let Some(Entry {
             score: tt_score,
@@ -547,37 +553,46 @@ impl<'a> Search<'a> {
             ..
         }) = &tt_hit
         {
+            // If we have a static eval in the TT use it
             if *tt_score != eval::NO_VALUE {
-                static_eval = denormalize_score(*tt_score, MAX_PLY);
+                eval = denormalize_score(*tt_score, MAX_PLY);
+                static_eval = eval;
             } else if *tt_static_eval != eval::NO_VALUE {
-                static_eval = *tt_static_eval;
+                eval = *tt_static_eval;
+                static_eval = eval;
             } else {
+                eval = -eval::INFINITY;
                 static_eval = eval::NO_VALUE;
             }
         } else {
-            static_eval = eval::score_nnue(&self.position, &self.accum);
+            // Otherwise calculate it
+            eval = eval::score_nnue(&self.position, &self.accum);
+            static_eval = eval;
 
+            // We know we didn't have a TT hit, so store the static eval
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                static_eval,
-                static_eval,
+                eval,
+                eval,
                 EntryType::Exact,
                 Move::NONE,
             ));
         }
 
+        // Prune if the static eval is already >= beta
+        if eval >= beta {
+            return eval;
+        }
+
+        // Adjust alpha based on null move observation, ie. we can never do worse than the static eval
+        // Because we set eval to -inf if in check, this is effectively disabled in check
+        let original_alpha = alpha;
+        alpha = alpha.max(eval);
+
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        if static_eval >= beta {
-            return static_eval;
-        }
-
-        if static_eval > alpha {
-            alpha = static_eval;
-        }
-
-        let mut best = static_eval;
+        let mut best = eval;
         let mut best_move = Move::NONE;
 
         let best_case_score = {
@@ -606,12 +621,12 @@ impl<'a> Search<'a> {
             value
         };
 
-        let delta_margin = alpha.saturating_sub(static_eval).saturating_sub(425) as i32;
+        let delta_margin = alpha.saturating_sub(eval).saturating_sub(425) as i32;
         if best_case_score < delta_margin {
-            return static_eval;
+            return eval;
         }
 
-        let see_margin = alpha.saturating_sub(static_eval).saturating_sub(500).max(1) as i32;
+        let see_margin = alpha.saturating_sub(eval).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
@@ -631,7 +646,11 @@ impl<'a> Search<'a> {
         }
 
         let entry_type = if best >= beta {
+            // Score is a lower bound (might be higher)
             EntryType::LowerBound
+        } else if best > original_alpha {
+            // Score is an upper bound (might be lower)
+            EntryType::Exact
         } else {
             EntryType::UpperBound
         };
