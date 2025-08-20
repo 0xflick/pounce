@@ -546,14 +546,17 @@ impl<'a> Search<'a> {
             }
         }
 
-        let stand_pat = eval::score_nnue(&self.position, &self.accum);
+        let stand_pat = if self.position.in_check() {
+            -eval::INFINITY
+        } else {
+            eval::score_nnue(&self.position, &self.accum)
+        };
         if stand_pat >= beta {
             return stand_pat;
         }
 
-        if stand_pat > alpha {
-            alpha = stand_pat;
-        }
+        let original_alpha = alpha;
+        alpha = alpha.max(stand_pat);
 
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
@@ -610,8 +613,12 @@ impl<'a> Search<'a> {
 
         let entry_type = if best >= beta {
             EntryType::LowerBound
-        } else {
+        } else if best > original_alpha {
+            EntryType::Exact
+        } else if best > -eval::INFINITY {
             EntryType::UpperBound
+        } else {
+            EntryType::None
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
