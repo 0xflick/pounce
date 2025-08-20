@@ -316,7 +316,7 @@ impl<'a> Search<'a> {
                 depth as u8,
                 static_eval,
                 static_eval,
-                EntryType::Exact,
+                EntryType::None,
                 Move::NONE,
             ));
         }
@@ -543,7 +543,6 @@ impl<'a> Search<'a> {
         let stand_pat;
 
         if self.position.in_check() {
-            // we might be getting mated, so can't rely on static eval
             stand_pat = -eval::INFINITY;
         } else if let Some(entry) = tt_hit {
             if entry.static_eval != eval::NO_VALUE {
@@ -553,9 +552,18 @@ impl<'a> Search<'a> {
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                0,
+                stand_pat,
+                stand_pat,
+                EntryType::None,
+                Move::NONE,
+            ));
         }
 
-        if stand_pat != -eval::INFINITY && stand_pat >= beta {
+        if stand_pat >= beta {
             return stand_pat;
         }
 
@@ -596,7 +604,12 @@ impl<'a> Search<'a> {
             return stand_pat;
         }
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        // if we are in check we want to search all moves
+        let see_margin = if self.position.in_check() {
+            -eval::INFINITY as i32
+        } else {
+            alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32
+        };
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
@@ -617,8 +630,11 @@ impl<'a> Search<'a> {
         }
 
         if best == -eval::INFINITY {
-            // return a pseudo mate score
+            // return pseudo mate score
             return -5000;
+        } else if best == stand_pat {
+            // no moves that improve the position found
+            return stand_pat;
         }
 
         let entry_type = if best >= beta {
@@ -630,10 +646,15 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let static_score = if stand_pat == -eval::INFINITY {
+                eval::NO_VALUE
+            } else {
+                stand_pat
+            };
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                stand_pat,
+                static_score,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
