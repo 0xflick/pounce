@@ -235,7 +235,7 @@ impl<'a> Search<'a> {
 
     fn search(
         &mut self,
-        mut depth: i32,
+        depth: i32,
         mut alpha: i16,
         beta: i16,
         ply: u8,
@@ -323,9 +323,7 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
-            depth -= 1;
-        }
+        let original_alpha = alpha;
 
         // Null move pruning
         if !is_pv
@@ -422,6 +420,12 @@ impl<'a> Search<'a> {
                 new_depth += 1;
             }
 
+            // Adjust depth based on assumption that if we don't have a TT move, this must
+            // be a bad position and we should search shallower
+            if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
+                new_depth -= 1;
+            }
+
             if needs_full_search {
                 score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
@@ -484,7 +488,7 @@ impl<'a> Search<'a> {
         let entry_type = if best >= beta {
             // Score is a lower bound (might be higher)
             EntryType::LowerBound
-        } else if best > alpha {
+        } else if best > original_alpha {
             // Exact score
             EntryType::Exact
         } else {
@@ -651,8 +655,10 @@ impl<'a> Search<'a> {
         } else if best > original_alpha {
             // Score is an upper bound (might be lower)
             EntryType::Exact
-        } else {
+        } else if best > -eval::INFINITY {
             EntryType::UpperBound
+        } else {
+            EntryType::None
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
