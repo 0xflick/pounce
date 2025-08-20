@@ -541,21 +541,17 @@ impl<'a> Search<'a> {
 
         // Probe tt
         let stand_pat;
-        let tt_move;
 
         if self.position.in_check() {
             // we might be getting mated, so can't rely on static eval
             stand_pat = -eval::INFINITY;
-            tt_move = Move::NONE;
         } else if let Some(entry) = tt_hit {
-            tt_move = entry.best_move;
             if entry.static_eval != eval::NO_VALUE {
                 stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
             } else {
                 stand_pat = eval::score_nnue(&self.position, &self.accum);
             }
         } else {
-            tt_move = Move::NONE;
             stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
 
@@ -601,6 +597,7 @@ impl<'a> Search<'a> {
         }
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
