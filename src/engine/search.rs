@@ -522,38 +522,62 @@ impl<'a> Search<'a> {
         }
 
         // Probe tt
-        let mut tt_move = Move::NONE;
-        if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
-            if !is_pv && entry.score_type != EntryType::None {
-                let score = denormalize_score(entry.score, MAX_PLY);
-                match entry.score_type {
-                    EntryType::Exact => return score,
-                    EntryType::LowerBound => {
-                        if score >= beta {
-                            return score;
-                        }
-                    }
-                    EntryType::UpperBound => {
-                        if score <= alpha {
-                            return score;
-                        }
-                    }
-                    _ => {}
-                }
+        let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
+            if !is_pv
+                && self.position.halfmove_clock < 80
+                && (hit.score_type == EntryType::Exact
+                    || (hit.score_type == EntryType::LowerBound
+                        && denormalize_score(hit.score, MAX_PLY) > alpha)
+                    || (hit.score_type == EntryType::UpperBound
+                        && denormalize_score(hit.score, MAX_PLY) < beta))
+            {
+                return denormalize_score(hit.score, MAX_PLY);
             }
+            Some(hit)
+        } else {
+            None
+        };
+
+        let static_eval;
+        if self.position.in_check() {
+            static_eval = eval::NO_VALUE;
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            ..
+        }) = &tt_hit
+        {
+            if *tt_score != eval::NO_VALUE {
+                static_eval = denormalize_score(*tt_score, MAX_PLY);
+            } else if *tt_static_eval != eval::NO_VALUE {
+                static_eval = *tt_static_eval;
+            } else {
+                static_eval = eval::NO_VALUE;
+            }
+        } else {
+            static_eval = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                0,
+                static_eval,
+                static_eval,
+                EntryType::Exact,
+                Move::NONE,
+            ));
         }
 
-        let stand_pat = eval::score_nnue(&self.position, &self.accum);
-        if stand_pat >= beta {
-            return stand_pat;
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+
+        if static_eval >= beta {
+            return static_eval;
         }
 
-        if stand_pat > alpha {
-            alpha = stand_pat;
+        if static_eval > alpha {
+            alpha = static_eval;
         }
 
-        let mut best = stand_pat;
+        let mut best = static_eval;
         let mut best_move = Move::NONE;
 
         let best_case_score = {
@@ -582,12 +606,12 @@ impl<'a> Search<'a> {
             value
         };
 
-        let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
+        let delta_margin = alpha.saturating_sub(static_eval).saturating_sub(425) as i32;
         if best_case_score < delta_margin {
-            return stand_pat;
+            return static_eval;
         }
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        let see_margin = alpha.saturating_sub(static_eval).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
@@ -616,7 +640,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                eval::NO_VALUE,
+                static_eval,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
