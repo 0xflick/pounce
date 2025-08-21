@@ -345,6 +345,8 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
+        // Simple version of internal iterative deepening. We lower depth when we don't get a tt
+        // move
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
@@ -360,6 +362,17 @@ impl<'a> Search<'a> {
             if static_eval.saturating_sub(margin as i16) >= beta {
                 return beta;
             }
+        }
+
+        // Futility pruning
+        if !is_pv
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+            && !self.position.in_check()
+            && depth < 3
+            && alpha.saturating_sub(static_eval) > (100 + depth as i16 * 150)
+        {
+            return alpha;
         }
 
         // Null move pruning
