@@ -559,15 +559,6 @@ impl<'a> Search<'a> {
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
-
-            self.tt.store(Entry::new(
-                self.position.key,
-                0,
-                stand_pat,
-                stand_pat,
-                EntryType::Exact,
-                Move::NONE,
-            ));
         }
 
         if stand_pat >= beta {
