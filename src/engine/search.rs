@@ -367,23 +367,20 @@ impl<'a> Search<'a> {
             && depth >= 3
             && self.position.non_pawn_material(self.position.side)
             && !self.position.in_check()
-            && static_eval >= beta
+            && static_eval + 70 * improving as i16 >= beta
             && (ply < 1 || self.current_move[(ply - 1) as usize] != Move::NULL)
         {
             self.position.make_null_move_with(&mut self.accum);
             self.current_move[ply as usize] = Move::NULL;
 
-            let reduced_depth = depth - (3 + (depth / 5));
+            let reduced_depth = depth - (4 + (depth / 4));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move_with(&mut self.accum);
             self.current_move[ply as usize] = Move::NONE;
 
             if null_score >= beta {
-                if null_score >= (eval::MATE_IN_PLY) {
-                    return beta;
-                }
-                return null_score;
+                return beta;
             }
         }
 
