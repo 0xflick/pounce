@@ -7,12 +7,10 @@ use crate::chess::{Color, Move, Position, Role, Square};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_TACTICAL_SCORE: i16 = 22_000;
+const QUEEN_PROMO_BONUS: i16 = 21_002;
 const KILLER_1_SCORE: i16 = 21_001;
 const KILLER_2_SCORE: i16 = 21_000;
 const BAD_TACTICAL_SCORE: i16 = 17_000;
-
-const QUEEN_PROMO_BONUS: i16 = 18_000;
-const KNIGHT_PROMO_BONUS: i16 = 17_500;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -120,17 +118,11 @@ impl MovePicker {
                     TT_MOVE_SCORE as i32
                 } else if self.scored_moves[i].m.is_promotion() {
                     match self.scored_moves[i].m.promotion() {
-                        Some(role) if (role == Role::Queen || role == Role::Knight) => {
-                            let bonus = if role == Role::Queen {
-                                QUEEN_PROMO_BONUS as i32
-                            } else {
-                                KNIGHT_PROMO_BONUS as i32
-                            };
-
+                        Some(Role::Queen) => {
                             if see::see(position, self.scored_moves[i].m, self.margin) {
-                                bonus + GOOD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS as i32 + GOOD_TACTICAL_SCORE as i32
                             } else {
-                                bonus + BAD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS as i32 + BAD_TACTICAL_SCORE as i32
                             }
                         }
                         _ => BAD_TACTICAL_SCORE as i32,
