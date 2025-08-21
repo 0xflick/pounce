@@ -602,7 +602,7 @@ impl<'a> Search<'a> {
                 value
             };
 
-            let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(200) as i32;
+            let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
             if best_case_score < delta_margin {
                 return stand_pat;
             }
@@ -610,7 +610,7 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(200).max(1) as i32;
+        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(&self.position, &self.history) {
             self.position.make_move_with(mv, &mut self.accum);
