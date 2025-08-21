@@ -113,6 +113,7 @@ pub struct Search<'a> {
     current_move: [Move; MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
     killers: [[Move; 2]; MAX_PLY as usize],
+    eval: [i16; MAX_PLY as usize],
     tt: &'a Table,
 
     tm: SearchCop,
@@ -141,6 +142,7 @@ impl<'a> Search<'a> {
             current_move: [Move::NONE; MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
+            eval: [eval::NO_VALUE; MAX_PLY as usize],
             tm: SearchCop::new(limits, side),
             position,
             silent,
@@ -329,13 +331,36 @@ impl<'a> Search<'a> {
             ));
         }
 
+        self.eval[ply as usize] = static_eval;
+
+        let improving = if self.position.in_check() {
+            false
+        } else if ply > 1 && self.eval[ply as usize - 2] != eval::NO_VALUE {
+            self.eval[ply as usize] > self.eval[ply as usize - 2]
+        } else if ply > 3 && self.eval[ply as usize - 4] != eval::NO_VALUE {
+            self.eval[ply as usize] > self.eval[ply as usize - 4]
+        } else {
+            false
+        };
+
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
 
-        let original_alpha = alpha;
+        // Reverse futility pruning
+        if !is_pv
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+            && !self.position.in_check()
+            && depth < 7
+        {
+            let margin = 80 * depth - (60 * improving as i32);
+            if static_eval.saturating_sub(margin as i16) >= beta {
+                return beta;
+            }
+        }
 
         // Null move pruning
         if !is_pv
@@ -362,17 +387,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        // Reverse futility pruning
-        if !is_pv
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
-            && !self.position.in_check()
-            && depth < 7
-            && static_eval.saturating_sub(300 * depth as i16) >= beta
-        {
-            return static_eval - 300 * depth as i16;
-        }
-
+        let original_alpha = alpha;
         let mut best_move = Move::NONE;
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
