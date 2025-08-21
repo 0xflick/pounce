@@ -50,7 +50,7 @@ pub struct MoveGen {
     index: usize,
     promotion_index: PromotionIndex,
     iter_mask: Bitboard,
-    captures_only: bool,
+    tacticals_only: bool,
 }
 
 impl MoveGen {
@@ -112,7 +112,7 @@ impl MoveGen {
             index: 0,
             promotion_index: PromotionIndex::Queen,
             iter_mask: Bitboard::FULL,
-            captures_only: false,
+            tacticals_only: false,
         }
     }
 
@@ -121,16 +121,16 @@ impl MoveGen {
         self.iter_mask = mask;
     }
 
-    pub fn set_captures_only(&mut self, occupancy: Bitboard) {
+    pub fn set_tacticals_only(&mut self, occupancy: Bitboard) {
         self.index = 0;
         self.iter_mask = occupancy;
-        self.captures_only = true;
+        self.tacticals_only = true;
     }
 
-    pub fn disable_captures_only(&mut self) {
+    pub fn disable_tacticals_only(&mut self) {
         self.index = 0;
         self.iter_mask = Bitboard::FULL;
-        self.captures_only = false;
+        self.tacticals_only = false;
     }
 }
 
@@ -162,7 +162,12 @@ impl Iterator for MoveGen {
             None
         } else if self.moves[self.index].is_promotion {
             let moves = &mut self.moves[self.index];
-            let masked = moves.moves & self.iter_mask;
+
+            let masked = if self.tacticals_only {
+                moves.moves // Promotions are always tacticals
+            } else {
+                moves.moves & self.iter_mask
+            };
 
             if masked == Bitboard::EMPTY {
                 self.index += 1;
@@ -200,7 +205,7 @@ impl Iterator for MoveGen {
             // skip moves that are not in the mask,
             // but make sure that if we are generating captures only,
             // we do not skip en passant moves (which are not in the mask)
-            let masked = if self.captures_only && moves.is_ep {
+            let masked = if self.tacticals_only && moves.is_ep {
                 moves.moves // Use the original moves (the EP target square)
             } else {
                 moves.moves & self.iter_mask

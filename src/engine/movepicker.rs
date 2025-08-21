@@ -3,13 +3,14 @@ mod see;
 use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
-use crate::chess::{Color, Move, Position, Square};
+use crate::chess::{Color, Move, Position, Role, Square};
 
 const TT_MOVE_SCORE: i16 = 30_000;
-const GOOD_CAPTURE_SCORE: i16 = 29_000;
-const KILLER_1_SCORE: i16 = 28_001;
-const KILLER_2_SCORE: i16 = 28_000;
-const BAD_CAPTURE_SCORE: i16 = 27_000;
+const GOOD_TACTICAL_SCORE: i16 = 22_000;
+const QUEEN_PROMO_BONUS: i16 = 21_002;
+const KILLER_1_SCORE: i16 = 21_001;
+const KILLER_2_SCORE: i16 = 21_000;
+const BAD_TACTICAL_SCORE: i16 = 17_000;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -32,8 +33,8 @@ type MoveList = ArrayVec<MoveWithScore, MAX_MOVES>;
 
 enum MovePickerStage {
     TT,
-    ScoreCaptures,
-    Captures,
+    ScoreTacticals,
+    Tacticals,
     ScoreQuiets,
     Quiets,
 }
@@ -80,8 +81,8 @@ impl MovePicker {
     }
 
     pub fn new_quiescence(pos: &Position, mut tt_move: Move, margin: i32) -> MovePicker {
-        // If the tt move isn't a capture, we can't use it in quiescence search
-        if tt_move != Move::NONE && !tt_move.is_capture(pos) {
+        // If the tt move isn't a capture or promotion, we can't use it in quiescence search
+        if tt_move != Move::NONE && !(tt_move.is_capture(pos) || tt_move.is_promotion()) {
             tt_move = Move::NONE;
         }
 
@@ -110,16 +111,28 @@ impl MovePicker {
         }
     }
 
-    fn score_captures(&mut self, position: &Position) {
+    fn score_tacticals(&mut self, position: &Position) {
         for i in 0..self.scored_moves.len() {
             self.scored_moves[i].score = {
                 if self.scored_moves[i].m == self.tt_move {
                     TT_MOVE_SCORE as i32
+                } else if self.scored_moves[i].m.is_promotion() {
+                    match self.scored_moves[i].m.promotion() {
+                        Some(Role::Queen) => {
+                            if see::see(position, self.scored_moves[i].m, self.margin) {
+                                QUEEN_PROMO_BONUS as i32 + GOOD_TACTICAL_SCORE as i32
+                            } else {
+                                QUEEN_PROMO_BONUS as i32 + BAD_TACTICAL_SCORE as i32
+                            }
+                        }
+                        _ => BAD_TACTICAL_SCORE as i32,
+                    }
                 } else if see::see(position, self.scored_moves[i].m, self.margin) {
                     self.mvv_lva(self.scored_moves[i].m, position) as i32
-                        + GOOD_CAPTURE_SCORE as i32
+                        + GOOD_TACTICAL_SCORE as i32
                 } else {
-                    self.mvv_lva(self.scored_moves[i].m, position) as i32 + BAD_CAPTURE_SCORE as i32
+                    self.mvv_lva(self.scored_moves[i].m, position) as i32
+                        + BAD_TACTICAL_SCORE as i32
                 }
             }
         }
@@ -180,28 +193,28 @@ impl MovePicker {
     ) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
-                self.stage = MovePickerStage::ScoreCaptures;
+                self.stage = MovePickerStage::ScoreTacticals;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
                 self.next(position, history)
             }
-            MovePickerStage::ScoreCaptures => {
-                self.stage = MovePickerStage::Captures;
+            MovePickerStage::ScoreTacticals => {
+                self.stage = MovePickerStage::Tacticals;
                 self.scored_moves.clear();
 
-                self.move_generator.set_captures_only(position.occupancy);
+                self.move_generator.set_tacticals_only(position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_captures(position);
+                self.score_tacticals(position);
                 self.next(position, history)
             }
-            MovePickerStage::Captures => {
+            MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
-                match self.select_sorted_min(GOOD_CAPTURE_SCORE as i32) {
+                match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
                     Some(m) => {
                         if m == self.tt_move {
                             return self.next(position, history);
@@ -219,7 +232,7 @@ impl MovePicker {
             }
             MovePickerStage::ScoreQuiets => {
                 self.stage = MovePickerStage::Quiets;
-                self.move_generator.disable_captures_only();
+                self.move_generator.disable_tacticals_only();
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });

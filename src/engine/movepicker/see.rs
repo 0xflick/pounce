@@ -138,7 +138,10 @@ fn see_best_case(pos: &chess::Position, mv: chess::Move) -> i32 {
             // En passant captures are worth the same as a pawn capture
             SEE_VALUES[chess::Role::Pawn as usize]
         }
-        _ => SEE_VALUES[pos.role_at(to).unwrap() as usize],
+        _ => match pos.role_at(to) {
+            Some(role) => SEE_VALUES[role],
+            None => 0,
+        },
     }
 }
 
