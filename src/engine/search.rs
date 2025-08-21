@@ -420,10 +420,11 @@ impl<'a> Search<'a> {
                 && !self.position.in_check()
                 && depth <= 3
                 && mv.is_quiet(&self.position)
+                && best_move != Move::NONE
                 && mv != tt_move
                 && mv != self.killers[ply as usize][0]
                 && mv != self.killers[ply as usize][1]
-                && alpha.saturating_sub(static_eval) > (100 + depth as i16 * 130)
+                && alpha.saturating_sub(static_eval) > (120 + depth as i16 * 170)
             {
                 continue;
             }
