@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
+use crate::chess::{Accumulator, Color, GameResult, Move, Position, Square};
 use crate::engine::eval::{self, nnue};
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
@@ -595,39 +595,6 @@ impl<'a> Search<'a> {
 
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
-
-        if !self.position.in_check() {
-            let best_case_score = {
-                let mut value = eval::PIECE_VALUES[Role::Pawn as usize];
-
-                for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
-                    if self
-                        .position
-                        .by_color_role(self.position.side.opponent(), Role::new(role as u8))
-                        .any()
-                    {
-                        value = eval::PIECE_VALUES[role];
-                        break;
-                    }
-                }
-
-                // check for promotions
-                if (self.position.by_color_role(self.position.side, Role::Pawn)
-                    & self.position.side.opponent().home_rank())
-                .any()
-                {
-                    value += eval::PIECE_VALUES[Role::Queen as usize]
-                        - eval::PIECE_VALUES[Role::Pawn as usize];
-                }
-
-                value
-            };
-
-            let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
-            if best_case_score < delta_margin {
-                return stand_pat;
-            }
-        }
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
