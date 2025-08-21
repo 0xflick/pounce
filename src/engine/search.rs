@@ -298,16 +298,22 @@ impl<'a> Search<'a> {
         } else if let Some(Entry {
             score: tt_score,
             static_eval: tt_static_eval,
+            score_type,
             ..
-        }) = &tt_hit
+        }) = tt_hit
         {
-            if *tt_score != eval::NO_VALUE {
-                static_eval = denormalize_score(*tt_score, ply);
-            } else if *tt_static_eval != eval::NO_VALUE {
-                static_eval = *tt_static_eval;
+            let eval = if tt_static_eval != eval::NO_VALUE {
+                denormalize_score(tt_score, ply)
             } else {
-                static_eval = eval::score_nnue(&self.position, &self.accum);
-            }
+                eval::score_nnue(&self.position, &self.accum)
+            };
+
+            static_eval = match score_type {
+                EntryType::Exact => tt_score,
+                EntryType::LowerBound if tt_score > eval => denormalize_score(tt_score, ply),
+                EntryType::UpperBound if tt_score < eval => denormalize_score(tt_score, ply),
+                _ => eval,
+            };
         } else {
             static_eval = eval::score_nnue(&self.position, &self.accum);
 
@@ -316,7 +322,7 @@ impl<'a> Search<'a> {
                 depth as u8,
                 static_eval,
                 static_eval,
-                EntryType::Exact,
+                EntryType::None,
                 Move::NONE,
             ));
         }
@@ -547,10 +553,10 @@ impl<'a> Search<'a> {
         } else if let Some(Entry {
             static_eval: tt_static_eval,
             ..
-        }) = &tt_hit
+        }) = tt_hit
         {
-            stand_pat = if *tt_static_eval != eval::NO_VALUE {
-                *tt_static_eval
+            stand_pat = if tt_static_eval != eval::NO_VALUE {
+                tt_static_eval
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
@@ -635,16 +641,10 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
-            let static_eval = if stand_pat == -eval::INFINITY {
-                eval::NO_VALUE
-            } else {
-                stand_pat
-            };
-
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                static_eval,
+                stand_pat,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
