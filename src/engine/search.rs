@@ -298,16 +298,24 @@ impl<'a> Search<'a> {
         } else if let Some(Entry {
             score: tt_score,
             static_eval: tt_static_eval,
+            score_type,
             ..
-        }) = &tt_hit
+        }) = tt_hit
         {
-            if *tt_score != eval::NO_VALUE {
-                static_eval = denormalize_score(*tt_score, ply);
-            } else if *tt_static_eval != eval::NO_VALUE {
-                static_eval = *tt_static_eval;
+            let eval = if tt_static_eval != eval::NO_VALUE {
+                denormalize_score(tt_score, ply)
             } else {
-                static_eval = eval::NO_VALUE;
-            }
+                eval::score_nnue(&self.position, &self.accum)
+            };
+
+            let denormalized_score = denormalize_score(tt_score, ply);
+
+            static_eval = match score_type {
+                EntryType::Exact => denormalized_score,
+                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
+                _ => eval,
+            };
         } else {
             static_eval = eval::score_nnue(&self.position, &self.accum);
 
@@ -316,7 +324,7 @@ impl<'a> Search<'a> {
                 depth as u8,
                 static_eval,
                 static_eval,
-                EntryType::Exact,
+                EntryType::None,
                 Move::NONE,
             ));
         }
@@ -544,14 +552,38 @@ impl<'a> Search<'a> {
 
         if self.position.in_check() {
             stand_pat = -eval::INFINITY;
-        } else if let Some(entry) = tt_hit {
-            if entry.static_eval != eval::NO_VALUE {
-                stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            score_type,
+            ..
+        }) = tt_hit
+        {
+            let eval = if tt_static_eval != eval::NO_VALUE {
+                denormalize_score(tt_static_eval, MAX_PLY)
             } else {
-                stand_pat = eval::score_nnue(&self.position, &self.accum);
-            }
+                eval::score_nnue(&self.position, &self.accum)
+            };
+
+            let denormalized_score = denormalize_score(tt_score, MAX_PLY);
+
+            stand_pat = match score_type {
+                EntryType::Exact => denormalized_score,
+                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
+                _ => eval,
+            };
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                0,
+                stand_pat,
+                stand_pat,
+                EntryType::None,
+                Move::NONE,
+            ));
         }
 
         if stand_pat >= beta {
