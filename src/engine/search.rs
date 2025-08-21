@@ -348,17 +348,6 @@ impl<'a> Search<'a> {
             return beta;
         }
 
-        // Futility pruning
-        if !is_pv
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
-            && !self.position.in_check()
-            && depth <= 3
-            && alpha.saturating_sub(static_eval) > (200 + depth as i16 * 230)
-        {
-            return alpha;
-        }
-
         // Null move pruning
         if !is_pv
             && depth >= 3
@@ -404,6 +393,21 @@ impl<'a> Search<'a> {
                 && move_count > (3 + depth * depth) as u8
                 && mv != self.killers[ply as usize][0]
                 && mv != self.killers[ply as usize][1]
+            {
+                continue;
+            }
+
+            // Futility pruning: skip moves that have no chance of raising alpha
+            if !is_pv
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+                && !self.position.in_check()
+                && depth <= 3
+                && mv.is_quiet(&self.position)
+                && mv != tt_move
+                && mv != self.killers[ply as usize][0]
+                && mv != self.killers[ply as usize][1]
+                && alpha.saturating_sub(static_eval) > (100 + depth as i16 * 130)
             {
                 continue;
             }
