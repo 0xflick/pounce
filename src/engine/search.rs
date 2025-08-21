@@ -202,8 +202,8 @@ impl<'a> Search<'a> {
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
-        let mut delta = 50;
-        let (mut alpha, mut beta) = if depth > 6 {
+        let mut delta = 25;
+        let (mut alpha, mut beta) = if depth > 5 {
             (prev - delta, prev + delta)
         } else {
             (-eval::INFINITY, eval::INFINITY)
@@ -218,14 +218,14 @@ impl<'a> Search<'a> {
 
             if score <= alpha {
                 beta = alpha + (beta - alpha) / 2;
-                alpha = (-eval::INFINITY).max(alpha.saturating_sub(delta));
+                alpha = (-eval::INFINITY).max(score.saturating_sub(delta));
             } else if score >= beta {
-                beta = (eval::INFINITY).min(beta.saturating_add(delta));
+                beta = (eval::INFINITY).min(score.saturating_add(delta));
             } else {
                 return score;
             }
 
-            delta = delta.saturating_add(delta / 2);
+            delta += delta / 2;
             if delta > 1000 {
                 alpha = -eval::INFINITY;
                 beta = eval::INFINITY;
