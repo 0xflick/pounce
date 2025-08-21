@@ -308,10 +308,12 @@ impl<'a> Search<'a> {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
+            let denormalized_score = denormalize_score(tt_score, ply);
+
             static_eval = match score_type {
-                EntryType::Exact => tt_score,
-                EntryType::LowerBound if tt_score > eval => denormalize_score(tt_score, ply),
-                EntryType::UpperBound if tt_score < eval => denormalize_score(tt_score, ply),
+                EntryType::Exact => denormalized_score,
+                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
                 _ => eval,
             };
         } else {
@@ -550,16 +552,22 @@ impl<'a> Search<'a> {
 
         if self.position.in_check() {
             stand_pat = -eval::INFINITY;
-        } else if let Some(entry) = tt_hit {
-            let eval = if entry.static_eval != eval::NO_VALUE {
-                denormalize_score(entry.static_eval, MAX_PLY)
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            score_type,
+            ..
+        }) = tt_hit
+        {
+            let eval = if tt_static_eval != eval::NO_VALUE {
+                denormalize_score(tt_static_eval, MAX_PLY)
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
-            let denormalized_score = denormalize_score(entry.score, MAX_PLY);
+            let denormalized_score = denormalize_score(tt_score, MAX_PLY);
 
-            stand_pat = match entry.score_type {
+            stand_pat = match score_type {
                 EntryType::Exact => denormalized_score,
                 EntryType::LowerBound if denormalized_score > eval => denormalized_score,
                 EntryType::UpperBound if denormalized_score < eval => denormalized_score,
@@ -567,6 +575,15 @@ impl<'a> Search<'a> {
             };
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                0,
+                stand_pat,
+                stand_pat,
+                EntryType::None,
+                Move::NONE,
+            ));
         }
 
         if stand_pat >= beta {
