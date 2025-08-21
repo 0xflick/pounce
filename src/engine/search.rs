@@ -362,7 +362,9 @@ impl<'a> Search<'a> {
             }
         }
 
-        // Reverse futility pruning
+        // Reverse futility pruning:
+        // At lower depths, if the static evalution minus a large, depth-dependent margin is already
+        // better than beta, skip the search and return the static evaluation (minus that margin)
         if !is_pv
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
@@ -623,8 +625,7 @@ impl<'a> Search<'a> {
                 value
             };
 
-            let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
-            if best_case_score < delta_margin {
+            if (best_case_score.max(150) as i16) < alpha.saturating_sub(stand_pat) {
                 return stand_pat;
             }
         }
