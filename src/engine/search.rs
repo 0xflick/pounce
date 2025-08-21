@@ -551,11 +551,20 @@ impl<'a> Search<'a> {
         if self.position.in_check() {
             stand_pat = -eval::INFINITY;
         } else if let Some(entry) = tt_hit {
-            if entry.static_eval != eval::NO_VALUE {
-                stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
+            let eval = if entry.static_eval != eval::NO_VALUE {
+                denormalize_score(entry.static_eval, MAX_PLY)
             } else {
-                stand_pat = eval::score_nnue(&self.position, &self.accum);
-            }
+                eval::score_nnue(&self.position, &self.accum)
+            };
+
+            let denormalized_score = denormalize_score(entry.score, MAX_PLY);
+
+            stand_pat = match entry.score_type {
+                EntryType::Exact => entry.score,
+                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
+                _ => eval,
+            };
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
