@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
+use crate::chess::{Accumulator, Color, GameResult, Move, Position, Square};
 use crate::engine::eval::{self, nnue};
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
