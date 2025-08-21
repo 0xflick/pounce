@@ -547,15 +547,21 @@ impl<'a> Search<'a> {
         } else if let Some(Entry {
             score: tt_score,
             static_eval: tt_static_eval,
+            score_type,
             ..
         }) = &tt_hit
         {
-            if *tt_score != eval::NO_VALUE {
-                stand_pat = denormalize_score(*tt_score, MAX_PLY);
-            } else if *tt_static_eval != eval::NO_VALUE {
-                stand_pat = *tt_static_eval;
+            let static_eval = if *tt_static_eval != eval::NO_VALUE {
+                *tt_static_eval
             } else {
-                stand_pat = eval::score_nnue(&self.position, &self.accum);
+                eval::score_nnue(&self.position, &self.accum)
+            };
+
+            stand_pat = match score_type {
+                EntryType::Exact => *tt_score,
+                EntryType::LowerBound if *tt_score > static_eval => *tt_score,
+                EntryType::UpperBound if *tt_score < static_eval => *tt_score,
+                _ => static_eval,
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
