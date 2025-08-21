@@ -349,7 +349,18 @@ impl<'a> Search<'a> {
             depth -= 1;
         }
 
-        let original_alpha = alpha;
+        // Reverse futility pruning
+        if !is_pv
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
+            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+            && !self.position.in_check()
+            && depth < 7
+        {
+            let margin = 80 * depth - (60 * improving as i32);
+            if static_eval.saturating_sub(margin as i16) >= beta {
+                return beta;
+            }
+        }
 
         // Null move pruning
         if !is_pv
@@ -376,17 +387,7 @@ impl<'a> Search<'a> {
             }
         }
 
-        // Reverse futility pruning
-        if !is_pv
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
-            && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
-            && !self.position.in_check()
-            && depth < 7
-            && static_eval.saturating_sub(300 * depth as i16) >= beta
-        {
-            return static_eval - 300 * depth as i16;
-        }
-
+        let original_alpha = alpha;
         let mut best_move = Move::NONE;
         let mut best = -eval::INFINITY;
         let mut move_count = 0;
