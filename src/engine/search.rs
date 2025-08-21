@@ -544,13 +544,18 @@ impl<'a> Search<'a> {
 
         if self.position.in_check() {
             stand_pat = -eval::INFINITY;
-        } else if let Some(entry) = tt_hit {
-            if entry.score != eval::NO_VALUE {
-                stand_pat = denormalize_score(entry.score, MAX_PLY);
-            } else if entry.static_eval != eval::NO_VALUE {
-                stand_pat = entry.static_eval;
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            ..
+        }) = &tt_hit
+        {
+            if *tt_score != eval::NO_VALUE {
+                stand_pat = denormalize_score(*tt_score, MAX_PLY);
+            } else if *tt_static_eval != eval::NO_VALUE {
+                stand_pat = *tt_static_eval;
             } else {
-                stand_pat = eval::score_nnue(&self.position, &self.accum);
+                stand_pat = eval::NO_VALUE;
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
@@ -642,10 +647,16 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let static_eval = if stand_pat == -eval::INFINITY {
+                eval::NO_VALUE
+            } else {
+                stand_pat
+            };
+
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                stand_pat,
+                static_eval,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
