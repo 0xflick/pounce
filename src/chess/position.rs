@@ -219,7 +219,7 @@ impl Position {
 
     #[inline]
     pub fn in_check(&self) -> bool {
-        !self.checkers[self.side].none()
+        self.checkers[self.side].any()
     }
 
     #[inline]

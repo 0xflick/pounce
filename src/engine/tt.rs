@@ -33,6 +33,7 @@ pub enum EntryType {
 pub struct Entry {
     pub key: ZobristHash,
     pub depth: u8,
+    pub static_eval: i16,
     pub score: i16,
     pub score_type: EntryType,
     pub best_move: Move,
@@ -42,6 +43,7 @@ impl Entry {
     pub fn new(
         key: ZobristHash,
         depth: u8,
+        static_eval: i16,
         score: i16,
         score_type: EntryType,
         best_move: Move,
@@ -49,6 +51,7 @@ impl Entry {
         Self {
             key,
             depth,
+            static_eval,
             score,
             score_type,
             best_move,
@@ -60,10 +63,11 @@ impl Entry {
 struct TTData {
     key: ZobristHash,
     depth: u8,
+    static_eval: i16,
     score: i16,
     score_type: EntryType,
     best_move: Move,
-    age: u8, // Age of the entry for LRU purposes
+    age: u8,
 }
 
 impl TTData {
@@ -74,15 +78,19 @@ impl TTData {
     const SCORE_BITS: u32 = 16;
     const SCORE_MASK: u64 = (1 << Self::SCORE_BITS) - 1;
 
-    const DEPTH_SHIFT: u32 = 32;
+    const STATIC_EVAL_SHIFT: u32 = 32;
+    const STATIC_EVAL_BITS: u32 = 16;
+    const STATIC_EVAL_MASK: u64 = (1 << Self::STATIC_EVAL_BITS) - 1;
+
+    const DEPTH_SHIFT: u32 = 48;
     const DEPTH_BITS: u32 = 8;
     const DEPTH_MASK: u64 = (1 << Self::DEPTH_BITS) - 1;
 
-    const TYPE_SHIFT: u32 = 40;
+    const TYPE_SHIFT: u32 = 56;
     const TYPE_BITS: u32 = 2;
     const TYPE_MASK: u64 = (1 << Self::TYPE_BITS) - 1;
 
-    const AGE_SHIFT: u32 = 42;
+    const AGE_SHIFT: u32 = 58;
     const AGE_BITS: u32 = 6;
     const AGE_MASK: u64 = (1 << Self::AGE_BITS) - 1;
 
@@ -90,6 +98,7 @@ impl TTData {
         unsafe {
             ((std::mem::transmute::<Move, u16>(self.best_move) as u64) & Self::MOVE_MASK)
                 | (((self.score as u64) & Self::SCORE_MASK) << Self::SCORE_SHIFT)
+                | (((self.static_eval as u64) & Self::STATIC_EVAL_MASK) << Self::STATIC_EVAL_SHIFT)
                 | (((self.depth as u64) & Self::DEPTH_MASK) << Self::DEPTH_SHIFT)
                 | ((self.score_type as u8 as u64 & Self::TYPE_MASK) << Self::TYPE_SHIFT)
                 | ((self.age as u64 & Self::AGE_MASK) << Self::AGE_SHIFT)
@@ -99,17 +108,19 @@ impl TTData {
     fn unpack(mem_key: u64, data: u64) -> Self {
         unsafe {
             let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ data);
-            let best_move = std::mem::transmute::<u16, Move>((data & Self::MOVE_MASK) as u16);
-            let score = ((data >> Self::SCORE_SHIFT) & Self::SCORE_MASK) as i16;
             let depth = ((data >> Self::DEPTH_SHIFT) & Self::DEPTH_MASK) as u8;
+            let static_eval = ((data >> Self::STATIC_EVAL_SHIFT) & Self::STATIC_EVAL_MASK) as i16;
+            let score = ((data >> Self::SCORE_SHIFT) & Self::SCORE_MASK) as i16;
             let score_type = std::mem::transmute::<u8, EntryType>(
                 ((data >> Self::TYPE_SHIFT) & Self::TYPE_MASK) as u8,
             );
+            let best_move = std::mem::transmute::<u16, Move>((data & Self::MOVE_MASK) as u16);
             let age = ((data >> Self::AGE_SHIFT) & Self::AGE_MASK) as u8;
 
             Self {
                 key,
                 depth,
+                static_eval,
                 score,
                 score_type,
                 best_move,
@@ -186,6 +197,7 @@ impl Table {
             true => Some(Entry {
                 key: data.key,
                 depth: data.depth,
+                static_eval: data.static_eval,
                 score: data.score,
                 score_type: data.score_type,
                 best_move: data.best_move,
@@ -212,6 +224,7 @@ impl Table {
             let data = TTData {
                 key: entry.key,
                 depth: entry.depth,
+                static_eval: entry.static_eval,
                 score: entry.score,
                 score_type: entry.score_type,
                 best_move: entry.best_move,

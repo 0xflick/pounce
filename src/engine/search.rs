@@ -237,7 +237,7 @@ impl<'a> Search<'a> {
         &mut self,
         mut depth: i32,
         mut alpha: i16,
-        mut beta: i16,
+        beta: i16,
         ply: u8,
         is_pv: bool,
         is_root: bool,
@@ -248,9 +248,15 @@ impl<'a> Search<'a> {
         if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
             return eval::score_nnue(&self.position, &self.accum);
         }
-        self.stats.nodes += 1;
 
         self.stats.pv_length[ply as usize] = ply;
+
+        if depth <= 0 {
+            return self.quiescence_search(alpha, beta, is_pv);
+        }
+
+        // Go to quiescence search if depth is 0
+        self.stats.nodes += 1;
 
         debug_assert!(alpha < beta);
         debug_assert_eq!(self.position.key, self.position.zobrist_hash());
@@ -269,51 +275,59 @@ impl<'a> Search<'a> {
             }
         }
 
-        if self.position.in_check() {
-            depth += 1;
-            if depth >= MAX_DEPTH as i32 {
-                return eval::score_nnue(&self.position, &self.accum);
-            }
-        }
-
-        // Go to quiescence search if depth is 0
-        if depth <= 0 {
-            return self.quiescence_search(alpha, beta, is_pv);
-        }
-
-        // Probe the transposition table
-        let mut tt_eval = None;
-        let mut tt_move = Move::NONE;
-        if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
-            let score = denormalize_score(entry.score, ply);
-            tt_eval = Some(score);
-            if entry.depth as i32 >= depth
-                && !is_pv
-                && self.current_move[ply as usize - 1] != Move::NULL
+        let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
+            if !is_pv
                 && self.position.halfmove_clock < 80
+                && hit.depth as i32 >= depth
+                && (hit.score_type == EntryType::Exact
+                    || (hit.score_type == EntryType::LowerBound
+                        && denormalize_score(hit.score, ply) >= beta)
+                    || (hit.score_type == EntryType::UpperBound
+                        && denormalize_score(hit.score, ply) <= alpha))
             {
-                match entry.score_type {
-                    // Exact score
-                    EntryType::Exact => return score,
-                    // Lower bound
-                    EntryType::LowerBound => alpha = alpha.max(score),
-                    // Upper bound
-                    EntryType::UpperBound => beta = beta.min(score),
-                    EntryType::None => {}
-                }
-                if alpha >= beta {
-                    return score;
-                }
+                return denormalize_score(hit.score, ply);
             }
+            Some(hit)
+        } else {
+            None
+        };
+
+        let static_eval;
+        if self.position.in_check() {
+            static_eval = eval::NO_VALUE;
+        } else if let Some(Entry {
+            score: tt_score,
+            static_eval: tt_static_eval,
+            ..
+        }) = &tt_hit
+        {
+            if *tt_score != eval::NO_VALUE {
+                static_eval = denormalize_score(*tt_score, ply);
+            } else if *tt_static_eval != eval::NO_VALUE {
+                static_eval = *tt_static_eval;
+            } else {
+                static_eval = eval::NO_VALUE;
+            }
+        } else {
+            static_eval = eval::score_nnue(&self.position, &self.accum);
+
+            self.tt.store(Entry::new(
+                self.position.key,
+                depth as u8,
+                static_eval,
+                static_eval,
+                EntryType::Exact,
+                Move::NONE,
+            ));
         }
 
-        let static_eval = tt_eval.unwrap_or(eval::score_nnue(&self.position, &self.accum));
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        // internal iterative reduction
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
+
+        let original_alpha = alpha;
 
         // Null move pruning
         if !is_pv
@@ -377,6 +391,12 @@ impl<'a> Search<'a> {
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
+            // TODO: extensions
+            let mut new_depth = depth;
+            if self.position.in_check() {
+                new_depth += 1;
+            }
+
             self.position.make_move_with(mv, &mut self.accum);
             self.current_move[ply as usize] = mv;
 
@@ -405,11 +425,11 @@ impl<'a> Search<'a> {
             };
 
             if needs_full_search {
-                score = -self.search(depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
+                score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
 
             if is_pv && (move_count == 1 || score > alpha && score < beta) {
-                score = -self.search(depth - 1, -beta, -alpha, ply + 1, true, false);
+                score = -self.search(new_depth - 1, -beta, -alpha, ply + 1, true, false);
             }
 
             self.position.unmake_move_with(mv, &mut self.accum);
@@ -465,7 +485,7 @@ impl<'a> Search<'a> {
 
         let entry_type = if best >= beta {
             EntryType::LowerBound
-        } else if is_pv && best_move != Move::NULL {
+        } else if best > original_alpha {
             EntryType::Exact
         } else {
             EntryType::UpperBound
@@ -475,6 +495,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
+                static_eval,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
@@ -502,71 +523,81 @@ impl<'a> Search<'a> {
             return eval::DRAW;
         }
 
-        // Probe tt
-        let mut tt_move = Move::NONE;
-        if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
-            if !is_pv {
-                let score = denormalize_score(entry.score, MAX_PLY);
-                match entry.score_type {
-                    EntryType::Exact => return score,
-                    EntryType::LowerBound => {
-                        if score >= beta {
-                            return score;
-                        }
-                    }
-                    EntryType::UpperBound => {
-                        if score <= alpha {
-                            return score;
-                        }
-                    }
-                    _ => {}
-                }
+        let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
+            if !is_pv
+                && self.position.halfmove_clock < 80
+                && (hit.score_type == EntryType::Exact
+                    || (hit.score_type == EntryType::LowerBound
+                        && denormalize_score(hit.score, MAX_PLY) >= beta)
+                    || (hit.score_type == EntryType::UpperBound
+                        && denormalize_score(hit.score, MAX_PLY) <= alpha))
+            {
+                return denormalize_score(hit.score, MAX_PLY);
             }
+            Some(hit)
+        } else {
+            None
+        };
+
+        // Probe tt
+        let stand_pat;
+
+        if self.position.in_check() {
+            stand_pat = -eval::INFINITY;
+        } else if let Some(entry) = tt_hit {
+            if entry.static_eval != eval::NO_VALUE {
+                stand_pat = denormalize_score(entry.static_eval, MAX_PLY);
+            } else {
+                stand_pat = eval::score_nnue(&self.position, &self.accum);
+            }
+        } else {
+            stand_pat = eval::score_nnue(&self.position, &self.accum);
         }
 
-        let stand_pat = eval::score_nnue(&self.position, &self.accum);
         if stand_pat >= beta {
             return stand_pat;
         }
 
-        if stand_pat > alpha {
-            alpha = stand_pat;
-        }
+        let original_alpha = alpha;
+        alpha = alpha.max(stand_pat);
 
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        let best_case_score = {
-            let mut value = eval::PIECE_VALUES[Role::Pawn as usize];
+        if !self.position.in_check() {
+            let best_case_score = {
+                let mut value = eval::PIECE_VALUES[Role::Pawn as usize];
 
-            for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
-                if self
-                    .position
-                    .by_color_role(self.position.side.opponent(), Role::new(role as u8))
-                    .any()
-                {
-                    value = eval::PIECE_VALUES[role];
-                    break;
+                for role in ((Role::Pawn as usize)..=(Role::Queen as usize)).rev() {
+                    if self
+                        .position
+                        .by_color_role(self.position.side.opponent(), Role::new(role as u8))
+                        .any()
+                    {
+                        value = eval::PIECE_VALUES[role];
+                        break;
+                    }
                 }
+
+                // check for promotions
+                if (self.position.by_color_role(self.position.side, Role::Pawn)
+                    & self.position.side.opponent().home_rank())
+                .any()
+                {
+                    value += eval::PIECE_VALUES[Role::Queen as usize]
+                        - eval::PIECE_VALUES[Role::Pawn as usize];
+                }
+
+                value
+            };
+
+            let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
+            if best_case_score < delta_margin {
+                return stand_pat;
             }
-
-            // check for promotions
-            if (self.position.by_color_role(self.position.side, Role::Pawn)
-                & self.position.side.opponent().home_rank())
-            .any()
-            {
-                value += eval::PIECE_VALUES[Role::Queen as usize]
-                    - eval::PIECE_VALUES[Role::Pawn as usize];
-            }
-
-            value
-        };
-
-        let delta_margin = alpha.saturating_sub(stand_pat).saturating_sub(425) as i32;
-        if best_case_score < delta_margin {
-            return stand_pat;
         }
+
+        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
@@ -587,8 +618,14 @@ impl<'a> Search<'a> {
             }
         }
 
+        if best == -eval::INFINITY && self.position.in_check() {
+            return -eval::MATE + MAX_PLY as i16;
+        }
+
         let entry_type = if best >= beta {
             EntryType::LowerBound
+        } else if best > original_alpha {
+            EntryType::Exact
         } else {
             EntryType::UpperBound
         };
@@ -597,6 +634,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
+                stand_pat,
                 normalize_score(best, MAX_PLY),
                 entry_type,
                 best_move,
@@ -642,9 +680,9 @@ impl<'a> Search<'a> {
 }
 
 fn normalize_score(score: i16, ply: u8) -> i16 {
-    if score > eval::MATE_IN_PLY {
+    if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score + ply as i16
-    } else if score < -eval::MATE_IN_PLY {
+    } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {
         score - ply as i16
     } else {
         score
@@ -652,9 +690,9 @@ fn normalize_score(score: i16, ply: u8) -> i16 {
 }
 
 fn denormalize_score(score: i16, ply: u8) -> i16 {
-    if score >= eval::MATE_IN_PLY {
+    if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score - ply as i16
-    } else if score <= -eval::MATE_IN_PLY {
+    } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {
         score + ply as i16
     } else {
         score
