@@ -113,6 +113,7 @@ pub struct Search<'a> {
     current_move: [Move; MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
     killers: [[Move; 2]; MAX_PLY as usize],
+    eval: [i16; MAX_PLY as usize],
     tt: &'a Table,
 
     tm: SearchCop,
@@ -141,6 +142,7 @@ impl<'a> Search<'a> {
             current_move: [Move::NONE; MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
+            eval: [eval::NO_VALUE; MAX_PLY as usize],
             tm: SearchCop::new(limits, side),
             position,
             silent,
@@ -328,6 +330,18 @@ impl<'a> Search<'a> {
                 Move::NONE,
             ));
         }
+
+        self.eval[ply as usize] = static_eval;
+
+        let improving = if self.position.in_check() {
+            false
+        } else if ply > 1 && self.eval[ply as usize - 2] != eval::NO_VALUE {
+            self.eval[ply as usize] > self.eval[ply as usize - 2]
+        } else if ply > 3 && self.eval[ply as usize - 4] != eval::NO_VALUE {
+            self.eval[ply as usize] > self.eval[ply as usize - 4]
+        } else {
+            false
+        };
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
