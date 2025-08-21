@@ -560,7 +560,7 @@ impl<'a> Search<'a> {
             let denormalized_score = denormalize_score(entry.score, MAX_PLY);
 
             stand_pat = match entry.score_type {
-                EntryType::Exact => entry.score,
+                EntryType::Exact => denormalized_score,
                 EntryType::LowerBound if denormalized_score > eval => denormalized_score,
                 EntryType::UpperBound if denormalized_score < eval => denormalized_score,
                 _ => eval,
