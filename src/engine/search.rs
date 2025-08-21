@@ -353,8 +353,8 @@ impl<'a> Search<'a> {
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
             && !self.position.in_check()
-            && depth < 3
-            && alpha.saturating_sub(static_eval) > (100 + depth as i16 * 150)
+            && depth <= 3
+            && alpha.saturating_sub(static_eval) > (200 + depth as i16 * 230)
         {
             return alpha;
         }
