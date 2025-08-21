@@ -306,7 +306,7 @@ impl<'a> Search<'a> {
             } else if *tt_static_eval != eval::NO_VALUE {
                 static_eval = *tt_static_eval;
             } else {
-                static_eval = eval::NO_VALUE;
+                static_eval = eval::score_nnue(&self.position, &self.accum);
             }
         } else {
             static_eval = eval::score_nnue(&self.position, &self.accum);
@@ -555,7 +555,7 @@ impl<'a> Search<'a> {
             } else if *tt_static_eval != eval::NO_VALUE {
                 stand_pat = *tt_static_eval;
             } else {
-                stand_pat = eval::NO_VALUE;
+                stand_pat = eval::score_nnue(&self.position, &self.accum);
             }
         } else {
             stand_pat = eval::score_nnue(&self.position, &self.accum);
