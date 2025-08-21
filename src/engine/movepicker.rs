@@ -122,15 +122,15 @@ impl MovePicker {
                     match self.scored_moves[i].m.promotion() {
                         Some(role) if (role == Role::Queen || role == Role::Knight) => {
                             let bonus = if role == Role::Queen {
-                                QUEEN_PROMO_BONUS
+                                QUEEN_PROMO_BONUS as i32
                             } else {
-                                KNIGHT_PROMO_BONUS
+                                KNIGHT_PROMO_BONUS as i32
                             };
 
-                            if self.scored_moves[i].m.is_capture(position) {
-                                GOOD_TACTICAL_SCORE as i32 + bonus as i32
+                            if see::see(position, self.scored_moves[i].m, self.margin) {
+                                bonus + GOOD_TACTICAL_SCORE as i32
                             } else {
-                                bonus as i32
+                                bonus + BAD_TACTICAL_SCORE as i32
                             }
                         }
                         _ => BAD_TACTICAL_SCORE as i32,
