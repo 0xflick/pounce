@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::{Accumulator, Color, GameResult, Move, Position, Square};
+use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
 use crate::engine::eval::{self, nnue};
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
@@ -110,8 +110,9 @@ pub struct Search<'a> {
     position: Position,
     accum: eval::nnue::NNUEAccumulator<'a, { eval::nnue::NNUE_HIDDEN_SIZE }>,
 
-    current_move: [Move; MAX_PLY as usize],
+    current_move: [(Move, Option<Role>); MAX_PLY as usize],
     history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    continuation: [[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
     killers: [[Move; 2]; MAX_PLY as usize],
     eval: [i16; MAX_PLY as usize],
     tt: &'a Table,
@@ -139,8 +140,9 @@ impl<'a> Search<'a> {
         accum.reset(&position);
         Search {
             accum,
-            current_move: [Move::NONE; MAX_PLY as usize],
+            current_move: [(Move::NONE, None); MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
+            continuation: [[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
             eval: [eval::NO_VALUE; MAX_PLY as usize],
             tm: SearchCop::new(limits, side),
@@ -368,16 +370,18 @@ impl<'a> Search<'a> {
             && self.position.non_pawn_material(self.position.side)
             && !self.position.in_check()
             && static_eval >= beta
-            && (ply < 1 || self.current_move[(ply - 1) as usize] != Move::NULL)
+            && (ply < 1 || self.current_move[(ply - 1) as usize].0 != Move::NULL)
         {
             self.position.make_null_move_with(&mut self.accum);
-            self.current_move[ply as usize] = Move::NULL;
+            let prev_move = self.current_move[ply as usize];
+
+            self.current_move[ply as usize] = (Move::NULL, None);
 
             let reduced_depth = depth - (3 + (depth / 5));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move_with(&mut self.accum);
-            self.current_move[ply as usize] = Move::NONE;
+            self.current_move[ply as usize] = prev_move;
 
             if null_score >= beta {
                 if null_score >= (eval::MATE_IN_PLY) {
@@ -395,7 +399,13 @@ impl<'a> Search<'a> {
 
         let mut move_picker =
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
-        while let Some(mv) = move_picker.next(&self.position, &self.history) {
+        while let Some(mv) = move_picker.next(
+            &self.position,
+            &self.history,
+            &self.continuation,
+            ply,
+            &self.current_move,
+        ) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
 
@@ -435,8 +445,8 @@ impl<'a> Search<'a> {
                 new_depth += 1;
             }
 
+            self.current_move[ply as usize] = (mv, self.position.role_at(mv.from()));
             self.position.make_move_with(mv, &mut self.accum);
-            self.current_move[ply as usize] = mv;
 
             let mut score = -eval::INFINITY;
 
@@ -471,7 +481,7 @@ impl<'a> Search<'a> {
             }
 
             self.position.unmake_move_with(mv, &mut self.accum);
-            self.current_move[ply as usize] = Move::NONE;
+            self.current_move[ply as usize] = (Move::NONE, None);
 
             // store effort at root
             if is_root {
@@ -497,6 +507,7 @@ impl<'a> Search<'a> {
                             self.update_killers(mv, ply);
                             let bonus = 2000.min(350 * depth as i16 - 350);
                             self.update_history(mv, bonus);
+                            self.update_continuation(mv, bonus, ply);
 
                             for quiet in quiets.iter() {
                                 self.update_history(*quiet, -bonus / 2);
@@ -630,7 +641,13 @@ impl<'a> Search<'a> {
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
-        while let Some(mv) = move_picker.next(&self.position, &self.history) {
+        while let Some(mv) = move_picker.next(
+            &self.position,
+            &self.history,
+            &self.continuation,
+            MAX_PLY,
+            &self.current_move,
+        ) {
             self.position.make_move_with(mv, &mut self.accum);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move_with(mv, &mut self.accum);
@@ -682,6 +699,24 @@ impl<'a> Search<'a> {
         self.history[self.position.side][mv.from()][mv.to()] += bonus
             - ((self.history[self.position.side][mv.from()][mv.to()] as i32 * bonus.abs() as i32)
                 / 16384) as i16;
+    }
+
+    fn update_continuation(&mut self, mv: Move, bonus: i16, ply: u8) {
+        if ply < 1 {
+            return;
+        }
+        match self.current_move[ply as usize - 1] {
+            (prev_mv, Some(role)) if prev_mv != Move::NULL && prev_mv != Move::NONE => {
+                let current_role = self.position.role_at(mv.from()).unwrap();
+                self.continuation[self.position.side][role][prev_mv.to()][current_role][mv.to()] +=
+                    bonus
+                        - ((self.continuation[self.position.side][role][prev_mv.to()][current_role]
+                            [mv.to()] as i32
+                            * bonus.abs() as i32)
+                            / 16384) as i16;
+            }
+            _ => {}
+        }
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
