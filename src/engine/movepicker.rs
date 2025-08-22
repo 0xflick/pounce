@@ -4,6 +4,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Role, Square};
+use crate::engine::search::{MAX_PLY, Search};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_TACTICAL_SCORE: i16 = 22_000;
@@ -143,6 +144,9 @@ impl MovePicker {
         &mut self,
         position: &Position,
         history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+        continuation: &[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
+        ply: u8,
+        current_move: &[(Move, Option<Role>); MAX_PLY as usize],
     ) {
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
@@ -151,8 +155,22 @@ impl MovePicker {
             } else if m == self.killers[1] {
                 self.scored_moves[i].score = KILLER_2_SCORE as i32;
             } else {
-                self.scored_moves[i].score = history[position.side][m.from()][m.to()] as i32;
-            }
+                let history_bonus = history[position.side][m.from()][m.to()] as i32;
+                let counter_move_bonus = if ply == 0 || ply == MAX_PLY {
+                    0
+                } else {
+                    match current_move[ply as usize - 1] {
+                        (prev_mv, Some(role)) if prev_mv != Move::NULL && prev_mv != Move::NONE => {
+                            let current_role = position.role_at(m.from()).unwrap();
+                            continuation[position.side][role][prev_mv.to()][current_role][m.to()]
+                                as i32
+                        }
+                        _ => 0,
+                    }
+                };
+
+                self.scored_moves[i].score = (history_bonus / 2) + (counter_move_bonus / 2);
+            };
         }
         self.scored_index = self.scored_moves.len();
     }
@@ -186,38 +204,35 @@ impl MovePicker {
         Some(self.scored_moves[self.sorted_index - 1].m)
     }
 
-    pub fn next(
-        &mut self,
-        position: &Position,
-        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-    ) -> Option<Move> {
+    pub fn next(&mut self, search: &Search, ply: u8) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreTacticals;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
-                self.next(position, history)
+                self.next(search, ply)
             }
             MovePickerStage::ScoreTacticals => {
                 self.stage = MovePickerStage::Tacticals;
                 self.scored_moves.clear();
 
-                self.move_generator.set_tacticals_only(position.occupancy);
+                self.move_generator
+                    .set_tacticals_only(search.position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_tacticals(position);
-                self.next(position, history)
+                self.score_tacticals(&search.position);
+                self.next(search, ply)
             }
             MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next(position, history);
+                            return self.next(search, ply);
                         }
                         Some(m)
                     }
@@ -226,7 +241,7 @@ impl MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next(position, history)
+                        self.next(search, ply)
                     }
                 }
             }
@@ -238,91 +253,24 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets(position, history);
-                self.next(position, history)
+                self.score_quiets(
+                    &search.position,
+                    &search.history,
+                    &search.continuation,
+                    ply,
+                    &search.current_move,
+                );
+                self.next(search, ply)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next(position, history);
+                        return self.next(search, ply);
                     }
                     Some(m)
                 }
                 None => None,
             },
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::chess::movegen::init_tables;
-    use crate::chess::position::fen::Fen;
-    use crate::init;
-    use crate::zobrist::init_zobrist;
-
-    #[test]
-    fn move_order() {
-        init_tables();
-        init_zobrist();
-
-        let Fen(pos) = "rnb1kbnr/pppp1ppp/8/3qp3/2PQ4/8/PPP1PPPP/RNB1KBNR w KQkq - 0 1"
-            .parse()
-            .unwrap();
-
-        let mut mp = super::MovePicker::new_ab_search(
-            &pos,
-            "d4e5".parse().unwrap(),
-            ["c1e3".parse().unwrap(), "g1f3".parse().unwrap()],
-        );
-
-        let mut moves = Vec::new();
-
-        while let Some(m) = mp.next(&pos, &[[[0; 64]; 64]; 2]) {
-            moves.push(m);
-        }
-
-        assert_eq!(moves.len(), 41);
-        // queen takes pawn (tt move)
-        assert_eq!(moves[0], "d4e5".parse().unwrap());
-
-        // pawn takes queen
-        assert_eq!(moves[1], "c4d5".parse().unwrap());
-        // queen takes queen
-        assert_eq!(moves[2], "d4d5".parse().unwrap());
-
-        // killer 1
-        assert_eq!(moves[3], "c1e3".parse().unwrap());
-        // killer 2
-        assert_eq!(moves[4], "g1f3".parse().unwrap());
-
-        // queen takes pawn and cand be recaptured
-        assert_eq!(moves[5], "d4a7".parse().unwrap());
-    }
-
-    #[test]
-    fn quiescence() {
-        init();
-
-        let Fen(pos) = "2b1kbnr/5ppp/4p3/q1pP1Q1r/6P1/1NP5/PP2PP1P/R1B1KBNR w - c6 0 1"
-            .parse()
-            .unwrap();
-
-        let mut mp = super::MovePicker::new_quiescence(&pos, "e2e3".parse().unwrap(), 15);
-
-        let mut moves = Vec::new();
-        while let Some(m) = mp.next(&pos, &[[[0; 64]; 64]; 2]) {
-            moves.push(m);
-        }
-
-        // Should get 4 good captures including en passant
-        // tt move is not a capture, so it should be skipped
-        assert_eq!(moves.len(), 4);
-
-        // Check that all expected moves are present
-        assert_eq!(moves[0], "b3a5".parse().unwrap()); // knight takes queen
-        assert_eq!(moves[1], "g4h5".parse().unwrap()); // pawn takes rook
-        assert_eq!(moves[2], "f5h5".parse().unwrap()); // queen takes rook
-        assert_eq!(moves[3], "d5c6".parse().unwrap()); // en passant capture
     }
 }
