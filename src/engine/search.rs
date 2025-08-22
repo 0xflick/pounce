@@ -411,6 +411,21 @@ impl<'a> Search<'a> {
                 continue;
             }
 
+            // Futility pruning: skip moves that have no chance of raising alpha
+            if !is_pv
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+                && !self.position.in_check()
+                && depth <= 5
+                && move_count > 1
+                && mv.is_quiet(&self.position)
+            {
+                let margin = 100 + depth * 100 + 100 * improving as i32;
+                if static_eval + margin as i16 <= alpha {
+                    continue;
+                }
+            }
+
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
