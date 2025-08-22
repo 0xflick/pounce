@@ -345,8 +345,6 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        // Simple version of internal iterative deepening. We lower depth when we don't get a tt
-        // move
         if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
         }
@@ -418,15 +416,14 @@ impl<'a> Search<'a> {
                 && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
                 && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
                 && !self.position.in_check()
-                && depth <= 3
+                && depth <= 5
+                && move_count > 1
                 && mv.is_quiet(&self.position)
-                && best_move != Move::NONE
-                && mv != tt_move
-                && mv != self.killers[ply as usize][0]
-                && mv != self.killers[ply as usize][1]
-                && alpha.saturating_sub(static_eval) > (120 + depth as i16 * 170)
             {
-                continue;
+                let margin = 100 + depth * 100 + 100 * improving as i32;
+                if static_eval + margin as i16 <= alpha {
+                    continue;
+                }
             }
 
             // store node count for effort calculation
