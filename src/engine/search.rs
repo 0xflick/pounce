@@ -373,7 +373,7 @@ impl<'a> Search<'a> {
             self.position.make_null_move_with(&mut self.accum);
             self.current_move[ply as usize] = Move::NULL;
 
-            let reduced_depth = depth - (4 + (depth / 4));
+            let reduced_depth = depth - (3 + (depth / 5));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move_with(&mut self.accum);
