@@ -112,7 +112,8 @@ pub struct Search<'a> {
 
     pub current_move: [(Move, Option<Role>); MAX_PLY as usize],
     pub history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-    pub continuation: Box<[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]>,
+    pub continuation:
+        Box<[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]>,
     killers: [[Move; 2]; MAX_PLY as usize],
     eval: [i16; MAX_PLY as usize],
     tt: &'a Table,
@@ -142,7 +143,9 @@ impl<'a> Search<'a> {
             accum,
             current_move: [(Move::NONE, None); MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
-            continuation: Box::new([[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]),
+            continuation: Box::new(
+                [[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
+            ),
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
             eval: [eval::NO_VALUE; MAX_PLY as usize],
             tm: SearchCop::new(limits, side),

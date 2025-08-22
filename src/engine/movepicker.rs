@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Role, Square};
-use crate::engine::search::{Search, MAX_PLY};
+use crate::engine::search::{MAX_PLY, Search};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_TACTICAL_SCORE: i16 = 22_000;
