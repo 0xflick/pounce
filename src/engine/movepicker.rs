@@ -169,7 +169,7 @@ impl MovePicker {
                     }
                 };
 
-                self.scored_moves[i].score = (history_bonus / 2) + (counter_move_bonus / 2);
+                self.scored_moves[i].score = history_bonus / 4 + counter_move_bonus / 2;
             };
         }
         self.scored_index = self.scored_moves.len();
