@@ -511,6 +511,7 @@ impl<'a> Search<'a> {
 
                             for quiet in quiets.iter() {
                                 self.update_history(*quiet, -bonus / 2);
+                                self.update_continuation(*quiet, -bonus / 2, ply);
                             }
                         }
 

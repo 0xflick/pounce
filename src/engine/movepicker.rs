@@ -238,7 +238,7 @@ impl MovePicker {
                 match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
                     Some(m) => {
                         if m == self.tt_move {
-                            self.next(position, history, continuation, ply, current_move);
+                            return self.next(position, history, continuation, ply, current_move);
                         }
                         Some(m)
                     }
@@ -265,7 +265,7 @@ impl MovePicker {
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        self.next(position, history, continuation, ply, current_move);
+                        return self.next(position, history, continuation, ply, current_move);
                     }
                     Some(m)
                 }
