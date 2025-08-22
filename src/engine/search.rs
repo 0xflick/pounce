@@ -404,11 +404,11 @@ impl<'a> Search<'a> {
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
         while let Some(mv) = move_picker.next(self, ply) {
             move_count += 1;
-            let capture = mv.is_capture(&self.position);
+            let quiet = mv.is_quiet(&self.position);
 
             // Late Move Pruning: skip late quiet moves at shallow depths
             if !is_pv
-                && !capture
+                && quiet
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
@@ -420,12 +420,12 @@ impl<'a> Search<'a> {
 
             // Futility pruning: skip moves that have no chance of raising alpha
             if !is_pv
+                && quiet
                 && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
                 && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
                 && !self.position.in_check()
                 && depth <= 5
                 && move_count > 1
-                && mv.is_quiet(&self.position)
             {
                 let margin = 100 + depth * 100 + 100 * improving as i32;
                 if static_eval + margin as i16 <= alpha {
@@ -457,8 +457,8 @@ impl<'a> Search<'a> {
                     rdepth += 1;
                 }
 
-                // reduce more in non-capture moves
-                if move_count > 15 && !capture {
+                // reduce quiet moves more
+                if move_count > 15 && quiet {
                     rdepth -= 1;
                 }
 
@@ -500,7 +500,7 @@ impl<'a> Search<'a> {
                 if score > alpha {
                     alpha = score;
                     if score >= beta {
-                        if !capture {
+                        if quiet {
                             self.update_killers(mv, ply);
                             let bonus = 2000.min(350 * depth as i16 - 350);
                             self.update_history(mv, bonus);
@@ -517,7 +517,7 @@ impl<'a> Search<'a> {
                 }
             }
 
-            if !capture && quiets.len() < quiets.capacity() {
+            if quiet && quiets.len() < quiets.capacity() {
                 quiets.push(mv);
             }
         }
@@ -637,7 +637,7 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        // Only consider captures that are enough to raise alpha + margin
+        // Only consider tacticals that are enough to raise alpha + margin
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(250).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(self, MAX_PLY) {
