@@ -4,6 +4,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Role, Square};
+use crate::engine::history::History;
 use crate::engine::search::{MAX_PLY, Search};
 
 const TT_MOVE_SCORE: i16 = 30_000;
@@ -143,7 +144,7 @@ impl MovePicker {
     fn score_quiets(
         &mut self,
         position: &Position,
-        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+        history: &History,
         continuation: &[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
         ply: u8,
         current_move: &[(Move, Option<Role>); MAX_PLY as usize],
@@ -155,7 +156,7 @@ impl MovePicker {
             } else if m == self.killers[1] {
                 self.scored_moves[i].score = KILLER_2_SCORE as i32;
             } else {
-                let history_bonus = history[position.side][m.from()][m.to()] as i32;
+                let history_bonus = history.score(position.side, m.from(), m.to());
                 let counter_move_bonus = if ply == 0 || ply == MAX_PLY {
                     0
                 } else {

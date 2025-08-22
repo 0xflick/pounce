@@ -5,6 +5,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
 use crate::engine::eval::{self, nnue};
+use crate::engine::history::History;
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
 use crate::engine::time_management::SearchCop;
@@ -111,7 +112,7 @@ pub struct Search<'a> {
     accum: eval::nnue::NNUEAccumulator<'a, { eval::nnue::NNUE_HIDDEN_SIZE }>,
 
     pub current_move: [(Move, Option<Role>); MAX_PLY as usize],
-    pub history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    pub history: History,
     pub continuation:
         Box<[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]>,
     killers: [[Move; 2]; MAX_PLY as usize],
@@ -142,7 +143,7 @@ impl<'a> Search<'a> {
         Search {
             accum,
             current_move: [(Move::NONE, None); MAX_PLY as usize],
-            history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
+            history: History::default(),
             continuation: Box::new(
                 [[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
             ),
@@ -503,11 +504,21 @@ impl<'a> Search<'a> {
                         if !capture {
                             self.update_killers(mv, ply);
                             let bonus = 2000.min(350 * depth as i16 - 350);
-                            self.update_history(mv, bonus);
+                            self.history.update(
+                                self.position.side,
+                                mv.from(),
+                                mv.to(),
+                                bonus as i32,
+                            );
                             self.update_continuation(mv, bonus, ply);
 
                             for quiet in quiets.iter() {
-                                self.update_history(*quiet, -bonus / 2);
+                                self.history.update(
+                                    self.position.side,
+                                    quiet.from(),
+                                    quiet.to(),
+                                    bonus as i32,
+                                );
                                 self.update_continuation(*quiet, -bonus / 2, ply);
                             }
                         }
@@ -685,12 +696,6 @@ impl<'a> Search<'a> {
     pub fn update_killers(&mut self, mv: Move, ply: u8) {
         self.killers[ply as usize][1] = self.killers[ply as usize][0];
         self.killers[ply as usize][0] = mv;
-    }
-
-    fn update_history(&mut self, mv: Move, bonus: i16) {
-        self.history[self.position.side][mv.from()][mv.to()] += bonus
-            - ((self.history[self.position.side][mv.from()][mv.to()] as i32 * bonus.abs() as i32)
-                / 16384) as i16;
     }
 
     fn update_continuation(&mut self, mv: Move, bonus: i16, ply: u8) {
