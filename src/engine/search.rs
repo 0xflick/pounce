@@ -107,12 +107,12 @@ impl Stats {
 pub struct Search<'a> {
     pub stats: Stats,
 
-    position: Position,
+    pub position: Position,
     accum: eval::nnue::NNUEAccumulator<'a, { eval::nnue::NNUE_HIDDEN_SIZE }>,
 
-    current_move: [(Move, Option<Role>); MAX_PLY as usize],
-    history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-    continuation: [[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
+    pub current_move: [(Move, Option<Role>); MAX_PLY as usize],
+    pub history: [[[i16; Square::NUM]; Square::NUM]; Color::NUM],
+    pub continuation: Box<[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]>,
     killers: [[Move; 2]; MAX_PLY as usize],
     eval: [i16; MAX_PLY as usize],
     tt: &'a Table,
@@ -142,7 +142,7 @@ impl<'a> Search<'a> {
             accum,
             current_move: [(Move::NONE, None); MAX_PLY as usize],
             history: [[[0; Square::NUM]; Square::NUM]; Color::NUM],
-            continuation: [[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
+            continuation: Box::new([[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]),
             killers: [[Move::NONE; 2]; MAX_PLY as usize],
             eval: [eval::NO_VALUE; MAX_PLY as usize],
             tm: SearchCop::new(limits, side),
@@ -399,13 +399,7 @@ impl<'a> Search<'a> {
 
         let mut move_picker =
             MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
-        while let Some(mv) = move_picker.next(
-            &self.position,
-            &self.history,
-            &self.continuation,
-            ply,
-            &self.current_move,
-        ) {
+        while let Some(mv) = move_picker.next(self, ply) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
 
@@ -642,13 +636,7 @@ impl<'a> Search<'a> {
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
-        while let Some(mv) = move_picker.next(
-            &self.position,
-            &self.history,
-            &self.continuation,
-            MAX_PLY,
-            &self.current_move,
-        ) {
+        while let Some(mv) = move_picker.next(self, MAX_PLY) {
             self.position.make_move_with(mv, &mut self.accum);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move_with(mv, &mut self.accum);

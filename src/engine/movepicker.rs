@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Color, Move, Position, Role, Square};
-use crate::engine::search::MAX_PLY;
+use crate::engine::search::{Search, MAX_PLY};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_TACTICAL_SCORE: i16 = 22_000;
@@ -204,41 +204,35 @@ impl MovePicker {
         Some(self.scored_moves[self.sorted_index - 1].m)
     }
 
-    pub fn next(
-        &mut self,
-        position: &Position,
-        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-        continuation: &[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
-        ply: u8,
-        current_move: &[(Move, Option<Role>); MAX_PLY as usize],
-    ) -> Option<Move> {
+    pub fn next(&mut self, search: &Search, ply: u8) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreTacticals;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
-                self.next(position, history, continuation, ply, current_move)
+                self.next(search, ply)
             }
             MovePickerStage::ScoreTacticals => {
                 self.stage = MovePickerStage::Tacticals;
                 self.scored_moves.clear();
 
-                self.move_generator.set_tacticals_only(position.occupancy);
+                self.move_generator
+                    .set_tacticals_only(search.position.occupancy);
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_tacticals(position);
-                self.next(position, history, continuation, ply, current_move)
+                self.score_tacticals(&search.position);
+                self.next(search, ply)
             }
             MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next(position, history, continuation, ply, current_move);
+                            return self.next(search, ply);
                         }
                         Some(m)
                     }
@@ -247,7 +241,7 @@ impl MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next(position, history, continuation, ply, current_move)
+                        self.next(search, ply)
                     }
                 }
             }
@@ -259,13 +253,19 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets(position, history, continuation, ply, current_move);
-                self.next(position, history, continuation, ply, current_move)
+                self.score_quiets(
+                    &search.position,
+                    &search.history,
+                    &search.continuation,
+                    ply,
+                    &search.current_move,
+                );
+                self.next(search, ply)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next(position, history, continuation, ply, current_move);
+                        return self.next(search, ply);
                     }
                     Some(m)
                 }
