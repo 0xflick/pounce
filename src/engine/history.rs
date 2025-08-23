@@ -4,7 +4,7 @@ use crate::chess::{Color, Move, Position, Role, Square};
 use crate::engine::movepicker::{KILLER_1_SCORE, KILLER_2_SCORE};
 use crate::engine::search::{Frame, MAX_PLY, Stack};
 
-pub const HISTORY_MAX: i32 = i16::MAX as i32;
+pub const HISTORY_MAX: i32 = 16384;
 
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
@@ -58,13 +58,14 @@ impl HistoryTables {
     }
 
     pub fn score(&self, position: &Position, stack: &Stack, ply: usize, mv: Move) -> i32 {
-        let mut value = 0;
-        if mv == self.killers[ply][0] {
-            return KILLER_1_SCORE;
-        } else if mv == self.killers[ply][1] {
-            return KILLER_2_SCORE;
+        if ply != MAX_PLY {
+            if mv == self.killers[ply][0] {
+                return KILLER_1_SCORE;
+            } else if mv == self.killers[ply][1] {
+                return KILLER_2_SCORE;
+            }
         }
-
+        let mut value = 0;
         let hist_idx = self.history_index(position, mv);
         value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32 / 2;
 

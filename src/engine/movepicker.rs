@@ -8,11 +8,11 @@ use crate::engine::history::{HISTORY_MAX, HistoryTables};
 use crate::engine::search::{MAX_PLY, Search, Stack};
 
 const TT_MOVE_SCORE: i32 = 30_000;
-const GOOD_TACTICAL_SCORE: i32 = 22_000 + HISTORY_MAX * 2;
-const QUEEN_PROMO_BONUS: i32 = 21_002 + HISTORY_MAX * 2;
-pub const KILLER_1_SCORE: i32 = 21_001 + HISTORY_MAX * 2;
-pub const KILLER_2_SCORE: i32 = 21_000 + HISTORY_MAX * 2;
-const BAD_TACTICAL_SCORE: i32 = 17_000 + HISTORY_MAX * 2;
+const GOOD_TACTICAL_SCORE: i32 = 22_000;
+const QUEEN_PROMO_BONUS: i32 = 21_002;
+pub const KILLER_1_SCORE: i32 = 21_001;
+pub const KILLER_2_SCORE: i32 = 21_000;
+const BAD_TACTICAL_SCORE: i32 = 17_000;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -141,9 +141,14 @@ impl MovePicker {
     }
 
     fn score_quiets(&mut self, history: &HistoryTables, position: &Position, stack: &Stack) {
+        let ply = if self.mode == MovePickerMode::QuiescenceCheck {
+            MAX_PLY
+        } else {
+            self.ply
+        };
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
-            self.scored_moves[i].score = history.score(position, stack, self.ply, m);
+            self.scored_moves[i].score = history.score(position, stack, ply, m);
         }
         self.scored_index = self.scored_moves.len();
     }
@@ -224,11 +229,6 @@ impl MovePicker {
 
                 for m in self.move_generator.by_ref() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
-                }
-
-                if self.mode == MovePickerMode::QuiescenceCheck {
-                    // sortin moves doesn't matter when we're in check in quiescence
-                    return self.next(search);
                 }
 
                 self.score_quiets(&search.history, &search.position, &search.stack);
