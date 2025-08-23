@@ -42,7 +42,10 @@ impl HistoryTables {
         let hist_idx = self.history_index(position, mv);
         self.history[hist_idx.0][hist_idx.1][hist_idx.2] <<= bonus;
 
-        for i in 0..self.continuation.len() {
+        for i in 1..=self.continuation.len() {
+            if ply < i {
+                break;
+            }
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
                 self.continuation[i][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<= bonus;
             }
