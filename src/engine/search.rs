@@ -426,6 +426,7 @@ impl<'a> Search<'a> {
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
+                && self.history.is_killer(ply, mv)
             {
                 continue;
             }

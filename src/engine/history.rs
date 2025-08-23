@@ -79,6 +79,10 @@ impl HistoryTables {
         value
     }
 
+    pub fn is_killer(&self, ply: usize, mv: Move) -> bool {
+        mv == self.killers[ply][0] || mv == self.killers[ply][1]
+    }
+
     fn history_index(&self, position: &Position, mv: Move) -> (Color, Square, Square) {
         (position.side, mv.from(), mv.to())
     }
