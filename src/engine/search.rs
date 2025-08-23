@@ -3,16 +3,16 @@ use std::time::Instant;
 
 use arrayvec::ArrayVec;
 
-use crate::chess::{Accumulator, Color, GameResult, Move, Position, Role, Square};
+use crate::chess::{Accumulator, GameResult, Move, Position, Role, Square};
 use crate::engine::eval::{self, nnue};
-use crate::engine::history::History;
+use crate::engine::history::HistoryTables;
 use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker};
 use crate::engine::time_management::SearchCop;
 use crate::engine::tt::{Entry, EntryType, Table};
 
 const MAX_DEPTH: u8 = 64;
-pub const MAX_PLY: u8 = 128;
+pub const MAX_PLY: usize = 128;
 
 static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
 
@@ -38,8 +38,8 @@ pub struct SearchResult {
 pub struct Stats {
     pub nodes: u64,
     pub effort: [[u64; Square::NUM]; Square::NUM],
-    pub pv: [[Move; MAX_PLY as usize]; MAX_PLY as usize],
-    pub pv_length: [u8; MAX_PLY as usize],
+    pub pv: [[Move; MAX_PLY]; MAX_PLY],
+    pub pv_length: [u8; MAX_PLY],
     pub start_time: Instant,
 }
 
@@ -48,8 +48,8 @@ impl Default for Stats {
         Self {
             nodes: 0,
             effort: [[0; Square::NUM]; Square::NUM],
-            pv: [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize],
-            pv_length: [0; MAX_PLY as usize],
+            pv: [[Move::NONE; MAX_PLY]; MAX_PLY],
+            pv_length: [0; MAX_PLY],
             start_time: Instant::now(),
         }
     }
@@ -59,8 +59,8 @@ impl Stats {
     fn reset(&mut self) {
         self.nodes = 0;
         self.effort = [[0; Square::NUM]; Square::NUM];
-        self.pv = [[Move::NONE; MAX_PLY as usize]; MAX_PLY as usize];
-        self.pv_length = [0; MAX_PLY as usize];
+        self.pv = [[Move::NONE; MAX_PLY]; MAX_PLY];
+        self.pv_length = [0; MAX_PLY];
         self.start_time = Instant::now();
     }
 
@@ -105,18 +105,35 @@ impl Stats {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct Frame {
+    pub mv: Move,
+    pub moved: Option<Role>,
+    pub eval: i16,
+}
+
+pub type Stack = [Frame; MAX_PLY];
+
+impl Default for Frame {
+    fn default() -> Self {
+        Self {
+            mv: Move::NONE,
+            moved: None,
+            eval: eval::NO_VALUE,
+        }
+    }
+}
+
 pub struct Search<'a> {
     pub stats: Stats,
 
     pub position: Position,
     accum: eval::nnue::NNUEAccumulator<'a, { eval::nnue::NNUE_HIDDEN_SIZE }>,
 
-    pub current_move: [(Move, Option<Role>); MAX_PLY as usize],
-    pub history: History,
-    pub continuation:
-        Box<[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM]>,
-    killers: [[Move; 2]; MAX_PLY as usize],
-    eval: [i16; MAX_PLY as usize],
+    pub stack: Stack,
+    pub history: HistoryTables,
+
+    killers: [[Move; 2]; MAX_PLY],
     tt: &'a Table,
 
     tm: SearchCop,
@@ -142,13 +159,9 @@ impl<'a> Search<'a> {
         accum.reset(&position);
         Search {
             accum,
-            current_move: [(Move::NONE, None); MAX_PLY as usize],
-            history: History::default(),
-            continuation: Box::new(
-                [[[[[0; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
-            ),
-            killers: [[Move::NONE; 2]; MAX_PLY as usize],
-            eval: [eval::NO_VALUE; MAX_PLY as usize],
+            history: HistoryTables::default(),
+            killers: [[Move::NONE; 2]; MAX_PLY],
+            stack: [Frame::default(); MAX_PLY],
             tm: SearchCop::new(limits, side),
             position,
             silent,
@@ -246,7 +259,7 @@ impl<'a> Search<'a> {
         mut depth: i32,
         mut alpha: i16,
         beta: i16,
-        ply: u8,
+        ply: usize,
         is_pv: bool,
         is_root: bool,
     ) -> i16 {
@@ -257,7 +270,7 @@ impl<'a> Search<'a> {
             return eval::score_nnue(&self.position, &self.accum);
         }
 
-        self.stats.pv_length[ply as usize] = ply;
+        self.stats.pv_length[ply] = ply as u8;
 
         if depth <= 0 {
             return self.quiescence_search(alpha, beta, is_pv);
@@ -337,14 +350,14 @@ impl<'a> Search<'a> {
             ));
         }
 
-        self.eval[ply as usize] = static_eval;
+        self.stack[ply].eval = static_eval;
 
         let improving = if self.position.in_check() {
             false
-        } else if ply > 1 && self.eval[ply as usize - 2] != eval::NO_VALUE {
-            self.eval[ply as usize] > self.eval[ply as usize - 2]
-        } else if ply > 3 && self.eval[ply as usize - 4] != eval::NO_VALUE {
-            self.eval[ply as usize] > self.eval[ply as usize - 4]
+        } else if ply > 1 && self.stack[ply - 2].eval != eval::NO_VALUE {
+            self.stack[ply].eval > self.stack[ply - 2].eval
+        } else if ply > 3 && self.stack[ply - 4].eval != eval::NO_VALUE {
+            self.stack[ply].eval > self.stack[ply - 4].eval
         } else {
             false
         };
@@ -374,18 +387,21 @@ impl<'a> Search<'a> {
             && self.position.non_pawn_material(self.position.side)
             && !self.position.in_check()
             && static_eval >= beta
-            && (ply < 1 || self.current_move[(ply - 1) as usize].0 != Move::NULL)
+            && (ply < 1 || self.stack[ply - 1].mv != Move::NULL)
         {
             self.position.make_null_move_with(&mut self.accum);
-            let prev_move = self.current_move[ply as usize];
+            let prev_move = self.stack[ply].mv;
+            let prev_moved = self.stack[ply].moved;
 
-            self.current_move[ply as usize] = (Move::NULL, None);
+            self.stack[ply].mv = Move::NULL;
+            self.stack[ply].moved = None;
 
             let reduced_depth = depth - (3 + (depth / 5));
             let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move_with(&mut self.accum);
-            self.current_move[ply as usize] = prev_move;
+            self.stack[ply].mv = prev_move;
+            self.stack[ply].moved = prev_moved;
 
             if null_score >= beta {
                 if null_score >= (eval::MATE_IN_PLY) {
@@ -402,8 +418,8 @@ impl<'a> Search<'a> {
         let mut quiets: ArrayVec<Move, 64> = ArrayVec::new();
 
         let mut move_picker =
-            MovePicker::new_ab_search(&self.position, tt_move, self.killers[ply as usize]);
-        while let Some(mv) = move_picker.next(self, ply) {
+            MovePicker::new_ab_search(&self.position, ply, tt_move, self.killers[ply]);
+        while let Some(mv) = move_picker.next(self) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
 
@@ -413,8 +429,8 @@ impl<'a> Search<'a> {
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
-                && mv != self.killers[ply as usize][0]
-                && mv != self.killers[ply as usize][1]
+                && mv != self.killers[ply][0]
+                && mv != self.killers[ply][1]
             {
                 continue;
             }
@@ -443,7 +459,8 @@ impl<'a> Search<'a> {
                 new_depth += 1;
             }
 
-            self.current_move[ply as usize] = (mv, self.position.role_at(mv.from()));
+            self.stack[ply].mv = mv;
+            self.stack[ply].moved = self.position.role_at(mv.from());
             self.position.make_move_with(mv, &mut self.accum);
 
             let mut score = -eval::INFINITY;
@@ -479,7 +496,8 @@ impl<'a> Search<'a> {
             }
 
             self.position.unmake_move_with(mv, &mut self.accum);
-            self.current_move[ply as usize] = (Move::NONE, None);
+            self.stack[ply].mv = Move::NONE;
+            self.stack[ply].moved = None;
 
             // store effort at root
             if is_root {
@@ -490,36 +508,30 @@ impl<'a> Search<'a> {
                 best = score;
                 best_move = mv;
 
-                self.stats.pv[ply as usize][ply as usize] = mv;
-                for j in (ply + 1)..self.stats.pv_length[ply as usize + 1] {
-                    self.stats.pv[ply as usize][j as usize] =
-                        self.stats.pv[ply as usize + 1][j as usize];
+                self.stats.pv[ply][ply] = mv;
+                for j in (ply + 1)..self.stats.pv_length[ply + 1] as usize {
+                    self.stats.pv[ply][j] = self.stats.pv[ply + 1][j];
                 }
 
-                self.stats.pv_length[ply as usize] = self.stats.pv_length[ply as usize + 1];
+                self.stats.pv_length[ply] = self.stats.pv_length[ply + 1];
 
                 if score > alpha {
                     alpha = score;
                     if score >= beta {
                         if !capture {
                             self.update_killers(mv, ply);
-                            let bonus = 2000.min(350 * depth as i16 - 350);
-                            self.history.update(
-                                self.position.side,
-                                mv.from(),
-                                mv.to(),
-                                bonus as i32,
-                            );
-                            self.update_continuation(mv, bonus, ply);
+                            let bonus = 2000.min(350 * depth - 350);
+                            self.history
+                                .update(&self.position, &self.stack, ply, mv, bonus);
 
                             for quiet in quiets.iter() {
                                 self.history.update(
-                                    self.position.side,
-                                    quiet.from(),
-                                    quiet.to(),
-                                    bonus as i32,
+                                    &self.position,
+                                    &self.stack,
+                                    ply,
+                                    *quiet,
+                                    -bonus / 2,
                                 );
-                                self.update_continuation(*quiet, -bonus / 2, ply);
                             }
                         }
 
@@ -650,7 +662,7 @@ impl<'a> Search<'a> {
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
-        while let Some(mv) = move_picker.next(self, MAX_PLY) {
+        while let Some(mv) = move_picker.next(self) {
             self.position.make_move_with(mv, &mut self.accum);
             let score = -self.quiescence_search(-beta, -alpha, is_pv);
             self.position.unmake_move_with(mv, &mut self.accum);
@@ -693,27 +705,9 @@ impl<'a> Search<'a> {
         best
     }
 
-    pub fn update_killers(&mut self, mv: Move, ply: u8) {
-        self.killers[ply as usize][1] = self.killers[ply as usize][0];
-        self.killers[ply as usize][0] = mv;
-    }
-
-    fn update_continuation(&mut self, mv: Move, bonus: i16, ply: u8) {
-        if ply < 1 {
-            return;
-        }
-        match self.current_move[ply as usize - 1] {
-            (prev_mv, Some(role)) if prev_mv != Move::NULL && prev_mv != Move::NONE => {
-                let current_role = self.position.role_at(mv.from()).unwrap();
-                self.continuation[self.position.side][role][prev_mv.to()][current_role][mv.to()] +=
-                    bonus
-                        - ((self.continuation[self.position.side][role][prev_mv.to()][current_role]
-                            [mv.to()] as i32
-                            * bonus.abs() as i32)
-                            / 16384) as i16;
-            }
-            _ => {}
-        }
+    pub fn update_killers(&mut self, mv: Move, ply: usize) {
+        self.killers[ply][1] = self.killers[ply][0];
+        self.killers[ply][0] = mv;
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
@@ -740,7 +734,7 @@ impl<'a> Search<'a> {
     }
 }
 
-fn normalize_score(score: i16, ply: u8) -> i16 {
+fn normalize_score(score: i16, ply: usize) -> i16 {
     if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score + ply as i16
     } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {
@@ -750,7 +744,7 @@ fn normalize_score(score: i16, ply: u8) -> i16 {
     }
 }
 
-fn denormalize_score(score: i16, ply: u8) -> i16 {
+fn denormalize_score(score: i16, ply: usize) -> i16 {
     if (eval::MATE_IN_PLY..=eval::MATE).contains(&score) {
         score - ply as i16
     } else if (-eval::MATE..=-eval::MATE_IN_PLY).contains(&score) {

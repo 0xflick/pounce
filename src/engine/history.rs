@@ -1,44 +1,109 @@
-use crate::chess::{Color, Square};
+use crate::{
+    chess::{Color, Move, Position, Role, Square},
+    engine::search::{Frame, Stack},
+};
+use std::ops::ShlAssign;
 
 const HISTORY_MAX: i32 = i16::MAX as i32;
 
-pub struct History([[[i32; Square::NUM]; Square::NUM]; Color::NUM]);
+type Sided<T> = [T; Color::NUM];
+type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
+type RoleTo<T> = [[T; Square::NUM]; Role::NUM];
+type HistoryTable<T, const MAX: i32> = Sided<Butterfly<HistScore<T, MAX>>>;
+type ContinuationTable<T, const MAX: i32> = Sided<RoleTo<RoleTo<HistScore<T, MAX>>>>;
 
-impl Default for History {
+pub struct HistoryTables {
+    history: HistoryTable<i16, HISTORY_MAX>,
+    continuation: Box<[ContinuationTable<i16, HISTORY_MAX>; 1]>,
+}
+
+impl Default for HistoryTables {
     fn default() -> Self {
-        Self([[[0; Square::NUM]; Square::NUM]; Color::NUM])
+        // this is janky but without this rust tries to initialize the array, *and then* put it
+        // into the box, which blows up the stack on debug builds
+        let mut boxed = Box::<[ContinuationTable<i16, HISTORY_MAX>; 1]>::new_uninit();
+        let continuation = unsafe {
+            boxed.as_mut_ptr().write_bytes(0u8, 1);
+            boxed.assume_init()
+        };
+
+        Self {
+            history: [[[HistScore::<i16, HISTORY_MAX>::default(); Square::NUM]; Square::NUM];
+                Color::NUM],
+            continuation,
+        }
     }
 }
 
-impl History {
-    pub fn update(&mut self, side: Color, from: Square, to: Square, bonus: i32) {
-        let index = &mut self.0[side][from][to];
-        taper_update::<HISTORY_MAX>(index, bonus);
+impl HistoryTables {
+    pub fn update(&mut self, position: &Position, stack: &Stack, ply: usize, mv: Move, bonus: i32) {
+        let hist_idx = self.history_index(position, mv);
+        self.history[hist_idx.0][hist_idx.1][hist_idx.2] <<= bonus;
+
+        for i in 0..self.continuation.len() {
+            if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
+                self.continuation[i][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<= bonus;
+            }
+        }
     }
 
-    pub fn score(&self, side: Color, from: Square, to: Square) -> i32 {
-        self.0[side][from][to]
+    pub fn score(&self, position: &Position, stack: &Stack, ply: usize, mv: Move) -> i32 {
+        let mut value = 0;
+
+        let hist_idx = self.history_index(position, mv);
+        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32;
+
+        for i in 1..=self.continuation.len() {
+            if ply < i {
+                break;
+            }
+
+            if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
+                value += self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4].value
+                    as i32;
+            }
+        }
+
+        value
+    }
+
+    fn history_index(&self, position: &Position, mv: Move) -> (Color, Square, Square) {
+        (position.side, mv.from(), mv.to())
+    }
+
+    fn continuation_index(
+        &self,
+        position: &Position,
+        frame: &Frame,
+        mv: Move,
+    ) -> Option<(Color, Role, Square, Role, Square)> {
+        match frame.moved {
+            Some(prev_role) => {
+                let prev_to = frame.mv.to();
+
+                let role = position.role_at(mv.from()).expect("No role at position");
+
+                Some((position.side, prev_role, prev_to, role, mv.to()))
+            }
+            // Null move
+            None => None,
+        }
     }
 }
 
-fn taper_update<const MAX: i32>(index: &mut i32, bonus: i32) {
-    *index += bonus - (*index * bonus.abs() / MAX);
+#[derive(Default, Clone, Copy)]
+struct HistScore<T: Default, const MAX: i32> {
+    value: T,
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+impl<const MAX: i32> ShlAssign<i32> for HistScore<i16, MAX> {
+    fn shl_assign(&mut self, rhs: i32) {
+        self.value += (rhs - (self.value as i32) * rhs.abs() / MAX) as i16;
+    }
+}
 
-    #[test]
-    fn test_taper() {
-        let mut history = History::default();
-
-        assert_eq!(history.score(Color::White, Square::A1, Square::A1), 0);
-        history.update(Color::White, Square::A1, Square::A1, 1000);
-
-        assert_eq!(history.score(Color::White, Square::A1, Square::A1), 1000);
-
-        history.update(Color::White, Square::A1, Square::A1, 1000);
-        assert_eq!(history.score(Color::White, Square::A1, Square::A1), 1970);
+impl<const MAX: i32> ShlAssign<i32> for HistScore<i32, MAX> {
+    fn shl_assign(&mut self, rhs: i32) {
+        self.value += rhs - self.value * rhs.abs() / MAX;
     }
 }

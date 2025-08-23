@@ -3,9 +3,9 @@ mod see;
 use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
-use crate::chess::{Color, Move, Position, Role, Square};
-use crate::engine::history::History;
-use crate::engine::search::{MAX_PLY, Search};
+use crate::chess::{Move, Position, Role};
+use crate::engine::history::HistoryTables;
+use crate::engine::search::{MAX_PLY, Search, Stack};
 
 const TT_MOVE_SCORE: i16 = 30_000;
 const GOOD_TACTICAL_SCORE: i16 = 22_000;
@@ -45,6 +45,7 @@ enum MovePickerStage {
 pub enum MovePickerMode {
     Normal,
     Quiescence,
+    QuiescenceCheck,
 }
 
 pub struct MovePicker {
@@ -54,6 +55,7 @@ pub struct MovePicker {
     tt_move: Move,
     killers: [Move; 2],
     margin: i32,
+    ply: usize,
 
     scored_moves: MoveList,
     scored_index: usize,
@@ -63,6 +65,7 @@ pub struct MovePicker {
 impl MovePicker {
     pub fn new(
         pos: &Position,
+        ply: usize,
         mode: MovePickerMode,
         tt_move: Move,
         killers: [Move; 2],
@@ -73,6 +76,7 @@ impl MovePicker {
             move_generator: mg,
             stage: MovePickerStage::TT,
             mode,
+            ply,
             tt_move,
             killers,
             margin,
@@ -90,16 +94,21 @@ impl MovePicker {
 
         let mode = if pos.in_check() {
             // if in check, we need to search all moves
-            MovePickerMode::Normal
+            MovePickerMode::QuiescenceCheck
         } else {
             MovePickerMode::Quiescence
         };
 
-        MovePicker::new(pos, mode, tt_move, [Move::NONE; 2], margin)
+        MovePicker::new(pos, MAX_PLY, mode, tt_move, [Move::NONE; 2], margin)
     }
 
-    pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers, 1)
+    pub fn new_ab_search(
+        pos: &Position,
+        ply: usize,
+        tt_move: Move,
+        killers: [Move; 2],
+    ) -> MovePicker {
+        MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, killers, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
@@ -141,14 +150,7 @@ impl MovePicker {
         self.scored_index = self.scored_moves.len();
     }
 
-    fn score_quiets(
-        &mut self,
-        position: &Position,
-        history: &History,
-        continuation: &[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
-        ply: u8,
-        current_move: &[(Move, Option<Role>); MAX_PLY as usize],
-    ) {
+    fn score_quiets(&mut self, history: &HistoryTables, position: &Position, stack: &Stack) {
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
             if m == self.killers[0] {
@@ -156,21 +158,7 @@ impl MovePicker {
             } else if m == self.killers[1] {
                 self.scored_moves[i].score = KILLER_2_SCORE as i32;
             } else {
-                let history_bonus = history.score(position.side, m.from(), m.to());
-                let counter_move_bonus = if ply == 0 || ply == MAX_PLY {
-                    0
-                } else {
-                    match current_move[ply as usize - 1] {
-                        (prev_mv, Some(role)) if prev_mv != Move::NULL && prev_mv != Move::NONE => {
-                            let current_role = position.role_at(m.from()).unwrap();
-                            continuation[position.side][role][prev_mv.to()][current_role][m.to()]
-                                as i32
-                        }
-                        _ => 0,
-                    }
-                };
-
-                self.scored_moves[i].score = (history_bonus / 2) + (counter_move_bonus / 2);
+                self.scored_moves[i].score = history.score(position, stack, self.ply, m);
             };
         }
         self.scored_index = self.scored_moves.len();
@@ -205,14 +193,14 @@ impl MovePicker {
         Some(self.scored_moves[self.sorted_index - 1].m)
     }
 
-    pub fn next(&mut self, search: &Search, ply: u8) -> Option<Move> {
+    pub fn next(&mut self, search: &Search) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreTacticals;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
-                self.next(search, ply)
+                self.next(search)
             }
             MovePickerStage::ScoreTacticals => {
                 self.stage = MovePickerStage::Tacticals;
@@ -226,14 +214,14 @@ impl MovePicker {
                 }
 
                 self.score_tacticals(&search.position);
-                self.next(search, ply)
+                self.next(search)
             }
             MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
                 match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next(search, ply);
+                            return self.next(search);
                         }
                         Some(m)
                     }
@@ -242,7 +230,7 @@ impl MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next(search, ply)
+                        self.next(search)
                     }
                 }
             }
@@ -254,19 +242,18 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets(
-                    &search.position,
-                    &search.history,
-                    &search.continuation,
-                    ply,
-                    &search.current_move,
-                );
-                self.next(search, ply)
+                if self.mode == MovePickerMode::QuiescenceCheck {
+                    // sortin moves doesn't matter when we're in check in quiescence
+                    return self.next(search);
+                }
+
+                self.score_quiets(&search.history, &search.position, &search.stack);
+                self.next(search)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next(search, ply);
+                        return self.next(search);
                     }
                     Some(m)
                 }
