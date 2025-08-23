@@ -1,10 +1,13 @@
 use crate::{
     chess::{Color, Move, Position, Role, Square},
-    engine::search::{Frame, Stack},
+    engine::{
+        movepicker::{KILLER_1_SCORE, KILLER_2_SCORE},
+        search::{Frame, MAX_PLY, Stack},
+    },
 };
 use std::ops::ShlAssign;
 
-const HISTORY_MAX: i32 = i16::MAX as i32;
+pub const HISTORY_MAX: i32 = i16::MAX as i32;
 
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
@@ -13,6 +16,7 @@ type HistoryTable<T, const MAX: i32> = Sided<Butterfly<HistScore<T, MAX>>>;
 type ContinuationTable<T, const MAX: i32> = Sided<RoleTo<RoleTo<HistScore<T, MAX>>>>;
 
 pub struct HistoryTables {
+    killers: [[Move; 2]; MAX_PLY],
     history: HistoryTable<i16, HISTORY_MAX>,
     continuation: Box<[ContinuationTable<i16, HISTORY_MAX>; 1]>,
 }
@@ -28,6 +32,7 @@ impl Default for HistoryTables {
         };
 
         Self {
+            killers: [[Move::NONE; 2]; MAX_PLY],
             history: [[[HistScore::<i16, HISTORY_MAX>::default(); Square::NUM]; Square::NUM];
                 Color::NUM],
             continuation,
@@ -47,8 +52,18 @@ impl HistoryTables {
         }
     }
 
+    pub fn update_killers(&mut self, mv: Move, ply: usize) {
+        self.killers[ply][1] = self.killers[ply][0];
+        self.killers[ply][0] = mv;
+    }
+
     pub fn score(&self, position: &Position, stack: &Stack, ply: usize, mv: Move) -> i32 {
         let mut value = 0;
+        if mv == self.killers[ply][0] {
+            return KILLER_1_SCORE;
+        } else if mv == self.killers[ply][1] {
+            return KILLER_2_SCORE;
+        }
 
         let hist_idx = self.history_index(position, mv);
         value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32;

@@ -4,15 +4,15 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Move, Position, Role};
-use crate::engine::history::HistoryTables;
+use crate::engine::history::{HISTORY_MAX, HistoryTables};
 use crate::engine::search::{MAX_PLY, Search, Stack};
 
-const TT_MOVE_SCORE: i16 = 30_000;
-const GOOD_TACTICAL_SCORE: i16 = 22_000;
-const QUEEN_PROMO_BONUS: i16 = 21_002;
-const KILLER_1_SCORE: i16 = 21_001;
-const KILLER_2_SCORE: i16 = 21_000;
-const BAD_TACTICAL_SCORE: i16 = 17_000;
+const TT_MOVE_SCORE: i32 = 30_000;
+const GOOD_TACTICAL_SCORE: i32 = 22_000 + HISTORY_MAX * 2;
+const QUEEN_PROMO_BONUS: i32 = 21_002 + HISTORY_MAX * 2;
+pub const KILLER_1_SCORE: i32 = 21_001 + HISTORY_MAX * 2;
+pub const KILLER_2_SCORE: i32 = 21_000 + HISTORY_MAX * 2;
+const BAD_TACTICAL_SCORE: i32 = 17_000 + HISTORY_MAX * 2;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -53,7 +53,6 @@ pub struct MovePicker {
     stage: MovePickerStage,
     mode: MovePickerMode,
     tt_move: Move,
-    killers: [Move; 2],
     margin: i32,
     ply: usize,
 
@@ -68,7 +67,6 @@ impl MovePicker {
         ply: usize,
         mode: MovePickerMode,
         tt_move: Move,
-        killers: [Move; 2],
         margin: i32,
     ) -> MovePicker {
         let mg = MoveGen::new(pos);
@@ -78,7 +76,6 @@ impl MovePicker {
             mode,
             ply,
             tt_move,
-            killers,
             margin,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
@@ -99,16 +96,11 @@ impl MovePicker {
             MovePickerMode::Quiescence
         };
 
-        MovePicker::new(pos, MAX_PLY, mode, tt_move, [Move::NONE; 2], margin)
+        MovePicker::new(pos, MAX_PLY, mode, tt_move, margin)
     }
 
-    pub fn new_ab_search(
-        pos: &Position,
-        ply: usize,
-        tt_move: Move,
-        killers: [Move; 2],
-    ) -> MovePicker {
-        MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, killers, 1)
+    pub fn new_ab_search(pos: &Position, ply: usize, tt_move: Move) -> MovePicker {
+        MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
@@ -153,13 +145,7 @@ impl MovePicker {
     fn score_quiets(&mut self, history: &HistoryTables, position: &Position, stack: &Stack) {
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
-            if m == self.killers[0] {
-                self.scored_moves[i].score = KILLER_1_SCORE as i32;
-            } else if m == self.killers[1] {
-                self.scored_moves[i].score = KILLER_2_SCORE as i32;
-            } else {
-                self.scored_moves[i].score = history.score(position, stack, self.ply, m);
-            };
+            self.scored_moves[i].score = history.score(position, stack, self.ply, m);
         }
         self.scored_index = self.scored_moves.len();
     }

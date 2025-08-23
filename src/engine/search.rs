@@ -133,7 +133,6 @@ pub struct Search<'a> {
     pub stack: Stack,
     pub history: HistoryTables,
 
-    killers: [[Move; 2]; MAX_PLY],
     tt: &'a Table,
 
     tm: SearchCop,
@@ -160,7 +159,6 @@ impl<'a> Search<'a> {
         Search {
             accum,
             history: HistoryTables::default(),
-            killers: [[Move::NONE; 2]; MAX_PLY],
             stack: [Frame::default(); MAX_PLY],
             tm: SearchCop::new(limits, side),
             position,
@@ -417,8 +415,7 @@ impl<'a> Search<'a> {
         let mut move_count = 0;
         let mut quiets: ArrayVec<Move, 64> = ArrayVec::new();
 
-        let mut move_picker =
-            MovePicker::new_ab_search(&self.position, ply, tt_move, self.killers[ply]);
+        let mut move_picker = MovePicker::new_ab_search(&self.position, ply, tt_move);
         while let Some(mv) = move_picker.next(self) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);
@@ -429,8 +426,6 @@ impl<'a> Search<'a> {
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
-                && mv != self.killers[ply][0]
-                && mv != self.killers[ply][1]
             {
                 continue;
             }
@@ -519,7 +514,7 @@ impl<'a> Search<'a> {
                     alpha = score;
                     if score >= beta {
                         if !capture {
-                            self.update_killers(mv, ply);
+                            self.history.update_killers(mv, ply);
                             let bonus = 2000.min(350 * depth - 350);
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
@@ -703,11 +698,6 @@ impl<'a> Search<'a> {
         }
 
         best
-    }
-
-    pub fn update_killers(&mut self, mv: Move, ply: usize) {
-        self.killers[ply][1] = self.killers[ply][0];
-        self.killers[ply][0] = mv;
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
