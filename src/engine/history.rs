@@ -1,11 +1,8 @@
-use crate::{
-    chess::{Color, Move, Position, Role, Square},
-    engine::{
-        movepicker::{KILLER_1_SCORE, KILLER_2_SCORE},
-        search::{Frame, MAX_PLY, Stack},
-    },
-};
 use std::ops::ShlAssign;
+
+use crate::chess::{Color, Move, Position, Role, Square};
+use crate::engine::movepicker::{KILLER_1_SCORE, KILLER_2_SCORE};
+use crate::engine::search::{Frame, MAX_PLY, Stack};
 
 pub const HISTORY_MAX: i32 = i16::MAX as i32;
 
