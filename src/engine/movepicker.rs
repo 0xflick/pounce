@@ -4,7 +4,7 @@ use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Move, Position, Role};
-use crate::engine::history::{HistoryTables};
+use crate::engine::history::HistoryTables;
 use crate::engine::search::{MAX_PLY, Search, Stack};
 
 const TT_MOVE_SCORE: i32 = 30_000;
