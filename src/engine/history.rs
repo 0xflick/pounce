@@ -67,7 +67,7 @@ impl HistoryTables {
         }
         let mut value = 0;
         let hist_idx = self.history_index(position, mv);
-        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32 / 2;
+        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].0 as i32 / 2;
 
         for i in 1..=self.continuation.len() {
             if ply < i {
@@ -75,7 +75,7 @@ impl HistoryTables {
             }
 
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
-                value += self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4].value
+                value += self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4].0
                     as i32
                     / 2;
             }
@@ -113,18 +113,16 @@ impl HistoryTables {
 }
 
 #[derive(Default, Clone, Copy)]
-struct HistScore<T: Default, const MAX: i32> {
-    value: T,
-}
+struct HistScore<T: Default, const MAX: i32>(T);
 
 impl<const MAX: i32> ShlAssign<i32> for HistScore<i16, MAX> {
     fn shl_assign(&mut self, rhs: i32) {
-        self.value += (rhs - (self.value as i32) * rhs.abs() / MAX) as i16;
+        self.0 += (rhs - (self.0 as i32) * rhs.abs() / MAX) as i16;
     }
 }
 
 impl<const MAX: i32> ShlAssign<i32> for HistScore<i32, MAX> {
     fn shl_assign(&mut self, rhs: i32) {
-        self.value += rhs - self.value * rhs.abs() / MAX;
+        self.0 += rhs - self.0 * rhs.abs() / MAX;
     }
 }
