@@ -6,6 +6,8 @@ use crate::engine::search::{Frame, MAX_PLY, Stack};
 
 pub const HISTORY_MAX: i32 = 16384;
 
+const NUM_CONTINUATIONS: usize = 2;
+
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
 type RoleTo<T> = [[T; Square::NUM]; Role::NUM];
@@ -15,14 +17,15 @@ type ContinuationTable<T, const MAX: i32> = Sided<RoleTo<RoleTo<HistScore<T, MAX
 pub struct HistoryTables {
     killers: [[Move; 2]; MAX_PLY],
     history: HistoryTable<i16, HISTORY_MAX>,
-    continuation: Box<[ContinuationTable<i16, HISTORY_MAX>; 1]>,
+    continuation: Box<[ContinuationTable<i16, HISTORY_MAX>; NUM_CONTINUATIONS]>,
 }
 
 impl Default for HistoryTables {
     fn default() -> Self {
         // this is janky but without this rust tries to initialize the array, *and then* put it
         // into the box, which blows up the stack on debug builds
-        let mut boxed = Box::<[ContinuationTable<i16, HISTORY_MAX>; 1]>::new_uninit();
+        let mut boxed =
+            Box::<[ContinuationTable<i16, HISTORY_MAX>; NUM_CONTINUATIONS]>::new_uninit();
         let continuation = unsafe {
             boxed.as_mut_ptr().write_bytes(0u8, 1);
             boxed.assume_init()
@@ -67,7 +70,7 @@ impl HistoryTables {
         }
         let mut value = 0;
         let hist_idx = self.history_index(position, mv);
-        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32 / 2;
+        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32;
 
         for i in 1..=self.continuation.len() {
             if ply < i {
@@ -76,12 +79,11 @@ impl HistoryTables {
 
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
                 value += self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4].value
-                    as i32
-                    / 2;
+                    as i32;
             }
         }
 
-        value
+        value.clamp(-HISTORY_MAX, HISTORY_MAX)
     }
 
     pub fn is_killer(&self, ply: usize, mv: Move) -> bool {
