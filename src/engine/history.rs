@@ -63,7 +63,7 @@ impl HistoryTables {
         }
 
         let hist_idx = self.history_index(position, mv);
-        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32;
+        value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].value as i32 / 2;
 
         for i in 1..=self.continuation.len() {
             if ply < i {
@@ -72,7 +72,8 @@ impl HistoryTables {
 
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
                 value += self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4].value
-                    as i32;
+                    as i32
+                    / 2;
             }
         }
 
