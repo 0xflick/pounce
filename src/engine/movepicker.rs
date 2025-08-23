@@ -16,7 +16,7 @@ const BAD_TACTICAL_SCORE: i32 = 17_000 + HISTORY_MAX * 2;
 
 pub const MAX_MOVES: usize = 256;
 
-const MVV_LVA: [[i16; 6]; 6] = [
+const MVV_LVA: [[i32; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
     [14, 24, 34, 44, 54, 0], // attacker knight, victim P, N, B, R, Q,  K
     [13, 23, 33, 43, 53, 0], // attacker bishop, victim P, N, B, R, Q,  K
@@ -103,7 +103,7 @@ impl MovePicker {
         MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, 1)
     }
 
-    fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
+    fn mvv_lva(&self, m: Move, position: &Position) -> i32 {
         let attacker = position.role_at(m.from());
         let victim = m.captured_role(position);
 
@@ -118,24 +118,22 @@ impl MovePicker {
         for i in 0..self.scored_moves.len() {
             self.scored_moves[i].score = {
                 if self.scored_moves[i].m == self.tt_move {
-                    TT_MOVE_SCORE as i32
+                    TT_MOVE_SCORE
                 } else if self.scored_moves[i].m.is_promotion() {
                     match self.scored_moves[i].m.promotion() {
                         Some(Role::Queen) => {
                             if see::see(position, self.scored_moves[i].m, self.margin) {
-                                QUEEN_PROMO_BONUS as i32 + GOOD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS + GOOD_TACTICAL_SCORE
                             } else {
-                                QUEEN_PROMO_BONUS as i32 + BAD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS + BAD_TACTICAL_SCORE
                             }
                         }
-                        _ => BAD_TACTICAL_SCORE as i32,
+                        _ => BAD_TACTICAL_SCORE,
                     }
                 } else if see::see(position, self.scored_moves[i].m, self.margin) {
-                    self.mvv_lva(self.scored_moves[i].m, position) as i32
-                        + GOOD_TACTICAL_SCORE as i32
+                    self.mvv_lva(self.scored_moves[i].m, position) + GOOD_TACTICAL_SCORE
                 } else {
-                    self.mvv_lva(self.scored_moves[i].m, position) as i32
-                        + BAD_TACTICAL_SCORE as i32
+                    self.mvv_lva(self.scored_moves[i].m, position) + BAD_TACTICAL_SCORE
                 }
             }
         }
@@ -204,7 +202,7 @@ impl MovePicker {
             }
             MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
-                match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
+                match self.select_sorted_min(GOOD_TACTICAL_SCORE) {
                     Some(m) => {
                         if m == self.tt_move {
                             return self.next(search);
