@@ -47,7 +47,7 @@ impl HistoryTables {
                 break;
             }
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
-                self.continuation[i][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<= bonus;
+                self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<= bonus;
             }
         }
     }
