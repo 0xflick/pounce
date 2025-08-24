@@ -87,57 +87,6 @@ impl CompressedPosition {
         }
     }
 
-    pub fn flip(&self) -> Self {
-        let mut mailbox: [Option<Piece>; 64] = [None; 64];
-
-        for (idx, sq) in self.occ.enumerate() {
-            let pc = self.pieces.get(idx);
-
-            let color = if pc >> 3 == 0 {
-                Color::White
-            } else {
-                Color::Black
-            };
-
-            mailbox[(sq) as usize] = Some(Piece {
-                color,
-                role: unsafe { std::mem::transmute::<u8, Role>(pc & 0b111) },
-            });
-        }
-
-        let occ = self.occ.flip();
-        let mut pieces = U4Array32::default();
-        for (idx, sq) in occ.enumerate() {
-            let pc = mailbox[sq ^ 56].unwrap();
-            let bit_pc = ((1 - pc.color as u8) << 3) | (pc.role as u8);
-
-            pieces.set(idx, bit_pc);
-        }
-
-        let ep_square = if self.stm_ep_square == u8::MAX {
-            u8::MAX
-        } else {
-            self.stm_ep_square ^ 56
-        };
-
-        let new_ply = if self.ply % 2 == 0 {
-            self.ply + 1
-        } else {
-            self.ply - 1
-        };
-
-        Self {
-            occ,
-            pieces,
-            score: -self.score,
-            wdl: self.wdl.flip(),
-            stm_ep_square: ep_square,
-            halfmove_clock: self.halfmove_clock,
-            ply: new_ply,
-            castling: self.castling,
-        }
-    }
-
     pub fn as_bytes(&self) -> &[u8] {
         unsafe {
             std::slice::from_raw_parts(self as *const _ as *const u8, std::mem::size_of::<Self>())
@@ -272,7 +221,7 @@ impl TryFrom<CompressedPosition> for Position {
             sq => Some(Square::from(sq)),
         };
         pos.halfmove_clock = value.halfmove_clock;
-        pos.side = if value.ply % 2 == 0 {
+        pos.side = if value.ply.is_multiple_of(2) {
             Color::White
         } else {
             Color::Black
@@ -382,38 +331,10 @@ impl Iterator for PositionIterator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::position::fen::{Fen, STARTPOS};
 
     #[test]
     fn test_size() {
         assert_eq!(std::mem::size_of::<CompressedPosition>(), 32);
         assert_eq!(std::mem::size_of::<CompressedMove>(), 4);
-    }
-
-    #[test]
-    fn test_startpos() {
-        let Fen(pos) = Fen::parse(STARTPOS).unwrap();
-
-        let comp = CompressedPosition::new(&pos, 0, Wdl::BlackWin);
-
-        assert_eq!(comp, comp.flip().flip());
-
-        assert_eq!(comp.occ, comp.flip().occ);
-        assert_eq!(comp.pieces, comp.flip().pieces);
-        assert_eq!(comp.score, -comp.flip().score);
-    }
-
-    const POS_1: &str = "b3r1k1/5pbp/6p1/1NP5/8/5N2/2Q3PP/3q2K1 b - - 0 31";
-    const POS_1_FLIPPED: &str = "3Q2k1/2q3pp/5n2/8/1np5/6P1/5PBP/B3R1K1 w - - 0 31";
-
-    #[test]
-    fn test_flip() {
-        let Fen(pos) = Fen::parse(POS_1).unwrap();
-        let comp = CompressedPosition::new(&pos, 600, Wdl::BlackWin);
-
-        let Fen(flip) = POS_1_FLIPPED.parse().unwrap();
-        let comp_flip = CompressedPosition::new(&flip, -600, Wdl::WhiteWin);
-
-        assert_eq!(comp_flip, comp.flip());
     }
 }

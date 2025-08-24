@@ -5,6 +5,7 @@ pub mod search;
 pub mod tt;
 pub mod uci;
 
+mod history;
 mod movepicker;
 mod search_manager;
 mod time_management;

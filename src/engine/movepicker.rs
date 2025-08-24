@@ -3,19 +3,20 @@ mod see;
 use arrayvec::ArrayVec;
 
 use crate::chess::movegen::MoveGen;
-use crate::chess::{Color, Move, Position, Role, Square};
-use crate::engine::search::{MAX_PLY, Search};
+use crate::chess::{Move, Position, Role};
+use crate::engine::history::HistoryTables;
+use crate::engine::search::{MAX_PLY, Search, Stack};
 
-const TT_MOVE_SCORE: i16 = 30_000;
-const GOOD_TACTICAL_SCORE: i16 = 22_000;
-const QUEEN_PROMO_BONUS: i16 = 21_002;
-const KILLER_1_SCORE: i16 = 21_001;
-const KILLER_2_SCORE: i16 = 21_000;
-const BAD_TACTICAL_SCORE: i16 = 17_000;
+const TT_MOVE_SCORE: i32 = 30_000;
+const GOOD_TACTICAL_SCORE: i32 = 22_000;
+const QUEEN_PROMO_BONUS: i32 = 21_002;
+pub const KILLER_1_SCORE: i32 = 21_001;
+pub const KILLER_2_SCORE: i32 = 21_000;
+const BAD_TACTICAL_SCORE: i32 = 17_000;
 
 pub const MAX_MOVES: usize = 256;
 
-const MVV_LVA: [[i16; 6]; 6] = [
+const MVV_LVA: [[i32; 6]; 6] = [
     [15, 25, 35, 45, 55, 0], // attacker pawn, victim P, N, B, R, Q,  K
     [14, 24, 34, 44, 54, 0], // attacker knight, victim P, N, B, R, Q,  K
     [13, 23, 33, 43, 53, 0], // attacker bishop, victim P, N, B, R, Q,  K
@@ -44,6 +45,7 @@ enum MovePickerStage {
 pub enum MovePickerMode {
     Normal,
     Quiescence,
+    QuiescenceCheck,
 }
 
 pub struct MovePicker {
@@ -51,8 +53,8 @@ pub struct MovePicker {
     stage: MovePickerStage,
     mode: MovePickerMode,
     tt_move: Move,
-    killers: [Move; 2],
     margin: i32,
+    ply: usize,
 
     scored_moves: MoveList,
     scored_index: usize,
@@ -62,9 +64,9 @@ pub struct MovePicker {
 impl MovePicker {
     pub fn new(
         pos: &Position,
+        ply: usize,
         mode: MovePickerMode,
         tt_move: Move,
-        killers: [Move; 2],
         margin: i32,
     ) -> MovePicker {
         let mg = MoveGen::new(pos);
@@ -72,8 +74,8 @@ impl MovePicker {
             move_generator: mg,
             stage: MovePickerStage::TT,
             mode,
+            ply,
             tt_move,
-            killers,
             margin,
             scored_moves: ArrayVec::new(),
             scored_index: 0,
@@ -89,19 +91,19 @@ impl MovePicker {
 
         let mode = if pos.in_check() {
             // if in check, we need to search all moves
-            MovePickerMode::Normal
+            MovePickerMode::QuiescenceCheck
         } else {
             MovePickerMode::Quiescence
         };
 
-        MovePicker::new(pos, mode, tt_move, [Move::NONE; 2], margin)
+        MovePicker::new(pos, MAX_PLY, mode, tt_move, margin)
     }
 
-    pub fn new_ab_search(pos: &Position, tt_move: Move, killers: [Move; 2]) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal, tt_move, killers, 1)
+    pub fn new_ab_search(pos: &Position, ply: usize, tt_move: Move) -> MovePicker {
+        MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, 1)
     }
 
-    fn mvv_lva(&self, m: Move, position: &Position) -> i16 {
+    fn mvv_lva(&self, m: Move, position: &Position) -> i32 {
         let attacker = position.role_at(m.from());
         let victim = m.captured_role(position);
 
@@ -116,61 +118,37 @@ impl MovePicker {
         for i in 0..self.scored_moves.len() {
             self.scored_moves[i].score = {
                 if self.scored_moves[i].m == self.tt_move {
-                    TT_MOVE_SCORE as i32
+                    TT_MOVE_SCORE
                 } else if self.scored_moves[i].m.is_promotion() {
                     match self.scored_moves[i].m.promotion() {
                         Some(Role::Queen) => {
                             if see::see(position, self.scored_moves[i].m, self.margin) {
-                                QUEEN_PROMO_BONUS as i32 + GOOD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS + GOOD_TACTICAL_SCORE
                             } else {
-                                QUEEN_PROMO_BONUS as i32 + BAD_TACTICAL_SCORE as i32
+                                QUEEN_PROMO_BONUS + BAD_TACTICAL_SCORE
                             }
                         }
-                        _ => BAD_TACTICAL_SCORE as i32,
+                        _ => BAD_TACTICAL_SCORE,
                     }
                 } else if see::see(position, self.scored_moves[i].m, self.margin) {
-                    self.mvv_lva(self.scored_moves[i].m, position) as i32
-                        + GOOD_TACTICAL_SCORE as i32
+                    self.mvv_lva(self.scored_moves[i].m, position) + GOOD_TACTICAL_SCORE
                 } else {
-                    self.mvv_lva(self.scored_moves[i].m, position) as i32
-                        + BAD_TACTICAL_SCORE as i32
+                    self.mvv_lva(self.scored_moves[i].m, position) + BAD_TACTICAL_SCORE
                 }
             }
         }
         self.scored_index = self.scored_moves.len();
     }
 
-    fn score_quiets(
-        &mut self,
-        position: &Position,
-        history: &[[[i16; Square::NUM]; Square::NUM]; Color::NUM],
-        continuation: &[[[[[i16; Square::NUM]; Role::NUM]; Square::NUM]; Role::NUM]; Color::NUM],
-        ply: u8,
-        current_move: &[(Move, Option<Role>); MAX_PLY as usize],
-    ) {
+    fn score_quiets(&mut self, history: &HistoryTables, position: &Position, stack: &Stack) {
+        let ply = if self.mode == MovePickerMode::QuiescenceCheck {
+            MAX_PLY
+        } else {
+            self.ply
+        };
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
-            if m == self.killers[0] {
-                self.scored_moves[i].score = KILLER_1_SCORE as i32;
-            } else if m == self.killers[1] {
-                self.scored_moves[i].score = KILLER_2_SCORE as i32;
-            } else {
-                let history_bonus = history[position.side][m.from()][m.to()] as i32;
-                let counter_move_bonus = if ply == 0 || ply == MAX_PLY {
-                    0
-                } else {
-                    match current_move[ply as usize - 1] {
-                        (prev_mv, Some(role)) if prev_mv != Move::NULL && prev_mv != Move::NONE => {
-                            let current_role = position.role_at(m.from()).unwrap();
-                            continuation[position.side][role][prev_mv.to()][current_role][m.to()]
-                                as i32
-                        }
-                        _ => 0,
-                    }
-                };
-
-                self.scored_moves[i].score = (history_bonus / 2) + (counter_move_bonus / 2);
-            };
+            self.scored_moves[i].score = history.score(position, stack, ply, m);
         }
         self.scored_index = self.scored_moves.len();
     }
@@ -204,14 +182,14 @@ impl MovePicker {
         Some(self.scored_moves[self.sorted_index - 1].m)
     }
 
-    pub fn next(&mut self, search: &Search, ply: u8) -> Option<Move> {
+    pub fn next(&mut self, search: &Search) -> Option<Move> {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreTacticals;
                 if self.tt_move != Move::NONE {
                     return Some(self.tt_move);
                 }
-                self.next(search, ply)
+                self.next(search)
             }
             MovePickerStage::ScoreTacticals => {
                 self.stage = MovePickerStage::Tacticals;
@@ -225,14 +203,14 @@ impl MovePicker {
                 }
 
                 self.score_tacticals(&search.position);
-                self.next(search, ply)
+                self.next(search)
             }
             MovePickerStage::Tacticals => {
                 // Don't need to filter this to enemies, right?
-                match self.select_sorted_min(GOOD_TACTICAL_SCORE as i32) {
+                match self.select_sorted_min(GOOD_TACTICAL_SCORE) {
                     Some(m) => {
                         if m == self.tt_move {
-                            return self.next(search, ply);
+                            return self.next(search);
                         }
                         Some(m)
                     }
@@ -241,7 +219,7 @@ impl MovePicker {
                             return None;
                         }
                         self.stage = MovePickerStage::ScoreQuiets;
-                        self.next(search, ply)
+                        self.next(search)
                     }
                 }
             }
@@ -253,19 +231,13 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets(
-                    &search.position,
-                    &search.history,
-                    &search.continuation,
-                    ply,
-                    &search.current_move,
-                );
-                self.next(search, ply)
+                self.score_quiets(&search.history, &search.position, &search.stack);
+                self.next(search)
             }
             MovePickerStage::Quiets => match self.select_sorted() {
                 Some(m) => {
                     if m == self.tt_move {
-                        return self.next(search, ply);
+                        return self.next(search);
                     }
                     Some(m)
                 }
