@@ -712,7 +712,7 @@ impl<'a> Search<'a> {
             return true;
         }
 
-        if self.stats.nodes % 2048 == 0 && self.tm.time_up(&self.stats) {
+        if self.stats.nodes.is_multiple_of(2048) && self.tm.time_up(&self.stats) {
             self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
