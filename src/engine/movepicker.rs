@@ -5,7 +5,7 @@ use arrayvec::ArrayVec;
 use crate::chess::movegen::MoveGen;
 use crate::chess::{Move, Position, Role};
 use crate::engine::history::HistoryTables;
-use crate::engine::search::{MAX_PLY, Search, Stack};
+use crate::engine::search::{Search, Stack};
 
 const TT_MOVE_SCORE: i32 = 30_000;
 const GOOD_TACTICAL_SCORE: i32 = 22_000;
@@ -43,7 +43,7 @@ enum MovePickerStage {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MovePickerMode {
-    Normal,
+    Normal { ply: usize },
     Quiescence,
     QuiescenceCheck,
 }
@@ -54,7 +54,6 @@ pub struct MovePicker {
     mode: MovePickerMode,
     tt_move: Move,
     margin: i32,
-    ply: usize,
 
     scored_moves: MoveList,
     scored_index: usize,
@@ -62,19 +61,12 @@ pub struct MovePicker {
 }
 
 impl MovePicker {
-    pub fn new(
-        pos: &Position,
-        ply: usize,
-        mode: MovePickerMode,
-        tt_move: Move,
-        margin: i32,
-    ) -> MovePicker {
+    pub fn new(pos: &Position, mode: MovePickerMode, tt_move: Move, margin: i32) -> MovePicker {
         let mg = MoveGen::new(pos);
         MovePicker {
             move_generator: mg,
             stage: MovePickerStage::TT,
             mode,
-            ply,
             tt_move,
             margin,
             scored_moves: ArrayVec::new(),
@@ -96,11 +88,11 @@ impl MovePicker {
             MovePickerMode::Quiescence
         };
 
-        MovePicker::new(pos, MAX_PLY, mode, tt_move, margin)
+        MovePicker::new(pos, mode, tt_move, margin)
     }
 
     pub fn new_ab_search(pos: &Position, ply: usize, tt_move: Move) -> MovePicker {
-        MovePicker::new(pos, ply, MovePickerMode::Normal, tt_move, 1)
+        MovePicker::new(pos, MovePickerMode::Normal { ply }, tt_move, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i32 {
@@ -140,12 +132,13 @@ impl MovePicker {
         self.scored_index = self.scored_moves.len();
     }
 
-    fn score_quiets(&mut self, history: &HistoryTables, position: &Position, stack: &Stack) {
-        let ply = if self.mode == MovePickerMode::QuiescenceCheck {
-            MAX_PLY
-        } else {
-            self.ply
-        };
+    fn score_quiets(
+        &mut self,
+        history: &HistoryTables,
+        position: &Position,
+        stack: &Stack,
+        ply: usize,
+    ) {
         for i in self.scored_index..self.scored_moves.len() {
             let m = self.scored_moves[i].m;
             self.scored_moves[i].score = history.score(position, stack, ply, m);
@@ -215,6 +208,7 @@ impl MovePicker {
                         Some(m)
                     }
                     None => {
+                        // If we're in quiescence search, end now
                         if self.mode == MovePickerMode::Quiescence {
                             return None;
                         }
@@ -231,7 +225,11 @@ impl MovePicker {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
-                self.score_quiets(&search.history, &search.position, &search.stack);
+                // We only need to score if we're in normal mode
+                if let MovePickerMode::Normal { ply } = self.mode {
+                    self.score_quiets(&search.history, &search.position, &search.stack, ply);
+                }
+
                 self.next(search)
             }
             MovePickerStage::Quiets => match self.select_sorted() {

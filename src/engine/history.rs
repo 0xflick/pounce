@@ -58,13 +58,12 @@ impl HistoryTables {
     }
 
     pub fn score(&self, position: &Position, stack: &Stack, ply: usize, mv: Move) -> i32 {
-        if ply != MAX_PLY {
-            if mv == self.killers[ply][0] {
-                return KILLER_1_SCORE;
-            } else if mv == self.killers[ply][1] {
-                return KILLER_2_SCORE;
-            }
+        if mv == self.killers[ply][0] {
+            return KILLER_1_SCORE;
+        } else if mv == self.killers[ply][1] {
+            return KILLER_2_SCORE;
         }
+
         let mut value = 0;
         let hist_idx = self.history_index(position, mv);
         value += self.history[hist_idx.0][hist_idx.1][hist_idx.2].0 as i32 / 2;
