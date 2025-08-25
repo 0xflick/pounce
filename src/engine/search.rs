@@ -357,7 +357,7 @@ impl<'a> Search<'a> {
         } else if ply > 3 && self.stack[ply - 4].eval != eval::NO_VALUE {
             self.stack[ply].eval > self.stack[ply - 4].eval
         } else {
-            false
+            true
         };
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
