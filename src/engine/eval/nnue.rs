@@ -33,9 +33,9 @@ struct FileHeader {
 #[repr(C)]
 struct NetworkData<const HIDDEN_SIZE: usize> {
     header: FileHeader,
-    persp_weights: [[f32; HIDDEN_SIZE]; 768],
+    persp_weights: [[f32; HIDDEN_SIZE]; 768], // Feature-major: for each of 768 features, HIDDEN_SIZE weights
     persp_bias: [f32; HIDDEN_SIZE],
-    output_weights: [[f32; 2]; HIDDEN_SIZE],
+    output_weights: [[f32; HIDDEN_SIZE]; 2], // Output-major: weights for output 0, then weights for output 1
     output_bias: f32,
 }
 
@@ -188,10 +188,21 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
+        // Transpose persp_weights from file format [768][HIDDEN_SIZE] to runtime format [768][HIDDEN_SIZE]
+        // Wait, both are the same format - but we need to copy to satisfy ownership
+        let persp_weights = NETWORK.persp_weights;
+
+        // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
+        let mut output_weights = [[0.0f32; 2]; NNUE_HIDDEN_SIZE];
+        for hidden_idx in 0..NNUE_HIDDEN_SIZE {
+            output_weights[hidden_idx][0] = NETWORK.output_weights[0][hidden_idx];
+            output_weights[hidden_idx][1] = NETWORK.output_weights[1][hidden_idx];
+        }
+
         Ok(Self::new(
-            NETWORK.persp_weights,
+            persp_weights,
             NETWORK.persp_bias,
-            NETWORK.output_weights,
+            output_weights,
             NETWORK.output_bias,
         ))
     }
