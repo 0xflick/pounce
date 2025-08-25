@@ -298,10 +298,10 @@ impl<'a> Search<'a> {
             if !is_pv
                 && self.position.halfmove_clock < 80
                 && hit.depth as i32 >= depth
-                && (hit.score_type == EntryType::Exact
-                    || (hit.score_type == EntryType::LowerBound
+                && (hit.score_type() == EntryType::Exact
+                    || (hit.score_type() == EntryType::LowerBound
                         && denormalize_score(hit.score, ply) >= beta)
-                    || (hit.score_type == EntryType::UpperBound
+                    || (hit.score_type() == EntryType::UpperBound
                         && denormalize_score(hit.score, ply) <= alpha))
             {
                 return denormalize_score(hit.score, ply);
@@ -314,22 +314,16 @@ impl<'a> Search<'a> {
         let static_eval;
         if self.position.in_check() {
             static_eval = eval::NO_VALUE;
-        } else if let Some(Entry {
-            score: tt_score,
-            static_eval: tt_static_eval,
-            score_type,
-            ..
-        }) = tt_hit
-        {
-            let eval = if tt_static_eval != eval::NO_VALUE {
-                denormalize_score(tt_score, ply)
+        } else if let Some(entry) = tt_hit {
+            let eval = if entry.static_eval != eval::NO_VALUE {
+                denormalize_score(entry.score, ply)
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
-            let denormalized_score = denormalize_score(tt_score, ply);
+            let denormalized_score = denormalize_score(entry.score, ply);
 
-            static_eval = match score_type {
+            static_eval = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
                 EntryType::LowerBound if denormalized_score > eval => denormalized_score,
                 EntryType::UpperBound if denormalized_score < eval => denormalized_score,
@@ -592,10 +586,10 @@ impl<'a> Search<'a> {
         let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
             if !is_pv
                 && self.position.halfmove_clock < 80
-                && (hit.score_type == EntryType::Exact
-                    || (hit.score_type == EntryType::LowerBound
+                && (hit.score_type() == EntryType::Exact
+                    || (hit.score_type() == EntryType::LowerBound
                         && denormalize_score(hit.score, MAX_PLY) >= beta)
-                    || (hit.score_type == EntryType::UpperBound
+                    || (hit.score_type() == EntryType::UpperBound
                         && denormalize_score(hit.score, MAX_PLY) <= alpha))
             {
                 return denormalize_score(hit.score, MAX_PLY);
@@ -610,22 +604,16 @@ impl<'a> Search<'a> {
 
         if self.position.in_check() {
             stand_pat = -eval::INFINITY;
-        } else if let Some(Entry {
-            score: tt_score,
-            static_eval: tt_static_eval,
-            score_type,
-            ..
-        }) = tt_hit
-        {
-            let eval = if tt_static_eval != eval::NO_VALUE {
-                denormalize_score(tt_static_eval, MAX_PLY)
+        } else if let Some(entry) = tt_hit {
+            let eval = if entry.static_eval != eval::NO_VALUE {
+                denormalize_score(entry.static_eval, MAX_PLY)
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
-            let denormalized_score = denormalize_score(tt_score, MAX_PLY);
+            let denormalized_score = denormalize_score(entry.score, MAX_PLY);
 
-            stand_pat = match score_type {
+            stand_pat = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
                 EntryType::LowerBound if denormalized_score > eval => denormalized_score,
                 EntryType::UpperBound if denormalized_score < eval => denormalized_score,

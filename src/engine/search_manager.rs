@@ -50,21 +50,30 @@ impl SearchManager {
         self.tt.clear();
     }
 
-    pub fn think_with_stop(&self, limits: Limits, stop: Arc<AtomicBool>) -> (SearchResult, u64) {
+    pub fn think_with_stop(
+        &mut self,
+        limits: Limits,
+        stop: Arc<AtomicBool>,
+    ) -> (SearchResult, u64) {
         stop.store(false, std::sync::atomic::Ordering::Relaxed);
-        self.tt.increment_age();
-        thread::scope(|s| {
-            let mut handles = Vec::with_capacity(self.num_threads);
+        self.tt.age += 1;
 
-            for thread_idx in 0..self.num_threads {
-                let position = self.position.clone();
-                let tt = &self.tt;
-                let silent = self.silent;
+        let tt = &self.tt;
+        let net = &self.net;
+        let position = &self.position;
+        let num_threads = self.num_threads;
+        let silent = self.silent;
+
+        thread::scope(|s| {
+            let mut handles = Vec::with_capacity(num_threads);
+
+            for thread_idx in 0..num_threads {
+                let position = position.clone();
                 let stop = &stop;
 
                 let handle = s.spawn(move || {
                     let mut search =
-                        Search::new(position, limits, tt, stop, thread_idx, silent, &self.net);
+                        Search::new(position, limits, tt, stop, thread_idx, silent, net);
                     let result = search.think();
                     (result, search.stats)
                 });
@@ -99,7 +108,7 @@ impl SearchManager {
         })
     }
 
-    pub fn think(&self, limits: Limits) -> (SearchResult, u64) {
+    pub fn think(&mut self, limits: Limits) -> (SearchResult, u64) {
         self.think_with_stop(limits, Arc::new(AtomicBool::new(false)))
     }
 }
