@@ -409,7 +409,7 @@ impl<'a> Search<'a> {
         let mut move_count = 0;
         let mut quiets: ArrayVec<Move, 64> = ArrayVec::new();
 
-        let mut move_picker = MovePicker::new_ab_search(&self.position, ply, tt_move);
+        let mut move_picker = MovePicker::new_ab_search(ply, tt_move);
         while let Some(mv) = move_picker.next(self) {
             move_count += 1;
             let capture = mv.is_capture(&self.position);

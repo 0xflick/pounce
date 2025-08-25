@@ -49,7 +49,7 @@ pub enum MovePickerMode {
 }
 
 pub struct MovePicker {
-    move_generator: MoveGen,
+    move_generator: Option<MoveGen>,
     stage: MovePickerStage,
     mode: MovePickerMode,
     tt_move: Move,
@@ -61,10 +61,9 @@ pub struct MovePicker {
 }
 
 impl MovePicker {
-    pub fn new(pos: &Position, mode: MovePickerMode, tt_move: Move, margin: i32) -> MovePicker {
-        let mg = MoveGen::new(pos);
+    pub fn new(mode: MovePickerMode, tt_move: Move, margin: i32) -> MovePicker {
         MovePicker {
-            move_generator: mg,
+            move_generator: None,
             stage: MovePickerStage::TT,
             mode,
             tt_move,
@@ -76,23 +75,22 @@ impl MovePicker {
     }
 
     pub fn new_quiescence(pos: &Position, mut tt_move: Move, margin: i32) -> MovePicker {
-        // If the tt move isn't a capture or promotion, we can't use it in quiescence search
-        if tt_move != Move::NONE && !(tt_move.is_capture(pos) || tt_move.is_promotion()) {
-            tt_move = Move::NONE;
-        }
-
         let mode = if pos.in_check() {
             // if in check, we need to search all moves
             MovePickerMode::QuiescenceCheck
         } else {
+            // If the tt move isn't a capture or promotion, we can't use it in quiescence search
+            if tt_move != Move::NONE && !(tt_move.is_capture(pos) || tt_move.is_promotion()) {
+                tt_move = Move::NONE;
+            };
             MovePickerMode::Quiescence
         };
 
-        MovePicker::new(pos, mode, tt_move, margin)
+        MovePicker::new(mode, tt_move, margin)
     }
 
-    pub fn new_ab_search(pos: &Position, ply: usize, tt_move: Move) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal { ply }, tt_move, 1)
+    pub fn new_ab_search(ply: usize, tt_move: Move) -> MovePicker {
+        MovePicker::new(MovePickerMode::Normal { ply }, tt_move, 1)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i32 {
@@ -179,7 +177,7 @@ impl MovePicker {
         match self.stage {
             MovePickerStage::TT => {
                 self.stage = MovePickerStage::ScoreTacticals;
-                if self.tt_move != Move::NONE {
+                if self.tt_move != Move::NONE && self.tt_move.is_pseudo_legal(&search.position) {
                     return Some(self.tt_move);
                 }
                 self.next(search)
@@ -187,11 +185,14 @@ impl MovePicker {
             MovePickerStage::ScoreTacticals => {
                 self.stage = MovePickerStage::Tacticals;
                 self.scored_moves.clear();
+                self.move_generator = Some(MoveGen::new(&search.position));
 
                 self.move_generator
+                    .as_mut()
+                    .unwrap()
                     .set_tacticals_only(search.position.occupancy);
 
-                for m in self.move_generator.by_ref() {
+                for m in self.move_generator.as_mut().unwrap() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 
@@ -219,9 +220,12 @@ impl MovePicker {
             }
             MovePickerStage::ScoreQuiets => {
                 self.stage = MovePickerStage::Quiets;
-                self.move_generator.disable_tacticals_only();
+                self.move_generator
+                    .as_mut()
+                    .unwrap()
+                    .disable_tacticals_only();
 
-                for m in self.move_generator.by_ref() {
+                for m in self.move_generator.as_mut().unwrap() {
                     self.scored_moves.push(MoveWithScore { m, score: 0 });
                 }
 

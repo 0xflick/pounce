@@ -85,6 +85,36 @@ impl Move {
         self.promotion().is_some()
     }
 
+    // Determinie if the move is "pseudo" legal
+    // For now we do some very basic checking. Maybe we're more careful in the future?
+    // This is used to check validity of the tt move
+    pub fn is_pseudo_legal(self, pos: &Position) -> bool {
+        match pos.piece_at(self.from()) {
+            Some(mover) => {
+                if mover.color != pos.side {
+                    // can't move your opponents pieces
+                    return false;
+                }
+
+                if pos.color_at(self.to()).is_some_and(|c| c == pos.side) {
+                    // can't capture your own pieces
+                    return false;
+                }
+
+                if self.is_promotion()
+                    && (self.from().rank() != pos.side.opponent().home_rank()
+                        || self.to().rank() != pos.side.opponent().back_rank()
+                        || mover.role != Role::Pawn)
+                {
+                    return false;
+                }
+
+                true
+            }
+            None => false,
+        }
+    }
+
     #[inline]
     pub fn captured_role(self, pos: &Position) -> Option<Role> {
         pos.role_at(self.to()).or_else(|| {
