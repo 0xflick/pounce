@@ -430,7 +430,7 @@ impl Uci {
         let stop = self.stop.clone();
         let manager = self.manager.clone();
         thread::spawn(move || match manager.try_lock() {
-            Ok(manager) => {
+            Ok(mut manager) => {
                 manager.think_with_stop(limits, stop);
             }
             Err(_) => {
