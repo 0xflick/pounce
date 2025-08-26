@@ -21,7 +21,7 @@ pub fn init_reductions() {
         #[allow(clippy::needless_range_loop)]
         for m in 1..MAX_MOVES {
             for depth in 1..MAX_DEPTH as usize {
-                let reduction = 0.6 + ((depth as f32).ln() * (m as f32).ln()) / 1.9;
+                let reduction = 0.4 + ((depth as f32).ln() * (m as f32).ln()) / 1.9;
                 REDUCTIONS[depth][m] = reduction as u8;
             }
         }
