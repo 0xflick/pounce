@@ -1,9 +1,47 @@
-use std::io::{Error, ErrorKind, Result};
+use std::io::Result;
 
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
 pub type HiddenSize = usize;
 pub const NNUE_HIDDEN_SIZE: HiddenSize = 64;
+
+#[repr(C, align(16))]
+struct Align16<T>(pub T);
+
+impl<T> std::ops::Deref for Align16<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for Align16<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[repr(C)]
+struct FileHeader {
+    magic: [u8; 4],
+    version: u16,
+    model_type: u16,
+    hidden_size: u32,
+    extra: [u8; 20],
+}
+
+#[repr(C)]
+struct NetworkData<const HIDDEN_SIZE: usize> {
+    header: FileHeader,
+    persp_weights: [[f32; HIDDEN_SIZE]; 768], // Feature-major: for each of 768 features, HIDDEN_SIZE weights
+    persp_bias: [f32; HIDDEN_SIZE],
+    output_weights: [[f32; HIDDEN_SIZE]; 2], // Output-major: weights for output 0, then weights for output 1
+    output_bias: f32,
+}
+
+// Static network loaded at compile time via transmute
+static NETWORK: NetworkData<NNUE_HIDDEN_SIZE> =
+    unsafe { std::mem::transmute(*include_bytes!("../../../nets/net.pnn")) };
 
 pub struct NNUEAccumulator<'a, const HIDDEN_SIZE: usize> {
     white_persp: [f32; HIDDEN_SIZE],
@@ -50,9 +88,12 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
                 let white_index = index(piece, sq);
                 let black_index = index(&piece.flip(), sq.flip());
 
+                let white_weights = &self.net.persp_weights[white_index];
+                let black_weights = &self.net.persp_weights[black_index];
+
                 for i in 0..HIDDEN_SIZE {
-                    self.white_persp[i] += self.net.persp_weights[i][white_index];
-                    self.black_persp[i] += self.net.persp_weights[i][black_index]
+                    self.white_persp[i] += white_weights[i];
+                    self.black_persp[i] += black_weights[i];
                 }
             }
         }
@@ -68,15 +109,27 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
     }
 
     fn on_make_move_set(&mut self, sq: Square, piece: Piece) {
+        let white_idx = index(&piece, sq);
+        let black_idx = index(&piece.flip(), sq.flip());
+
+        let white_weights = &self.net.persp_weights[white_idx];
+        let black_weights = &self.net.persp_weights[black_idx];
+
         for i in 0..HIDDEN_SIZE {
-            self.white_persp[i] += self.net.persp_weights[i][index(&piece, sq)];
-            self.black_persp[i] += self.net.persp_weights[i][index(&piece.flip(), sq.flip())];
+            self.white_persp[i] += white_weights[i];
+            self.black_persp[i] += black_weights[i];
         }
     }
     fn on_make_move_discard(&mut self, sq: Square, piece: Piece) {
+        let white_idx = index(&piece, sq);
+        let black_idx = index(&piece.flip(), sq.flip());
+
+        let white_weights = &self.net.persp_weights[white_idx];
+        let black_weights = &self.net.persp_weights[black_idx];
+
         for i in 0..HIDDEN_SIZE {
-            self.white_persp[i] -= self.net.persp_weights[i][index(&piece, sq)];
-            self.black_persp[i] -= self.net.persp_weights[i][index(&piece.flip(), sq.flip())];
+            self.white_persp[i] -= white_weights[i];
+            self.black_persp[i] -= black_weights[i];
         }
     }
 
@@ -85,24 +138,24 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
 }
 
 pub struct PerspectiveNet<const HIDDEN_SIZE: usize> {
-    persp_weights: [[f32; 768]; HIDDEN_SIZE],
-    persp_bias: [f32; HIDDEN_SIZE],
+    persp_weights: Align16<[[f32; HIDDEN_SIZE]; 768]>,
+    persp_bias: Align16<[f32; HIDDEN_SIZE]>,
 
-    output_weights: [[f32; 2]; HIDDEN_SIZE],
+    output_weights: Align16<[[f32; 2]; HIDDEN_SIZE]>,
     output_bias: f32,
 }
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn new(
-        persp_weights: [[f32; 768]; HIDDEN_SIZE],
+        persp_weights: [[f32; HIDDEN_SIZE]; 768],
         persp_bias: [f32; HIDDEN_SIZE],
         output_weights: [[f32; 2]; HIDDEN_SIZE],
         output_bias: f32,
     ) -> Self {
         Self {
-            persp_weights,
-            persp_bias,
-            output_weights,
+            persp_weights: Align16(persp_weights),
+            persp_bias: Align16(persp_bias),
+            output_weights: Align16(output_weights),
             output_bias,
         }
     }
@@ -110,142 +163,40 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn forward(&self, accumulator: &NNUEAccumulator<HIDDEN_SIZE>, stm: Color) -> f32 {
+        let (us, them) = match stm {
+            Color::White => (&accumulator.white_persp, &accumulator.black_persp),
+            Color::Black => (&accumulator.black_persp, &accumulator.white_persp),
+        };
+
         let mut output = self.output_bias;
 
-        match stm {
-            Color::White => {
-                for i in 0..HIDDEN_SIZE {
-                    output += self.output_weights[i][0] * accumulator.white_persp[i].max(0.0);
-                    output += self.output_weights[i][1] * accumulator.black_persp[i].max(0.0);
-                }
-            }
-            Color::Black => {
-                for i in 0..HIDDEN_SIZE {
-                    output += self.output_weights[i][0] * accumulator.black_persp[i].max(0.0);
-                    output += self.output_weights[i][1] * accumulator.white_persp[i].max(0.0);
-                }
-            }
+        // Process our perspective
+        for (i, accum) in us.iter().enumerate() {
+            let activated = accum.max(0.0);
+            output += activated * self.output_weights[i][0];
+        }
+
+        // Process their perspective
+        for (i, accum) in them.iter().enumerate() {
+            let activated = accum.max(0.0);
+            output += activated * self.output_weights[i][1];
         }
 
         output
     }
 }
 
-const HEADER_SIZE: usize = 32;
-const MAGIC_NUMBER: [u8; 4] = [b'P', b'N', b'C', b'E'];
-
-#[repr(u16)]
-#[derive(Debug, Clone, Copy)]
-enum ModelType {
-    _Unknown = 0,
-    Net768,
-}
-
-impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
+impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        let buffer = include_bytes!("../../../nets/net.pnn");
-
-        // Validate header
-        if buffer.len() < HEADER_SIZE {
-            return Err(Error::new(ErrorKind::InvalidData, "File too small"));
-        }
-
-        if buffer[0..4] != MAGIC_NUMBER {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid magic number"));
-        }
-
-        let version = u16::from_le_bytes([buffer[4], buffer[5]]);
-        let model_type = u16::from_le_bytes([buffer[6], buffer[7]]);
-        let hidden_size =
-            u32::from_le_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]) as usize;
-
-        if version != 1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("Unsupported version: {}", version),
-            ));
-        }
-
-        if model_type != ModelType::Net768 as u16 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!("Unexpected model type: {}", model_type),
-            ));
-        }
-
-        if hidden_size != HIDDEN_SIZE {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "Hidden size mismatch: file has {}, expected {}",
-                    hidden_size, HIDDEN_SIZE
-                ),
-            ));
-        }
-
-        // Calculate expected file size
-        let expected_size = HEADER_SIZE +
-            (768 * HIDDEN_SIZE * 4) +  // persp_weights
-            (HIDDEN_SIZE * 4) +         // persp_bias
-            (2 * HIDDEN_SIZE * 4) +     // output_weights
-            4; // output_bias
-
-        if buffer.len() != expected_size {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                format!(
-                    "File size mismatch: expected {} bytes, got {}",
-                    expected_size,
-                    buffer.len()
-                ),
-            ));
-        }
-
-        // Parse weights using chunks
-        let data = &buffer[HEADER_SIZE..];
-        let mut chunks = data.chunks_exact(4);
-
-        // Read persp_weights transposed
-        let mut persp_weights = [[0.0f32; 768]; HIDDEN_SIZE];
-        for feature_idx in 0..768 {
-            for hidden_column in persp_weights.iter_mut() {
-                let bytes = chunks.next().unwrap();
-                let val = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                hidden_column[feature_idx] = val;
-            }
-        }
-
-        // Read persp_bias
-        let mut persp_bias = [0.0f32; HIDDEN_SIZE];
-        for val in persp_bias.iter_mut() {
-            let bytes = chunks.next().unwrap();
-            *val = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        }
-
-        // Read output_weights
-        let mut output_weights = [[0.0f32; 2]; HIDDEN_SIZE];
-
-        // Read all weights for output 0 first
-        for col in output_weights.iter_mut() {
-            let bytes = chunks.next().unwrap();
-            col[0] = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        }
-
-        // Then read all weights for output 1
-        for col in output_weights.iter_mut() {
-            let bytes = chunks.next().unwrap();
-            col[1] = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-        }
-
-        // Read output_bias
-        let bytes = chunks.next().unwrap();
-        let output_bias = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
+        let output_weights =
+            std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
 
         Ok(Self::new(
-            persp_weights,
-            persp_bias,
+            NETWORK.persp_weights,
+            NETWORK.persp_bias,
             output_weights,
-            output_bias,
+            NETWORK.output_bias,
         ))
     }
 }
