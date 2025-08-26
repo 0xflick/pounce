@@ -468,11 +468,6 @@ impl<'a> Search<'a> {
                     reduction -= 1;
                 }
 
-                // reduce captures less
-                if capture {
-                    reduction -= 1;
-                }
-
                 let rdepth = (depth + extension - reduction).clamp(1, depth + extension);
 
                 // Do a zero window search
