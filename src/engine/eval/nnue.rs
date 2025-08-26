@@ -188,19 +188,12 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        // Transpose persp_weights from file format [768][HIDDEN_SIZE] to runtime format [768][HIDDEN_SIZE]
-        // Wait, both are the same format - but we need to copy to satisfy ownership
-        let persp_weights = NETWORK.persp_weights;
-
         // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
-        let mut output_weights = [[0.0f32; 2]; NNUE_HIDDEN_SIZE];
-        for hidden_idx in 0..NNUE_HIDDEN_SIZE {
-            output_weights[hidden_idx][0] = NETWORK.output_weights[0][hidden_idx];
-            output_weights[hidden_idx][1] = NETWORK.output_weights[1][hidden_idx];
-        }
+        let output_weights =
+            std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
 
         Ok(Self::new(
-            persp_weights,
+            NETWORK.persp_weights,
             NETWORK.persp_bias,
             output_weights,
             NETWORK.output_bias,
