@@ -412,11 +412,11 @@ impl<'a> Search<'a> {
         let mut move_picker = MovePicker::new_ab_search(&self.position, ply, tt_move);
         while let Some(mv) = move_picker.next(self) {
             move_count += 1;
-            let capture = mv.is_capture(&self.position);
+            let quiet = mv.is_quiet(&self.position);
 
             // Late Move Pruning: skip late quiet moves at shallow depths
             if !is_pv
-                && !capture
+                && quiet
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
@@ -427,12 +427,11 @@ impl<'a> Search<'a> {
 
             // Futility pruning: skip moves that have no chance of raising alpha
             if !is_pv
-                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
-                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+                && quiet
                 && !self.position.in_check()
                 && depth <= 5
                 && move_count > 1
-                && mv.is_quiet(&self.position)
+                && best > -eval::MATE_IN_PLY
             {
                 let margin = 100 + depth * 100 + 100 * improving as i32;
                 if static_eval + margin as i16 <= alpha {
@@ -456,19 +455,21 @@ impl<'a> Search<'a> {
             let mut score = -eval::INFINITY;
 
             // LMR
-            let needs_full_search = if depth >= 3 && !self.position.in_check() && move_count > 4 {
+            let needs_full_search = if depth >= 3 && !self.position.in_check() && move_count > 2 {
                 let reduction = self.reduction(depth, move_count);
-                let mut rdepth = (depth - 1 - reduction).clamp(1, depth - 2);
+                let mut rdepth = depth - reduction;
 
                 // Reduce less in PV nodes
                 if is_pv {
                     rdepth += 1;
                 }
 
-                // reduce more in non-capture moves
-                if move_count > 15 && !capture {
+                // reduce quiet moves more
+                if quiet {
                     rdepth -= 1;
                 }
+
+                rdepth = rdepth.clamp(1, depth - 1);
 
                 score = -self.search(rdepth, -alpha - 1, -alpha, ply + 1, false, false);
 
@@ -508,7 +509,7 @@ impl<'a> Search<'a> {
                 if score > alpha {
                     alpha = score;
                     if score >= beta {
-                        if !capture {
+                        if quiet {
                             self.history.update_killers(mv, ply);
                             let bonus = 2000.min(350 * depth - 350);
                             self.history
@@ -530,7 +531,7 @@ impl<'a> Search<'a> {
                 }
             }
 
-            if !capture && quiets.len() < quiets.capacity() {
+            if quiet && quiets.len() < quiets.capacity() {
                 quiets.push(mv);
             }
         }
