@@ -420,6 +420,7 @@ impl<'a> Search<'a> {
                 && !self.position.in_check()
                 && depth <= 3
                 && move_count > (3 + depth * depth) as u8
+                && best > -eval::MATE_IN_PLY
                 && !self.history.is_killer(ply, mv)
             {
                 continue;
@@ -455,7 +456,7 @@ impl<'a> Search<'a> {
             let mut score = -eval::INFINITY;
 
             // LMR
-            let needs_full_search = if depth >= 3 && !self.position.in_check() && move_count > 2 {
+            let needs_zw_search = if depth >= 3 && !self.position.in_check() && move_count > 3 {
                 let reduction = self.reduction(depth, move_count);
                 let mut rdepth = depth - reduction;
 
@@ -478,7 +479,7 @@ impl<'a> Search<'a> {
                 move_count > 1 || !is_pv
             };
 
-            if needs_full_search {
+            if needs_zw_search {
                 score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
             }
 
