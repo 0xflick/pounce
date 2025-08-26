@@ -3,7 +3,7 @@ use std::io::Result;
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
 pub type HiddenSize = usize;
-pub const NNUE_HIDDEN_SIZE: HiddenSize = 64;
+pub const NNUE_HIDDEN_SIZE: HiddenSize = 128;
 
 #[repr(C, align(16))]
 struct Align16<T>(pub T);
