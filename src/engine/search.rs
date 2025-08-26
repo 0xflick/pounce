@@ -419,7 +419,7 @@ impl<'a> Search<'a> {
                 && !capture
                 && !self.position.in_check()
                 && depth <= 3
-                && move_count > (3 + depth * depth) as u8
+                && move_count > (3 + depth * depth)
                 && !self.history.is_killer(ply, mv)
             {
                 continue;
@@ -443,10 +443,9 @@ impl<'a> Search<'a> {
             // store node count for effort calculation
             let before_nodes = self.stats.nodes;
 
-            // TODO: extensions
-            let mut new_depth = depth;
+            let mut extension = 0;
             if self.position.in_check() {
-                new_depth += 1;
+                extension += 1
             }
 
             self.stack[ply].mv = mv;
@@ -456,33 +455,47 @@ impl<'a> Search<'a> {
             let mut score = -eval::INFINITY;
 
             // LMR
-            let needs_full_search = if depth >= 3 && !self.position.in_check() && move_count > 4 {
-                let reduction = self.reduction(depth, move_count);
-                let mut rdepth = (depth - 1 - reduction).clamp(1, depth - 2);
+            let needs_full_search = if depth >= 3 && move_count > (1 + is_pv as i32) {
+                let mut reduction = self.reduction(depth, move_count);
 
-                // Reduce less in PV nodes
-                if is_pv {
-                    rdepth += 1;
+                // Reduce more if we're not in a pv node
+                if !is_pv {
+                    reduction += 1;
                 }
 
-                // reduce more in non-capture moves
-                if move_count > 15 && !capture {
-                    rdepth -= 1;
+                // reduce less if the move gave check
+                if self.position.in_check() {
+                    reduction -= 1;
                 }
 
-                score = -self.search(rdepth, -alpha - 1, -alpha, ply + 1, false, false);
+                let rdepth = (depth + extension - reduction).clamp(0, depth + extension);
 
-                score > alpha && rdepth < depth - 1
+                // Do a zero window search
+                score = -self.search(rdepth - 1, -alpha - 1, -alpha, ply + 1, false, false);
+
+                // We need to re-search if we beat alpha, but only if the depth we searched is less
+                // than the depth we'd get from a re-search
+                score > alpha && rdepth < depth + extension - 1
             } else {
+                // we always do a zero window search first if we've already searched this node, or
+                // if we aren't in a pv node
                 move_count > 1 || !is_pv
             };
 
             if needs_full_search {
-                score = -self.search(new_depth - 1, -alpha - 1, -alpha, ply + 1, false, false);
+                score = -self.search(
+                    depth + extension - 1,
+                    -alpha - 1,
+                    -alpha,
+                    ply + 1,
+                    false,
+                    false,
+                );
             }
 
+            // Do a full window search in pv nodes, if we haven't yet beaten beta
             if is_pv && (move_count == 1 || score > alpha && score < beta) {
-                score = -self.search(new_depth - 1, -beta, -alpha, ply + 1, true, false);
+                score = -self.search(depth + extension - 1, -beta, -alpha, ply + 1, true, false);
             }
 
             self.position.unmake_move_with(mv, &mut self.accum);
@@ -689,7 +702,7 @@ impl<'a> Search<'a> {
         best
     }
 
-    fn reduction(&self, depth: i32, move_count: u8) -> i32 {
+    fn reduction(&self, depth: i32, move_count: i32) -> i32 {
         unsafe { REDUCTIONS[depth as usize][move_count as usize] as i32 }
     }
 
