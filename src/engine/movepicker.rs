@@ -78,8 +78,8 @@ impl MovePicker {
         // If the tt move isn't a capture or promotion, we can't use it in quiescence search
         if tt_move != Move::NONE && !(tt_move.is_capture(pos) || tt_move.is_promotion()) {
             tt_move = Move::NONE;
-        };
-        
+        }
+
         let mode = if pos.in_check() {
             // if in check, we need to search all moves
             MovePickerMode::QuiescenceCheck
