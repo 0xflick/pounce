@@ -21,7 +21,7 @@ pub fn init_reductions() {
         #[allow(clippy::needless_range_loop)]
         for m in 1..MAX_MOVES {
             for depth in 1..MAX_DEPTH as usize {
-                let reduction = 0.7 + ((depth as f32).ln() * (m as f32).ln()) / 2.5;
+                let reduction = 0.7 + ((depth as f32).ln() * (m as f32).ln()) / 1.8;
                 REDUCTIONS[depth][m] = reduction as u8;
             }
         }
@@ -455,7 +455,7 @@ impl<'a> Search<'a> {
             let mut score = -eval::INFINITY;
 
             // LMR
-            let needs_full_search = if depth >= 3 && move_count > (1 + is_pv as i32) {
+            let needs_full_search = if depth >= 3 && move_count > (2 + is_pv as i32) {
                 let mut reduction = self.reduction(depth, move_count);
 
                 // Reduce more if we're not in a pv node
@@ -468,7 +468,12 @@ impl<'a> Search<'a> {
                     reduction -= 1;
                 }
 
-                let rdepth = (depth + extension - reduction).clamp(0, depth + extension);
+                // reduce captures less
+                if capture {
+                    reduction -= 1;
+                }
+
+                let rdepth = (depth + extension - reduction).clamp(1, depth + extension);
 
                 // Do a zero window search
                 score = -self.search(rdepth - 1, -alpha - 1, -alpha, ply + 1, false, false);
