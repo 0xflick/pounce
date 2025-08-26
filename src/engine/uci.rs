@@ -403,7 +403,7 @@ impl Uci {
 
     fn cmd_bench(&mut self) -> Result<()> {
         let limits = Limits {
-            depth: Some(7),
+            depth: Some(11),
             ..Default::default()
         };
         println!("Running benchmark...");
