@@ -1,4 +1,4 @@
-mod see;
+pub mod see;
 
 use arrayvec::ArrayVec;
 

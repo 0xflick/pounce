@@ -7,7 +7,7 @@ use crate::chess::{Accumulator, GameResult, Move, Position, Role, Square};
 use crate::engine::eval::{self, nnue};
 use crate::engine::history::HistoryTables;
 use crate::engine::limits::Limits;
-use crate::engine::movepicker::{MAX_MOVES, MovePicker};
+use crate::engine::movepicker::{MAX_MOVES, MovePicker, see};
 use crate::engine::time_management::SearchCop;
 use crate::engine::tt::{Entry, EntryType, Table};
 
@@ -427,26 +427,32 @@ impl<'a> Search<'a> {
 
             // Futility pruning: skip moves that have no chance of raising alpha
             if !is_pv
-                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&alpha)
-                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
+                && best > -eval::MATE_IN_PLY
                 && !self.position.in_check()
                 && depth <= 5
-                && move_count > 1
                 && mv.is_quiet(&self.position)
             {
-                let margin = 100 + depth * 100 + 100 * improving as i32;
+                let margin = 100 + depth * 100 + 100;
                 if static_eval + margin as i16 <= alpha {
                     continue;
                 }
             }
 
-            // store node count for effort calculation
-            let before_nodes = self.stats.nodes;
+            // SEE pruning: skip moves that aren't see positive (with a depth dependent margin)
+            if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 5 {
+                let margin = depth * 300;
+                if !see::see(&self.position, mv, -margin) {
+                    continue;
+                }
+            }
 
             let mut extension = 0;
             if self.position.in_check() {
                 extension += 1
             }
+
+            // store node count for effort calculation
+            let before_nodes = self.stats.nodes;
 
             self.stack[ply].mv = mv;
             self.stack[ply].moved = self.position.role_at(mv.from());
