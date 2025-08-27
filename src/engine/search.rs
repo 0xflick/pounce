@@ -440,11 +440,11 @@ impl<'a> Search<'a> {
             }
 
             // SEE pruning: skip moves that aren't see positive (with a depth dependent margin)
-            if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 10 {
+            if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 5 {
                 let margin = if quiet {
-                    depth * 250
+                    depth * 150
                 } else {
-                    depth * depth * 250
+                    depth * depth * 200
                 };
                 if !see::see(&self.position, mv, -margin) {
                     continue;
