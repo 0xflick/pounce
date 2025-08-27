@@ -412,6 +412,7 @@ impl<'a> Search<'a> {
         let mut move_picker = MovePicker::new_ab_search(&self.position, ply, tt_move);
         while let Some(mv) = move_picker.next(self) {
             move_count += 1;
+            let quiet = mv.is_quiet(&self.position);
             let capture = mv.is_capture(&self.position);
 
             // Late Move Pruning: skip late quiet moves at shallow depths
@@ -439,8 +440,12 @@ impl<'a> Search<'a> {
             }
 
             // SEE pruning: skip moves that aren't see positive (with a depth dependent margin)
-            if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 5 {
-                let margin = depth * 300;
+            if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 10 {
+                let margin = if quiet {
+                    depth * 250
+                } else {
+                    depth * depth * 250
+                };
                 if !see::see(&self.position, mv, -margin) {
                     continue;
                 }
