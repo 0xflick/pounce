@@ -7,12 +7,13 @@ use crate::engine::search::{Frame, MAX_PLY, Stack};
 pub const HISTORY_MAX: i32 = 16384;
 
 const NUM_CONTINUATION_TABLES: usize = 2;
+pub const TOTAL_HISTORY: i32 = HISTORY_MAX * NUM_CONTINUATION_TABLES as i32;
 
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
 type RoleTo<T> = [[T; Square::NUM]; Role::NUM];
 type HistoryTable<T, const MAX: i32> = Sided<Butterfly<HistScore<T, MAX>>>;
-type ContinuationTable<T, const MAX: i32> = Sided<RoleTo<RoleTo<HistScore<T, MAX>>>>;
+type ContinuationTable<T, const MAX: i32> = Sided<RoleTo<Butterfly<HistScore<T, MAX>>>>;
 
 pub struct HistoryTables {
     killers: [[Move; 2]; MAX_PLY],
@@ -45,12 +46,15 @@ impl HistoryTables {
         let hist_idx = self.history_index(position, mv);
         self.history[hist_idx.0][hist_idx.1][hist_idx.2] <<= bonus;
 
+        const CONT_HISTORY_WEIGHTS: [i32; NUM_CONTINUATION_TABLES] = [1024, 512];
+
         for i in 1..=self.continuation.len() {
             if ply < i {
                 break;
             }
             if let Some(c_idx) = self.continuation_index(position, &stack[ply - i], mv) {
-                self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<= bonus;
+                self.continuation[i - 1][c_idx.0][c_idx.1][c_idx.2][c_idx.3][c_idx.4] <<=
+                    bonus * CONT_HISTORY_WEIGHTS[i - 1] / 1024;
             }
         }
     }
@@ -82,7 +86,7 @@ impl HistoryTables {
             }
         }
 
-        value / (1 + NUM_CONTINUATION_TABLES as i32)
+        value
     }
 
     pub fn is_killer(&self, ply: usize, mv: Move) -> bool {
@@ -98,14 +102,11 @@ impl HistoryTables {
         position: &Position,
         frame: &Frame,
         mv: Move,
-    ) -> Option<(Color, Role, Square, Role, Square)> {
+    ) -> Option<(Color, Role, Square, Square, Square)> {
         match frame.moved {
             Some(prev_role) => {
                 let prev_to = frame.mv.to();
-
-                let role = position.role_at(mv.from()).expect("No role at position");
-
-                Some((position.side, prev_role, prev_to, role, mv.to()))
+                Some((position.side, prev_role, prev_to, mv.from(), mv.to()))
             }
             // Null move
             None => None,
