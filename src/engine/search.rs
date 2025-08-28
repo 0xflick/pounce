@@ -534,7 +534,7 @@ impl<'a> Search<'a> {
                     if score >= beta {
                         if !capture {
                             self.history.update_killers(mv, ply);
-                            let bonus = (350 + 350 * depth).min(1600);
+                            let bonus = (350 + 350 * depth).min(3500);
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
 
@@ -544,7 +544,7 @@ impl<'a> Search<'a> {
                                     &self.stack,
                                     ply,
                                     *quiet,
-                                    -bonus / 2,
+                                    -bonus,
                                 );
                             }
                         }
@@ -554,7 +554,7 @@ impl<'a> Search<'a> {
                 }
             }
 
-            if !capture && quiets.len() < quiets.capacity() {
+            if quiet && quiets.len() < quiets.capacity() {
                 quiets.push(mv);
             }
         }
