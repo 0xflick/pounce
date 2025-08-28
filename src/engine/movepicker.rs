@@ -12,7 +12,7 @@ const GOOD_TACTICAL_SCORE: i32 = 22_000;
 const QUEEN_PROMO_BONUS: i32 = 21_002;
 pub const KILLER_1_SCORE: i32 = 21_001;
 pub const KILLER_2_SCORE: i32 = 21_000;
-const BAD_TACTICAL_SCORE: i32 = -25_000;
+const BAD_TACTICAL_SCORE: i32 = 5_000;
 
 pub const MAX_MOVES: usize = 256;
 
