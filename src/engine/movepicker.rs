@@ -7,12 +7,12 @@ use crate::chess::{Move, Position, Role};
 use crate::engine::history::HistoryTables;
 use crate::engine::search::{Search, Stack};
 
-const TT_MOVE_SCORE: i32 = 30_000;
+const TT_MOVE_SCORE: i32 = 50_000;
 const GOOD_TACTICAL_SCORE: i32 = 22_000;
 const QUEEN_PROMO_BONUS: i32 = 21_002;
 pub const KILLER_1_SCORE: i32 = 21_001;
 pub const KILLER_2_SCORE: i32 = 21_000;
-const BAD_TACTICAL_SCORE: i32 = 17_000;
+const BAD_TACTICAL_SCORE: i32 = 5_000;
 
 pub const MAX_MOVES: usize = 256;
 
@@ -117,7 +117,7 @@ impl MovePicker {
                             if see::see(position, self.scored_moves[i].m, self.margin) {
                                 QUEEN_PROMO_BONUS + GOOD_TACTICAL_SCORE
                             } else {
-                                QUEEN_PROMO_BONUS + BAD_TACTICAL_SCORE
+                                BAD_TACTICAL_SCORE
                             }
                         }
                         _ => BAD_TACTICAL_SCORE,
