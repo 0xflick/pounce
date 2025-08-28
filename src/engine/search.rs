@@ -534,7 +534,7 @@ impl<'a> Search<'a> {
                     if score >= beta {
                         if !capture {
                             self.history.update_killers(mv, ply);
-                            let bonus = 2000.min(350 * depth - 350);
+                            let bonus = (350 + 350 * depth).min(1600);
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
 
