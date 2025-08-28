@@ -7,7 +7,7 @@ use crate::engine::search::{Frame, MAX_PLY, Stack};
 pub const HISTORY_MAX: i32 = 16384;
 
 const NUM_CONTINUATION_TABLES: usize = 2;
-pub const TOTAL_HISTORY: i32 = HISTORY_MAX * NUM_CONTINUATION_TABLES as i32;
+pub const TOTAL_HISTORY: i32 = HISTORY_MAX * (1 + NUM_CONTINUATION_TABLES as i32);
 
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
