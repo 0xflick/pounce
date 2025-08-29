@@ -356,8 +356,12 @@ impl<'a> Search<'a> {
 
         let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
 
-        if !is_root && depth >= 6 && !self.position.in_check() && tt_move == Move::NONE {
+        if !is_root && depth >= 3 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
+            
+            if is_pv {
+                depth -= 1;
+            }
         }
 
         // Reverse futility pruning
@@ -388,7 +392,7 @@ impl<'a> Search<'a> {
             self.stack[ply].mv = Move::NULL;
             self.stack[ply].moved = None;
 
-            let mut reduction = 3 + depth / 5;
+            let mut reduction = 5 + depth / 5;
             // reduce more based on how far above beta we are
             reduction += ((static_eval - beta) / 200).min(3) as i32;
 
