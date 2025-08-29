@@ -388,18 +388,19 @@ impl<'a> Search<'a> {
             self.stack[ply].mv = Move::NULL;
             self.stack[ply].moved = None;
 
-            let reduced_depth = depth - (3 + (depth / 5));
-            let null_score = -self.search(reduced_depth, -beta, -beta + 1, ply + 1, false, false);
+            let mut reduction = 3 + depth / 5;
+            // reduce more based on how far above beta we are
+            reduction += ((static_eval - beta) / 200).min(3) as i32;
+
+            let null_score =
+                -self.search(depth - reduction, -beta, -beta + 1, ply + 1, false, false);
 
             self.position.unmake_null_move_with(&mut self.accum);
             self.stack[ply].mv = prev_move;
             self.stack[ply].moved = prev_moved;
 
             if null_score >= beta {
-                if null_score >= (eval::MATE_IN_PLY) {
-                    return beta;
-                }
-                return null_score;
+                return beta;
             }
         }
 
