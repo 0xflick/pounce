@@ -358,7 +358,7 @@ impl<'a> Search<'a> {
 
         if !is_root && depth >= 3 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
-            
+
             if is_pv {
                 depth -= 1;
             }
