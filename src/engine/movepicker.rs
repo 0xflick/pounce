@@ -10,9 +10,9 @@ use crate::engine::search::{Search, Stack};
 const TT_MOVE_SCORE: i32 = 50_000;
 const GOOD_TACTICAL_SCORE: i32 = 22_000;
 const QUEEN_PROMO_BONUS: i32 = 21_002;
-pub const KILLER_1_SCORE: i32 = 21_001;
-pub const KILLER_2_SCORE: i32 = 21_000;
-const BAD_TACTICAL_SCORE: i32 = history::TOTAL_HISTORY / 6;
+pub const KILLER_1_SCORE: i32 = 21_001 + history::TOTAL_HISTORY;
+pub const KILLER_2_SCORE: i32 = 21_000 + history::TOTAL_HISTORY;
+const BAD_TACTICAL_SCORE: i32 = history::TOTAL_HISTORY / 10;
 
 pub const MAX_MOVES: usize = 256;
 
