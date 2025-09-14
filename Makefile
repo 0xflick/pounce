@@ -1,7 +1,7 @@
 .PHONY: check-cargo-pgo pgo-release
 
 pgo-release: check-cargo-pgo
-	cargo pgo run -- bench 9 > /dev/null
+	cargo pgo run -- bench > /dev/null
 	cargo pgo optimize build -- --bin pounce
 
 check-cargo-pgo:
