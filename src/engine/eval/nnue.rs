@@ -88,8 +88,8 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
                 let white_index = index(piece, sq);
                 let black_index = index(&piece.flip(), sq.flip());
 
-                let white_weights = &self.net.persp_weights[white_index];
-                let black_weights = &self.net.persp_weights[black_index];
+                let white_weights = &self.net.persp_weights.0[white_index];
+                let black_weights = &self.net.persp_weights.0[black_index];
 
                 for i in 0..HIDDEN_SIZE {
                     self.white_persp[i] += white_weights[i];
@@ -112,8 +112,8 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
         let white_idx = index(&piece, sq);
         let black_idx = index(&piece.flip(), sq.flip());
 
-        let white_weights = &self.net.persp_weights[white_idx];
-        let black_weights = &self.net.persp_weights[black_idx];
+        let white_weights = &self.net.persp_weights.0[white_idx];
+        let black_weights = &self.net.persp_weights.0[black_idx];
 
         for i in 0..HIDDEN_SIZE {
             self.white_persp[i] += white_weights[i];
@@ -124,8 +124,8 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
         let white_idx = index(&piece, sq);
         let black_idx = index(&piece.flip(), sq.flip());
 
-        let white_weights = &self.net.persp_weights[white_idx];
-        let black_weights = &self.net.persp_weights[black_idx];
+        let white_weights = &self.net.persp_weights.0[white_idx];
+        let black_weights = &self.net.persp_weights.0[black_idx];
 
         for i in 0..HIDDEN_SIZE {
             self.white_persp[i] -= white_weights[i];
@@ -138,7 +138,7 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
 }
 
 pub struct PerspectiveNet<const HIDDEN_SIZE: usize> {
-    persp_weights: Align16<[[f32; HIDDEN_SIZE]; 768]>,
+    persp_weights: Box<Align16<[[f32; HIDDEN_SIZE]; 768]>>,
     persp_bias: Align16<[f32; HIDDEN_SIZE]>,
 
     output_weights: Align16<[[f32; 2]; HIDDEN_SIZE]>,
@@ -153,7 +153,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         output_bias: f32,
     ) -> Self {
         Self {
-            persp_weights: Align16(persp_weights),
+            persp_weights: Box::new(Align16(persp_weights)),
             persp_bias: Align16(persp_bias),
             output_weights: Align16(output_weights),
             output_bias,
