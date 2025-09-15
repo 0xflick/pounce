@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag'
+        description: "Release tag"
         required: true
-        default: 'v0.0.0-test'
+        default: "v0.0.0-test"
 
 env:
   CARGO_TERM_COLOR: always
@@ -76,7 +76,7 @@ jobs:
             cpu: x86-64-v3
             suffix: windows-x86_64-avx2
             use_cross: false
-            pgo: false  # Disable PGO for AVX2 build to avoid conflicts
+            pgo: false # Disable PGO for AVX2 build to avoid conflicts
 
     steps:
       - name: Checkout
@@ -123,7 +123,7 @@ jobs:
         shell: bash
         run: |
           # Generate profile data
-          cargo pgo run --target ${{ matrix.target }} -- bench --depth 8 > /dev/null 2>&1 || true
+          cargo pgo run --target ${{ matrix.target }} -- bench > /dev/null 2>&1 || true
 
           # Build optimized binary
           cargo pgo optimize build --target ${{ matrix.target }} --release --bin pounce
