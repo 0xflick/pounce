@@ -168,7 +168,9 @@ jobs:
           # Download matrix header
           echo "## Downloads" > DOWNLOAD_INFO.md
           echo "" >> DOWNLOAD_INFO.md
-          echo "| Platform | Architecture | CPU Features | Download | Checksum |" >> DOWNLOAD_INFO.md
+          echo "Available in the Assets section below:" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "| Platform | Architecture | CPU Features | Filename | Checksum |" >> DOWNLOAD_INFO.md
           echo "|----------|-------------|--------------|----------|----------|" >> DOWNLOAD_INFO.md
 
           # Generate download matrix
@@ -209,8 +211,8 @@ jobs:
                   *) feature_name="$features" ;;
                 esac
 
-                # Add table row with direct download links
-                echo "| $platform_name | $arch_name | $feature_name | [$basename](https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/$basename) | [$checksum_file](https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/$checksum_file) |" >> DOWNLOAD_INFO.md
+                # Add table row with filename and checksum (users download from Assets section)
+                echo "| $platform_name | $arch_name | $feature_name | \`$basename\` | \`$checksum_file\` |" >> DOWNLOAD_INFO.md
               fi
             fi
           done
