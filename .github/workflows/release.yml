@@ -1,0 +1,290 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag"
+        required: true
+        default: "v0.0.0-test"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-matrix:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 builds with different CPU features
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cpu: x86-64
+            suffix: linux-x86_64-generic
+            use_cross: false
+            pgo: true
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cpu: x86-64-v2
+            suffix: linux-x86_64-sse42
+            use_cross: false
+            pgo: true
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cpu: x86-64-v3
+            suffix: linux-x86_64-avx2
+            use_cross: false
+            pgo: true
+
+          # Linux ARM64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cpu: cortex-a72
+            suffix: linux-aarch64
+            use_cross: true
+            pgo: false
+
+          # macOS builds
+          - target: x86_64-apple-darwin
+            os: macos-13
+            cpu: x86-64-v2
+            suffix: macos-x86_64
+            use_cross: false
+            pgo: true
+          - target: aarch64-apple-darwin
+            os: macos-14
+            cpu: apple-m1
+            suffix: macos-aarch64
+            use_cross: false
+            pgo: true
+
+          # Windows builds
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cpu: x86-64-v2
+            suffix: windows-x86_64-sse42
+            use_cross: false
+            pgo: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cpu: x86-64-v3
+            suffix: windows-x86_64-avx2
+            use_cross: false
+            pgo: false # Disable PGO for AVX2 build to avoid conflicts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Install cargo-pgo
+        if: matrix.pgo
+        run: cargo install cargo-pgo
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Set environment variables
+        shell: bash
+        run: |
+          echo "RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" >> $GITHUB_ENV
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "BINARY_EXT=.exe" >> $GITHUB_ENV
+          else
+            echo "BINARY_EXT=" >> $GITHUB_ENV
+          fi
+
+      - name: Build with PGO (native)
+        if: matrix.pgo && !matrix.use_cross
+        shell: bash
+        run: |
+          # Generate profile data
+          cargo pgo run --target ${{ matrix.target }} -- bench > /dev/null 2>&1 || true
+
+          # Build optimized binary
+          cargo pgo optimize build --target ${{ matrix.target }} --release --bin pounce
+
+      - name: Build without PGO (cross-compilation or disabled)
+        if: ${{ !matrix.pgo || matrix.use_cross }}
+        shell: bash
+        run: |
+          if [[ "${{ matrix.use_cross }}" == "true" ]]; then
+            cross build --target ${{ matrix.target }} --release --bin pounce
+          else
+            cargo build --target ${{ matrix.target }} --release --bin pounce
+          fi
+
+      - name: Run basic smoke test
+        if: ${{ !matrix.use_cross }}
+        shell: bash
+        run: |
+          ./target/${{ matrix.target }}/release/pounce${{ env.BINARY_EXT }} --version
+          echo "quit" | ./target/${{ matrix.target }}/release/pounce${{ env.BINARY_EXT }} || true
+
+      - name: Prepare release binary
+        shell: bash
+        run: |
+          mkdir -p release
+          cp target/${{ matrix.target }}/release/pounce${{ env.BINARY_EXT }} release/pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }}
+
+          # Create build info file
+          echo "Target: ${{ matrix.target }}" > release/pounce-${{ matrix.suffix }}.buildinfo
+          echo "CPU: ${{ matrix.cpu }}" >> release/pounce-${{ matrix.suffix }}.buildinfo
+          echo "PGO: ${{ matrix.pgo }}" >> release/pounce-${{ matrix.suffix }}.buildinfo
+          echo "Built: $(date -u)" >> release/pounce-${{ matrix.suffix }}.buildinfo
+          echo "Runner: ${{ runner.os }}" >> release/pounce-${{ matrix.suffix }}.buildinfo
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd release
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # Use PowerShell for cleaner output on Windows
+            powershell -Command "Get-FileHash pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }} -Algorithm SHA256 | Select-Object -ExpandProperty Hash" | tr '[:upper:]' '[:lower:]' > pounce-${{ matrix.suffix }}.sha256
+            echo "  pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }}" >> pounce-${{ matrix.suffix }}.sha256
+          else
+            shasum -a 256 pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }} > pounce-${{ matrix.suffix }}.sha256
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pounce-${{ matrix.suffix }}
+          path: |
+            release/pounce-${{ matrix.suffix }}*
+          retention-days: 30
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -name "pounce-*" -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Generate download matrix and guides
+        run: |
+          # Download matrix header
+          echo "## Downloads" > DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "| Platform | Architecture | CPU Features | Download | Checksum |" >> DOWNLOAD_INFO.md
+          echo "|----------|-------------|--------------|----------|----------|" >> DOWNLOAD_INFO.md
+
+          # Generate download matrix
+          for file in release-assets/pounce-*; do
+            if [[ -f "$file" && "$file" != *.buildinfo && "$file" != *.sha256 ]]; then
+              basename=$(basename "$file")
+              checksum_file="${basename}.sha256"
+
+              # Parse platform info from filename
+              if [[ "$basename" =~ pounce-([^-]+)-([^-]+)-?(.*)$ ]]; then
+                platform="${BASH_REMATCH[1]}"
+                arch="${BASH_REMATCH[2]}"
+                features="${BASH_REMATCH[3]}"
+
+                # Clean up platform names
+                case "$platform" in
+                  "linux") platform_name="🐧 Linux" ;;
+                  "macos") platform_name="🍎 macOS" ;;
+                  "windows") platform_name="🪟 Windows" ;;
+                  *) platform_name="$platform" ;;
+                esac
+
+                # Clean up architecture names
+                case "$arch" in
+                  "x86_64") arch_name="x86_64" ;;
+                  "aarch64") arch_name="ARM64" ;;
+                  *) arch_name="$arch" ;;
+                esac
+
+                # Clean up feature names
+                case "$features" in
+                  "generic") feature_name="Generic" ;;
+                  "sse42") feature_name="SSE4.2" ;;
+                  "avx2") feature_name="AVX2" ;;
+                  "") feature_name="Optimized" ;;
+                  *) feature_name="$features" ;;
+                esac
+
+                # Add table row
+                echo "| $platform_name | $arch_name | $feature_name | [$basename]($basename) | [$checksum_file]($checksum_file) |" >> DOWNLOAD_INFO.md
+              fi
+            fi
+          done
+
+          echo "" >> DOWNLOAD_INFO.md
+          echo "## CPU Feature Guide" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "Choose the highest feature level supported by your CPU:" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "- **Generic**: Compatible with all x86_64 CPUs (baseline)" >> DOWNLOAD_INFO.md
+          echo "- **SSE4.2**: Requires SSE4.2 support (Intel Nehalem 2008+, AMD Bulldozer 2011+)" >> DOWNLOAD_INFO.md
+          echo "- **AVX2**: Requires AVX2 support (Intel Haswell 2013+, AMD Excavator 2015+)" >> DOWNLOAD_INFO.md
+          echo "- **ARM64**: ARM64 processors with NEON optimizations" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "## Installation" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "1. Download the appropriate binary for your platform" >> DOWNLOAD_INFO.md
+          echo "2. Verify the checksum (optional but recommended)" >> DOWNLOAD_INFO.md
+          echo "3. Make executable (Linux/macOS): \`chmod +x pounce-*\`" >> DOWNLOAD_INFO.md
+          echo "4. Run: \`./pounce-*\` or integrate with your UCI-compatible chess GUI" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "## Usage" >> DOWNLOAD_INFO.md
+          echo "```bash" >> DOWNLOAD_INFO.md
+          echo "# Check version" >> DOWNLOAD_INFO.md
+          echo "./pounce --version" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "# Run benchmark" >> DOWNLOAD_INFO.md
+          echo "./pounce bench" >> DOWNLOAD_INFO.md
+          echo "" >> DOWNLOAD_INFO.md
+          echo "# UCI mode (for chess GUIs)" >> DOWNLOAD_INFO.md
+          echo "./pounce" >> DOWNLOAD_INFO.md
+          echo "```"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: "Pounce ${{ github.event.inputs.tag || github.ref_name }}"
+          body_path: DOWNLOAD_INFO.md
+          files: release-assets/*
+          draft: true
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
