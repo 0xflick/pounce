@@ -185,9 +185,9 @@ jobs:
 
                 # Clean up platform names
                 case "$platform" in
-                  "linux") platform_name="🐧 Linux" ;;
-                  "macos") platform_name="🍎 macOS" ;;
-                  "windows") platform_name="🪟 Windows" ;;
+                  "linux") platform_name="Linux" ;;
+                  "macos") platform_name="macOS" ;;
+                  "windows") platform_name="Windows" ;;
                   *) platform_name="$platform" ;;
                 esac
 
@@ -203,12 +203,14 @@ jobs:
                   "generic") feature_name="Generic" ;;
                   "sse42") feature_name="SSE4.2" ;;
                   "avx2") feature_name="AVX2" ;;
-                  "") feature_name="Optimized" ;;
+                  "x86_64") feature_name="Generic" ;;
+                  "aarch64") feature_name="ARM64" ;;
+                  "") feature_name="Native" ;;
                   *) feature_name="$features" ;;
                 esac
 
-                # Add table row
-                echo "| $platform_name | $arch_name | $feature_name | [$basename]($basename) | [$checksum_file]($checksum_file) |" >> DOWNLOAD_INFO.md
+                # Add table row with direct download links
+                echo "| $platform_name | $arch_name | $feature_name | [$basename](https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/$basename) | [$checksum_file](https://github.com/${{ github.repository }}/releases/download/${{ github.event.inputs.tag || github.ref_name }}/$checksum_file) |" >> DOWNLOAD_INFO.md
               fi
             fi
           done
