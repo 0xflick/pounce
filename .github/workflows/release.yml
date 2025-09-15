@@ -4,9 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    branches:
-      - "main"
-  pull_request:
   workflow_dispatch:
     inputs:
       tag:
@@ -252,3 +249,5 @@ jobs:
           draft: true
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
