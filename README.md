@@ -29,17 +29,28 @@ A UCI compatible chess engine written in Rust.
 There's also a magic bitboard generator in the `wiz` binary, and an alternate
 datagen binary (`datagen`) that's still WIP.
 
-## Building
+## Installation
 
-You can build an optimized binary with:
+### Pre-built Binaries (Recommended)
+
+Download optimized binaries for your platform from the [Releases page](https://github.com/0xflick/pounce/releases). These include builds optimized for different CPU feature sets:
+
+- **Generic**: Compatible with all x86_64 CPUs
+- **SSE4.2**: For modern CPUs (Intel 2008+, AMD 2011+)
+- **AVX2**: For newer CPUs (Intel 2013+, AMD 2015+)
+- **ARM64**: For ARM processors with NEON optimizations
+
+### Building Locally (Fastest Performance)
+
+For maximum performance, build locally with Profile-Guided Optimization:
 
 ```shell
 make pgo-release
 ```
 
-This requires cargo-pgo which will be installed automatically by the Makefile.
+This uses your CPU's native instruction set and optimizes based on actual runtime profiling, typically providing 5-15% better performance than pre-built binaries. Requires cargo-pgo which will be installed automatically.
 
-A normal release build can be built with:
+A standard release build can be built with:
 
 ```shell
 cargo build --release
