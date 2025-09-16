@@ -64,6 +64,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -114,24 +117,40 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp target/${{ matrix.target }}/release/pounce${{ env.BINARY_EXT }} release/pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }}
+
+          # Get version from tag, fallback to git describe
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ "$VERSION" == refs/tags/* ]]; then
+            VERSION="${VERSION#refs/tags/}"
+          fi
+
+          # Copy binary with version in filename
+          cp target/${{ matrix.target }}/release/pounce${{ env.BINARY_EXT }} release/pounce-${{ matrix.suffix }}-${VERSION}${{ env.BINARY_EXT }}
 
           # Create build info file
-          echo "Target: ${{ matrix.target }}" > release/pounce-${{ matrix.suffix }}.buildinfo
-          echo "CPU: ${{ matrix.cpu }}" >> release/pounce-${{ matrix.suffix }}.buildinfo
-          echo "Built: $(date -u)" >> release/pounce-${{ matrix.suffix }}.buildinfo
-          echo "Runner: ${{ runner.os }}" >> release/pounce-${{ matrix.suffix }}.buildinfo
+          echo "Target: ${{ matrix.target }}" > release/pounce-${{ matrix.suffix }}-${VERSION}.buildinfo
+          echo "CPU: ${{ matrix.cpu }}" >> release/pounce-${{ matrix.suffix }}-${VERSION}.buildinfo
+          echo "Version: $VERSION" >> release/pounce-${{ matrix.suffix }}-${VERSION}.buildinfo
+          echo "Built: $(date -u)" >> release/pounce-${{ matrix.suffix }}-${VERSION}.buildinfo
+          echo "Runner: ${{ runner.os }}" >> release/pounce-${{ matrix.suffix }}-${VERSION}.buildinfo
 
       - name: Generate checksums
         shell: bash
         run: |
           cd release
+
+          # Get version for filename
+          VERSION="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ "$VERSION" == refs/tags/* ]]; then
+            VERSION="${VERSION#refs/tags/}"
+          fi
+
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             # Use PowerShell for cleaner output on Windows
-            powershell -Command "Get-FileHash pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }} -Algorithm SHA256 | Select-Object -ExpandProperty Hash" | tr '[:upper:]' '[:lower:]' > pounce-${{ matrix.suffix }}.sha256
-            echo "  pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }}" >> pounce-${{ matrix.suffix }}.sha256
+            powershell -Command "Get-FileHash pounce-${{ matrix.suffix }}-${VERSION}${{ env.BINARY_EXT }} -Algorithm SHA256 | Select-Object -ExpandProperty Hash" | tr '[:upper:]' '[:lower:]' > pounce-${{ matrix.suffix }}-${VERSION}.sha256
+            echo "  pounce-${{ matrix.suffix }}-${VERSION}${{ env.BINARY_EXT }}" >> pounce-${{ matrix.suffix }}-${VERSION}.sha256
           else
-            shasum -a 256 pounce-${{ matrix.suffix }}${{ env.BINARY_EXT }} > pounce-${{ matrix.suffix }}.sha256
+            shasum -a 256 pounce-${{ matrix.suffix }}-${VERSION}${{ env.BINARY_EXT }} > pounce-${{ matrix.suffix }}-${VERSION}.sha256
           fi
 
       - name: Upload artifacts
@@ -139,7 +158,7 @@ jobs:
         with:
           name: pounce-${{ matrix.suffix }}
           path: |
-            release/pounce-${{ matrix.suffix }}*
+            release/pounce-${{ matrix.suffix }}-*
           retention-days: 30
 
   create-release:
@@ -151,6 +170,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
