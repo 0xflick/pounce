@@ -811,10 +811,10 @@ impl Position {
         };
 
         // Don't capture our own pieces
-        if let Some(captured) = self.piece_at(to) {
-            if captured.color == self.side {
-                return false;
-            }
+        if let Some(captured) = self.piece_at(to)
+            && captured.color == self.side
+        {
+            return false;
         }
 
         // Check validity based on move type
