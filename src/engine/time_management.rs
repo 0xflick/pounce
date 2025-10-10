@@ -104,7 +104,7 @@ impl SearchCop {
     pub fn set_single_legal_move(&mut self) {
         if self.adjust {
             // If there's only one legal move, cap search time to 250ms
-            self.max_time = Some(Duration::from_millis(250));
+            self.max_time = self.max_time.map(|t| t.min(Duration::from_millis(250)));
         }
     }
 
