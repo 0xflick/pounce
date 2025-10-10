@@ -16,8 +16,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Gen {
-        #[arg(short, long, default_value_t = 7)]
-        depth: u8,
+        #[arg(short, long, conflicts_with = "nodes")]
+        depth: Option<u8>,
+
+        #[arg(long, conflicts_with = "depth")]
+        nodes: Option<u64>,
 
         #[arg(short, long)]
         out_path: PathBuf,
@@ -52,24 +55,37 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Gen {
             depth,
+            nodes,
             out_path,
             num_games,
             threads,
             hash_size,
             save_interval_secs,
             log_interval_secs,
-        } => datagen::datagen(DatagenConfig {
-            limits: Limits {
-                depth: Some(depth),
-                ..Limits::new()
-            },
-            num_games,
-            hash_size_mb: hash_size,
-            threads: threads.unwrap_or(1),
-            out_path,
-            save_interval_secs,
-            log_interval_secs,
-        }),
+        } => {
+            let limits = if let Some(n) = nodes {
+                Limits {
+                    nodes: Some(n),
+                    ..Limits::new()
+                }
+            } else {
+                Limits {
+                    depth: Some(depth.unwrap_or(7)), // default to depth 7 if nothing
+                    // specified
+                    ..Limits::new()
+                }
+            };
+
+            datagen::datagen(DatagenConfig {
+                limits,
+                num_games,
+                hash_size_mb: hash_size,
+                threads: threads.unwrap_or(1),
+                out_path,
+                save_interval_secs,
+                log_interval_secs,
+            })
+        }
         Commands::BinToPgn { in_file } => datagen::bin_to_pgn(&in_file),
         Commands::Count { in_files } => datagen::count_bins(&in_files),
     }
