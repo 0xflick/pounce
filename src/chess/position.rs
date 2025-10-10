@@ -786,6 +786,116 @@ impl Position {
 
         true
     }
+
+    /// Lightweight pseudo-legality check for moves from untrusted sources (e.g., TT).
+    /// Returns true if the move looks reasonable, false if obviously corrupt.
+    /// This is NOT a full legality check - it's just to catch corrupted data.
+    pub fn is_pseudo_legal(&self, mv: Move) -> bool {
+        // Reject sentinel values
+        if mv == Move::NONE || mv == Move::NULL {
+            return false;
+        }
+
+        let from = mv.from();
+        let to = mv.to();
+
+        // Reject moves where from == to
+        if from == to {
+            return false;
+        }
+
+        // Check that we have a piece of our color at the from square
+        let piece = match self.piece_at(from) {
+            Some(p) if p.color == self.side => p,
+            _ => return false,
+        };
+
+        // Don't capture our own pieces
+        if let Some(captured) = self.piece_at(to) {
+            if captured.color == self.side {
+                return false;
+            }
+        }
+
+        // Check validity based on move type
+        let move_type = mv.move_type(piece.role, self.ep_square);
+
+        match move_type {
+            MoveType::Normal => self.is_valid_normal_move(piece, from, to),
+
+            MoveType::EnPassant => {
+                piece.role == Role::Pawn
+                    && self.ep_square == Some(to)
+                    && get_pawn_attacks(from, self.side).contains(to)
+            }
+
+            MoveType::DoublePawnPush => {
+                piece.role == Role::Pawn
+                    && from.file() == to.file()
+                    && match self.side {
+                        Color::White => {
+                            from.rank() == crate::chess::board::Rank::R2
+                                && to.rank() == crate::chess::board::Rank::R4
+                        }
+                        Color::Black => {
+                            from.rank() == crate::chess::board::Rank::R7
+                                && to.rank() == crate::chess::board::Rank::R5
+                        }
+                    }
+            }
+
+            MoveType::Castle => {
+                piece.role == Role::King
+                    && from.rank() == self.side.back_rank()
+                    && to.rank() == self.side.back_rank()
+                    && from.file().distance(to.file()) == 2
+            }
+
+            MoveType::Promotion => {
+                piece.role == Role::Pawn
+                    && to.rank() == self.side.opponent().back_rank()
+                    && matches!(
+                        mv.promotion(),
+                        Some(Role::Queen | Role::Rook | Role::Bishop | Role::Knight)
+                    )
+                    && from.file().distance(to.file()) <= 1
+            }
+        }
+    }
+
+    fn is_valid_normal_move(&self, piece: Piece, from: Square, to: Square) -> bool {
+        match piece.role {
+            Role::Pawn => {
+                // Check if it's a diagonal attack (must be capturing)
+                if get_pawn_attacks(from, self.side).contains(to) {
+                    self.piece_at(to).is_some()
+                } else {
+                    // Must be a forward push (already checked it's not double push)
+                    from.up(self.side) == Some(to) && self.piece_at(to).is_none()
+                }
+            }
+
+            Role::Knight => get_knight_moves(from).contains(to),
+
+            Role::Bishop => {
+                bishop_rays(from).contains(to) && (between(from, to) & self.occupancy).none()
+            }
+
+            Role::Rook => {
+                rook_rays(from).contains(to) && (between(from, to) & self.occupancy).none()
+            }
+
+            Role::Queen => {
+                (bishop_rays(from) | rook_rays(from)).contains(to)
+                    && (between(from, to) & self.occupancy).none()
+            }
+
+            Role::King => {
+                // One square in any direction (castling handled separately)
+                from.rank().distance(to.rank()) <= 1 && from.file().distance(to.file()) <= 1
+            }
+        }
+    }
 }
 
 #[cfg(test)]

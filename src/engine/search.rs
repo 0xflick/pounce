@@ -212,6 +212,13 @@ impl<'a> Search<'a> {
             bestmove = self.stats.pv[0][0];
         }
 
+        // Safety: If we still don't have a move (timeout before depth 1 completes),
+        // pick any legal move rather than returning Move::NONE
+        if bestmove == Move::NONE {
+            let mg = crate::chess::movegen::MoveGen::new(&self.position);
+            bestmove = mg.into_iter().next().unwrap_or(Move::NONE);
+        }
+
         SearchResult {
             bestmove,
             score,
@@ -354,7 +361,15 @@ impl<'a> Search<'a> {
             true
         };
 
-        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+        let tt_move = {
+            let mv = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+            // Validate TT move - if it's corrupt/invalid, ignore it
+            if mv != Move::NONE && !self.position.is_pseudo_legal(mv) {
+                Move::NONE
+            } else {
+                mv
+            }
+        };
 
         if !is_root && depth >= 3 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
@@ -671,7 +686,15 @@ impl<'a> Search<'a> {
         let mut best = stand_pat;
         let mut best_move = Move::NONE;
 
-        let tt_move = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+        let tt_move = {
+            let mv = tt_hit.map_or(Move::NONE, |tt| tt.best_move);
+            // Validate TT move - if it's corrupt/invalid, ignore it
+            if mv != Move::NONE && !self.position.is_pseudo_legal(mv) {
+                Move::NONE
+            } else {
+                mv
+            }
+        };
 
         let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
