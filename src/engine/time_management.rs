@@ -128,7 +128,14 @@ impl SearchCop {
 
     pub fn adjust(&mut self, stats: &Stats) {
         if self.adjust {
-            let bm_nodes = stats.effort[stats.pv[0][0].from()][stats.pv[0][0].to()];
+            let best_move = stats.pv[0][0];
+
+            // Safety: Don't access effort array if we don't have a valid move
+            if best_move == crate::chess::Move::NONE || best_move == crate::chess::Move::NULL {
+                return;
+            }
+
+            let bm_nodes = stats.effort[best_move.from()][best_move.to()];
             let bm_frac = bm_nodes as f32 / stats.nodes as f32;
 
             self.scale = (0.4 + 1.7 * (1. - bm_frac)).max(0.5);
