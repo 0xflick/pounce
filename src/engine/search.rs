@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use arrayvec::ArrayVec;
 
+use crate::chess::movegen::MoveGen;
 use crate::chess::{Accumulator, GameResult, Move, Position, Role, Square};
 use crate::engine::eval::{self, nnue};
 use crate::engine::history::HistoryTables;
@@ -370,6 +371,14 @@ impl<'a> Search<'a> {
                 mv
             }
         };
+
+        // If we're at root and there's only one legal move, inform time management
+        if is_root {
+            let mg = MoveGen::new(&self.position);
+            if mg.len() == 1 {
+                self.tm.set_single_legal_move();
+            }
+        }
 
         if !is_root && depth >= 3 && !self.position.in_check() && tt_move == Move::NONE {
             depth -= 1;
