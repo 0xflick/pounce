@@ -5,6 +5,10 @@ use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 pub type HiddenSize = usize;
 pub const NNUE_HIDDEN_SIZE: HiddenSize = 128;
 
+const QA: i32 = 255;
+const QB: i32 = 64;
+const SCALE: i32 = 216;
+
 #[repr(C, align(16))]
 struct Align16<T>(pub T);
 
@@ -33,10 +37,10 @@ struct FileHeader {
 #[repr(C)]
 struct NetworkData<const HIDDEN_SIZE: usize> {
     header: FileHeader,
-    persp_weights: [[f32; HIDDEN_SIZE]; 768], // Feature-major: for each of 768 features, HIDDEN_SIZE weights
-    persp_bias: [f32; HIDDEN_SIZE],
-    output_weights: [[f32; HIDDEN_SIZE]; 2], // Output-major: weights for output 0, then weights for output 1
-    output_bias: f32,
+    persp_weights: [[i16; HIDDEN_SIZE]; 768], // Feature-major: for each of 768 features, HIDDEN_SIZE weights
+    persp_bias: [i16; HIDDEN_SIZE],
+    output_weights: [[i16; HIDDEN_SIZE]; 2], // Output-major: weights for output 0, then weights for output 1
+    output_bias: i16,
 }
 
 // Static network loaded at compile time via transmute
@@ -44,10 +48,10 @@ static NETWORK: NetworkData<NNUE_HIDDEN_SIZE> =
     unsafe { std::mem::transmute(*include_bytes!("../../../nets/net.pnn")) };
 
 pub struct NNUEAccumulator<'a, const HIDDEN_SIZE: usize> {
-    white_persp: [f32; HIDDEN_SIZE],
-    black_persp: [f32; HIDDEN_SIZE],
+    white_persp: [i16; HIDDEN_SIZE],
+    black_persp: [i16; HIDDEN_SIZE],
 
-    stack: Vec<([f32; HIDDEN_SIZE], [f32; HIDDEN_SIZE])>,
+    stack: Vec<([i16; HIDDEN_SIZE], [i16; HIDDEN_SIZE])>,
 
     pub net: &'a PerspectiveNet<HIDDEN_SIZE>,
 }
@@ -55,8 +59,8 @@ pub struct NNUEAccumulator<'a, const HIDDEN_SIZE: usize> {
 impl<'a, const HIDDEN_SIZE: usize> NNUEAccumulator<'a, HIDDEN_SIZE> {
     pub fn new(net: &'a PerspectiveNet<HIDDEN_SIZE>) -> Self {
         Self {
-            white_persp: [0.0; HIDDEN_SIZE],
-            black_persp: [0.0; HIDDEN_SIZE],
+            white_persp: [0; HIDDEN_SIZE],
+            black_persp: [0; HIDDEN_SIZE],
             stack: Vec::new(),
             net,
         }
@@ -138,19 +142,19 @@ impl<const HIDDEN_SIZE: usize> Accumulator for NNUEAccumulator<'_, HIDDEN_SIZE> 
 }
 
 pub struct PerspectiveNet<const HIDDEN_SIZE: usize> {
-    persp_weights: Box<Align16<[[f32; HIDDEN_SIZE]; 768]>>,
-    persp_bias: Align16<[f32; HIDDEN_SIZE]>,
+    persp_weights: Box<Align16<[[i16; HIDDEN_SIZE]; 768]>>,
+    persp_bias: Align16<[i16; HIDDEN_SIZE]>,
 
-    output_weights: Align16<[[f32; 2]; HIDDEN_SIZE]>,
-    output_bias: f32,
+    output_weights: Align16<[[i16; 2]; HIDDEN_SIZE]>,
+    output_bias: i16,
 }
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn new(
-        persp_weights: [[f32; HIDDEN_SIZE]; 768],
-        persp_bias: [f32; HIDDEN_SIZE],
-        output_weights: [[f32; 2]; HIDDEN_SIZE],
-        output_bias: f32,
+        persp_weights: [[i16; HIDDEN_SIZE]; 768],
+        persp_bias: [i16; HIDDEN_SIZE],
+        output_weights: [[i16; 2]; HIDDEN_SIZE],
+        output_bias: i16,
     ) -> Self {
         Self {
             persp_weights: Box::new(Align16(persp_weights)),
@@ -161,26 +165,35 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     }
 }
 
+fn screlu(v: i16) -> i32 {
+    let clamped = v.clamp(0, QA as i16) as i32;
+    clamped * clamped
+}
+
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
-    pub fn forward(&self, accumulator: &NNUEAccumulator<HIDDEN_SIZE>, stm: Color) -> f32 {
+    pub fn forward(&self, accumulator: &NNUEAccumulator<HIDDEN_SIZE>, stm: Color) -> i32 {
         let (us, them) = match stm {
             Color::White => (&accumulator.white_persp, &accumulator.black_persp),
             Color::Black => (&accumulator.black_persp, &accumulator.white_persp),
         };
 
-        let mut output = self.output_bias;
+        let mut output = 0;
 
         // Process our perspective
         for (i, accum) in us.iter().enumerate() {
-            let activated = accum.max(0.0);
-            output += activated * self.output_weights[i][0];
+            output += screlu(*accum) * self.output_weights[i][0] as i32;
         }
 
         // Process their perspective
         for (i, accum) in them.iter().enumerate() {
-            let activated = accum.max(0.0);
-            output += activated * self.output_weights[i][1];
+            output += screlu(*accum) * self.output_weights[i][1] as i32;
         }
+
+        output /= QA;
+        output += self.output_bias as i32;
+
+        output *= SCALE;
+        output /= QA * QB;
 
         output
     }
