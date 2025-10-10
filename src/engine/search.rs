@@ -14,6 +14,8 @@ use crate::engine::tt::{Entry, EntryType, Table};
 
 const MAX_DEPTH: u8 = 64;
 pub const MAX_PLY: usize = 128;
+// Add 1 to array sizes to allow safe boundary access when accessing [ply + 1]
+const SEARCH_ARRAY_SIZE: usize = MAX_PLY + 1;
 
 static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
 
@@ -39,8 +41,8 @@ pub struct SearchResult {
 pub struct Stats {
     pub nodes: u64,
     pub effort: [[u64; Square::NUM]; Square::NUM],
-    pub pv: [[Move; MAX_PLY]; MAX_PLY],
-    pub pv_length: [u8; MAX_PLY],
+    pub pv: [[Move; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE],
+    pub pv_length: [u8; SEARCH_ARRAY_SIZE],
     pub start_time: Instant,
 }
 
@@ -49,8 +51,8 @@ impl Default for Stats {
         Self {
             nodes: 0,
             effort: [[0; Square::NUM]; Square::NUM],
-            pv: [[Move::NONE; MAX_PLY]; MAX_PLY],
-            pv_length: [0; MAX_PLY],
+            pv: [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE],
+            pv_length: [0; SEARCH_ARRAY_SIZE],
             start_time: Instant::now(),
         }
     }
@@ -60,8 +62,8 @@ impl Stats {
     fn reset(&mut self) {
         self.nodes = 0;
         self.effort = [[0; Square::NUM]; Square::NUM];
-        self.pv = [[Move::NONE; MAX_PLY]; MAX_PLY];
-        self.pv_length = [0; MAX_PLY];
+        self.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
+        self.pv_length = [0; SEARCH_ARRAY_SIZE];
         self.start_time = Instant::now();
     }
 
