@@ -9,6 +9,7 @@ use thiserror::Error;
 pub struct Limits {
     pub depth: Option<u8>,
     pub nodes: Option<u64>,
+    pub soft_nodes: Option<u64>,
     pub wtime: Option<i32>,
     pub btime: Option<i32>,
     pub winc: Option<u32>,
@@ -29,6 +30,7 @@ impl Limits {
         Limits {
             depth: None,
             nodes: None,
+            soft_nodes: None,
             wtime: None,
             btime: None,
             winc: None,

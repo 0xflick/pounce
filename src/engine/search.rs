@@ -757,9 +757,7 @@ impl<'a> Search<'a> {
     }
 
     pub fn done_thinking(&self) -> bool {
-        if self.stop.load(std::sync::atomic::Ordering::Relaxed)
-            || self.tm.nodes.is_some_and(|n| self.stats.nodes >= n)
-        {
+        if self.stop.load(std::sync::atomic::Ordering::Relaxed) {
             return true;
         }
 

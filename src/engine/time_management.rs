@@ -7,6 +7,7 @@ use crate::engine::search::Stats;
 pub struct SearchCop {
     pub depth: Option<u8>,
     pub nodes: Option<u64>,
+    soft_nodes: Option<u64>,
     adjust: bool,
     pub optimal_time: Option<Duration>,
     pub max_time: Option<Duration>,
@@ -19,6 +20,7 @@ impl SearchCop {
         Limits {
             depth,
             nodes,
+            soft_nodes,
             wtime,
             btime,
             winc,
@@ -33,6 +35,7 @@ impl SearchCop {
             return SearchCop {
                 depth,
                 nodes,
+                soft_nodes,
                 adjust: false,
                 optimal_time: None,
                 max_time: None,
@@ -44,6 +47,7 @@ impl SearchCop {
             return SearchCop {
                 depth,
                 nodes,
+                soft_nodes,
                 adjust: false,
                 optimal_time: Some(Duration::from_millis(movetime as u64)),
                 max_time: Some(Duration::from_millis(movetime as u64)),
@@ -61,6 +65,7 @@ impl SearchCop {
             return SearchCop {
                 depth,
                 nodes,
+                soft_nodes,
                 adjust: false,
                 optimal_time: None,
                 max_time: None,
@@ -94,9 +99,10 @@ impl SearchCop {
         SearchCop {
             depth,
             nodes,
+            soft_nodes,
             adjust: true,
             optimal_time: Some(Duration::from_millis(opt)),
-            max_time: Some(Duration::from_millis(max)),
+            max_time: Some(Duration::from_millis(max - overhead as u64)),
             scale: 1.0,
         }
     }
@@ -109,6 +115,12 @@ impl SearchCop {
     }
 
     pub fn time_up(&self, stats: &Stats) -> bool {
+        if let Some(n) = self.nodes
+            && n >= stats.nodes
+        {
+            return true;
+        }
+
         if let Some(time) = self.max_time
             && stats.start_time.elapsed() >= time
         {
@@ -119,6 +131,12 @@ impl SearchCop {
     }
 
     pub fn time_up_deepening(&self, stats: &Stats) -> bool {
+        if let Some(n) = self.soft_nodes
+            && n >= stats.nodes
+        {
+            return true;
+        }
+
         if let Some(time) = self.optimal_time
             && stats.start_time.elapsed() >= time.mul_f32(self.scale)
         {
