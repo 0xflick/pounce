@@ -116,7 +116,7 @@ impl SearchCop {
 
     pub fn time_up(&self, stats: &Stats) -> bool {
         if let Some(n) = self.nodes
-            && n >= stats.nodes
+            && stats.nodes >= n
         {
             return true;
         }
@@ -132,7 +132,7 @@ impl SearchCop {
 
     pub fn time_up_deepening(&self, stats: &Stats) -> bool {
         if let Some(n) = self.soft_nodes
-            && n >= stats.nodes
+            && stats.nodes >= n
         {
             return true;
         }
