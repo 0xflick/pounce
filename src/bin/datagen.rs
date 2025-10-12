@@ -65,7 +65,7 @@ fn main() -> Result<()> {
         } => {
             let limits = if let Some(n) = nodes {
                 Limits {
-                    nodes: Some(n),
+                    soft_nodes: Some(n),
                     ..Limits::new()
                 }
             } else {
