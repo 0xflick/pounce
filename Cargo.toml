@@ -2,7 +2,7 @@
 name = "pounce"
 authors = ["alex flick"]
 edition = "2024"
-version = "2.1.0"
+version = "3.0.0"
 build = "build.rs"
 default-run = "pounce"
 repository = "https://github.com/0xflick/pounce"
