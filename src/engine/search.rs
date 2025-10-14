@@ -554,11 +554,18 @@ impl<'a> Search<'a> {
                 best_move = mv;
 
                 self.stats.pv[ply][ply] = mv;
-                for j in (ply + 1)..self.stats.pv_length[ply + 1] as usize {
-                    self.stats.pv[ply][j] = self.stats.pv[ply + 1][j];
+                // Only copy child PV if it has moves beyond the child's ply.
+                // If pv_length[ply + 1] == ply + 1, it's just the initial value from line 281,
+                // meaning the child didn't update its PV (early return/pruning/etc).
+                if self.stats.pv_length[ply + 1] > ply as u8 + 1 {
+                    for j in (ply + 1)..self.stats.pv_length[ply + 1] as usize {
+                        self.stats.pv[ply][j] = self.stats.pv[ply + 1][j];
+                    }
+                    self.stats.pv_length[ply] = self.stats.pv_length[ply + 1];
+                } else {
+                    // Child has no continuation, PV is just this move
+                    self.stats.pv_length[ply] = ply as u8 + 1;
                 }
-
-                self.stats.pv_length[ply] = self.stats.pv_length[ply + 1];
 
                 if score > alpha {
                     alpha = score;
