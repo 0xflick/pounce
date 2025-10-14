@@ -145,7 +145,7 @@ pub struct PerspectiveNet<const HIDDEN_SIZE: usize> {
     persp_weights: Box<Align16<[[i16; HIDDEN_SIZE]; 768]>>,
     persp_bias: Align16<[i16; HIDDEN_SIZE]>,
 
-    output_weights: Align16<[[i16; 2]; HIDDEN_SIZE]>,
+    output_weights: Align16<[[i16; HIDDEN_SIZE]; 2]>,
     output_bias: i16,
 }
 
@@ -153,7 +153,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn new(
         persp_weights: [[i16; HIDDEN_SIZE]; 768],
         persp_bias: [i16; HIDDEN_SIZE],
-        output_weights: [[i16; 2]; HIDDEN_SIZE],
+        output_weights: [[i16; HIDDEN_SIZE]; 2],
         output_bias: i16,
     ) -> Self {
         Self {
@@ -180,13 +180,9 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         let mut output = 0;
 
         // Process our perspective
-        for (i, accum) in us.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][0] as i32;
-        }
-
-        // Process their perspective
-        for (i, accum) in them.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][1] as i32;
+        for (i, (&us_accum, &them_accum)) in us.iter().zip(them.iter()).enumerate() {
+            output += screlu(us_accum) * self.output_weights[0][i] as i32;
+            output += screlu(them_accum) * self.output_weights[1][i] as i32;
         }
 
         output /= QA;
@@ -201,14 +197,14 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
-        let output_weights =
-            std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
+        // // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
+        // let output_weights =
+        //     std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
 
         Ok(Self::new(
             NETWORK.persp_weights,
             NETWORK.persp_bias,
-            output_weights,
+            NETWORK.output_weights,
             NETWORK.output_bias,
         ))
     }
