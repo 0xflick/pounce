@@ -179,14 +179,9 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
         let mut output = 0;
 
-        // Process our perspective
-        for (i, accum) in us.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][0] as i32;
-        }
-
-        // Process their perspective
-        for (i, accum) in them.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][1] as i32;
+        for i in 0..HIDDEN_SIZE {
+            output += screlu(us[i]) * self.output_weights[i][0] as i32;
+            output += screlu(them[i]) * self.output_weights[i][1] as i32;
         }
 
         output /= QA;
