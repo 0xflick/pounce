@@ -166,6 +166,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     }
 }
 
+#[inline(always)]
 fn screlu(v: i16) -> i32 {
     let clamped = v.clamp(0, QA as i16) as i32;
     clamped * clamped
@@ -181,14 +182,13 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         let mut output = 0;
         let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (30 - 2)).min(BUCKETS - 1);
 
-        // Process our perspective
-        for (i, (&us_accum, &them_accum)) in us.iter().zip(them.iter()).enumerate() {
-            output += screlu(us_accum) * self.output_weights[bucket][0][i] as i32;
-            output += screlu(them_accum) * self.output_weights[bucket][1][i] as i32;
+        for i in 0..HIDDEN_SIZE {
+            output += screlu(us[i]) * self.output_weights[bucket][0][i] as i32;
+            output += screlu(them[i]) * self.output_weights[bucket][1][i] as i32;
         }
 
         output /= QA;
-        output += self.output_bias[bucket] as i32;
+        output += self.output_bias[bucket] as i32 * QA;
 
         output *= SCALE;
         output /= QA * QB;
