@@ -190,6 +190,10 @@ impl<'a> Search<'a> {
                 break;
             }
 
+            // reset pv
+            self.stats.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
+            self.stats.pv_length = [0; SEARCH_ARRAY_SIZE];
+
             let depth_score = self.aspiration(depth, score);
 
             if self.done_thinking() {
