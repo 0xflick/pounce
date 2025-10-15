@@ -190,7 +190,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         }
 
         output /= QA;
-        output += self.output_bias as i32;
+        output += self.output_bias as i32 * QA;
 
         output *= SCALE;
         output /= QA * QB;
