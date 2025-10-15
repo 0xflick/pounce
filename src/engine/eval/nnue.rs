@@ -199,10 +199,6 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        // // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
-        // let output_weights =
-        //     std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
-
         Ok(Self::new(
             NETWORK.persp_weights,
             NETWORK.persp_bias,
