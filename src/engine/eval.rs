@@ -15,7 +15,7 @@ pub fn score_nnue(
     pos: &Position,
     acc: &nnue::NNUEAccumulator<'_, { nnue::NNUE_HIDDEN_SIZE }>,
 ) -> i16 {
-    acc.net.forward(acc, pos.side) as i16
+    acc.net.forward(acc, pos) as i16
 }
 
 pub const PIECE_VALUES: [i32; Role::NUM] = [126, 781, 825, 1276, 2538, 0];

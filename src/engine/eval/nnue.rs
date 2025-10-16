@@ -4,6 +4,7 @@ use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
 pub type HiddenSize = usize;
 pub const NNUE_HIDDEN_SIZE: HiddenSize = 128;
+const BUCKETS: usize = 8;
 
 const QA: i32 = 255;
 const QB: i32 = 64;
@@ -39,8 +40,8 @@ struct NetworkData<const HIDDEN_SIZE: usize> {
     header: FileHeader,
     persp_weights: [[i16; HIDDEN_SIZE]; 768], // Feature-major: for each of 768 features, HIDDEN_SIZE weights
     persp_bias: [i16; HIDDEN_SIZE],
-    output_weights: [[i16; HIDDEN_SIZE]; 2], // Output-major: weights for output 0, then weights for output 1
-    output_bias: i16,
+    output_weights: [[[i16; HIDDEN_SIZE]; 2]; BUCKETS],
+    output_bias: [i16; BUCKETS],
 }
 
 // Static network loaded at compile time via transmute
@@ -145,52 +146,49 @@ pub struct PerspectiveNet<const HIDDEN_SIZE: usize> {
     persp_weights: Box<Align16<[[i16; HIDDEN_SIZE]; 768]>>,
     persp_bias: Align16<[i16; HIDDEN_SIZE]>,
 
-    output_weights: Align16<[[i16; 2]; HIDDEN_SIZE]>,
-    output_bias: i16,
+    output_weights: Align16<[[[i16; HIDDEN_SIZE]; 2]; BUCKETS]>,
+    output_bias: Align16<[i16; BUCKETS]>,
 }
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
     pub fn new(
         persp_weights: [[i16; HIDDEN_SIZE]; 768],
         persp_bias: [i16; HIDDEN_SIZE],
-        output_weights: [[i16; 2]; HIDDEN_SIZE],
-        output_bias: i16,
+        output_weights: [[[i16; HIDDEN_SIZE]; 2]; BUCKETS],
+        output_bias: [i16; BUCKETS],
     ) -> Self {
         Self {
             persp_weights: Box::new(Align16(persp_weights)),
             persp_bias: Align16(persp_bias),
             output_weights: Align16(output_weights),
-            output_bias,
+            output_bias: Align16(output_bias),
         }
     }
 }
 
+#[inline(always)]
 fn screlu(v: i16) -> i32 {
     let clamped = v.clamp(0, QA as i16) as i32;
     clamped * clamped
 }
 
 impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
-    pub fn forward(&self, accumulator: &NNUEAccumulator<HIDDEN_SIZE>, stm: Color) -> i32 {
-        let (us, them) = match stm {
+    pub fn forward(&self, accumulator: &NNUEAccumulator<HIDDEN_SIZE>, pos: &Position) -> i32 {
+        let (us, them) = match pos.side {
             Color::White => (&accumulator.white_persp, &accumulator.black_persp),
             Color::Black => (&accumulator.black_persp, &accumulator.white_persp),
         };
 
         let mut output = 0;
+        let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (30 - 2)).min(BUCKETS - 1);
 
-        // Process our perspective
-        for (i, accum) in us.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][0] as i32;
-        }
-
-        // Process their perspective
-        for (i, accum) in them.iter().enumerate() {
-            output += screlu(*accum) * self.output_weights[i][1] as i32;
+        for i in 0..HIDDEN_SIZE {
+            output += screlu(us[i]) * self.output_weights[bucket][0][i] as i32;
+            output += screlu(them[i]) * self.output_weights[bucket][1][i] as i32;
         }
 
         output /= QA;
-        output += self.output_bias as i32;
+        output += self.output_bias[bucket] as i32 * QA;
 
         output *= SCALE;
         output /= QA * QB;
@@ -201,14 +199,10 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
 
 impl PerspectiveNet<NNUE_HIDDEN_SIZE> {
     pub fn load() -> Result<Self> {
-        // Convert output weights from [2][HIDDEN_SIZE] to [HIDDEN_SIZE][2]
-        let output_weights =
-            std::array::from_fn(|i| [NETWORK.output_weights[0][i], NETWORK.output_weights[1][i]]);
-
         Ok(Self::new(
             NETWORK.persp_weights,
             NETWORK.persp_bias,
-            output_weights,
+            NETWORK.output_weights,
             NETWORK.output_bias,
         ))
     }
