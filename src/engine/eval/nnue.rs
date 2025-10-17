@@ -3,7 +3,7 @@ use std::io::Result;
 use crate::chess::{Accumulator, Color, Move, Piece, Position, Square};
 
 pub type HiddenSize = usize;
-pub const NNUE_HIDDEN_SIZE: HiddenSize = 128;
+pub const NNUE_HIDDEN_SIZE: HiddenSize = 256;
 const BUCKETS: usize = 8;
 
 const QA: i32 = 255;
