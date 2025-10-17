@@ -24,7 +24,7 @@ pub fn init_reductions() {
         #[allow(clippy::needless_range_loop)]
         for m in 1..MAX_MOVES {
             for depth in 1..MAX_DEPTH as usize {
-                let reduction = 0.4 + ((depth as f32).ln() * (m as f32).ln()) / 1.7;
+                let reduction = 0.4 + ((depth as f32).ln() * (m as f32).ln()) / 1.6;
                 REDUCTIONS[depth][m] = reduction as u8;
             }
         }
@@ -399,7 +399,7 @@ impl<'a> Search<'a> {
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
             && !self.position.in_check()
-            && depth < 7
+            && depth < 9
         {
             let margin = 80 * depth - (60 * improving as i32);
             if static_eval.saturating_sub(margin as i16) >= beta {
@@ -422,7 +422,7 @@ impl<'a> Search<'a> {
             self.stack[ply].mv = Move::NULL;
             self.stack[ply].moved = None;
 
-            let mut reduction = 5 + depth / 5;
+            let mut reduction = 5 + depth / 4;
             // reduce more based on how far above beta we are
             reduction += ((static_eval - beta) / 200).min(3) as i32;
 
