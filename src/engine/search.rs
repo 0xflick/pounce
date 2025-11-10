@@ -48,13 +48,21 @@ pub struct Stats {
 
 impl Default for Stats {
     fn default() -> Self {
-        Self {
+        let mut stats = Self {
             nodes: 0,
             effort: [[0; Square::NUM]; Square::NUM],
             pv: [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE],
             pv_length: [0; SEARCH_ARRAY_SIZE],
             start_time: Instant::now(),
+        };
+        // Explicitly initialize PV to avoid potential uninitialized memory issues
+        for i in 0..SEARCH_ARRAY_SIZE {
+            stats.pv_length[i] = 0;
+            for j in 0..SEARCH_ARRAY_SIZE {
+                stats.pv[i][j] = Move::NONE;
+            }
         }
+        stats
     }
 }
 
@@ -62,8 +70,13 @@ impl Stats {
     fn reset(&mut self) {
         self.nodes = 0;
         self.effort = [[0; Square::NUM]; Square::NUM];
-        self.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
-        self.pv_length = [0; SEARCH_ARRAY_SIZE];
+        // Explicitly reset PV arrays to avoid potential optimization issues
+        for i in 0..SEARCH_ARRAY_SIZE {
+            self.pv_length[i] = 0;
+            for j in 0..SEARCH_ARRAY_SIZE {
+                self.pv[i][j] = Move::NONE;
+            }
+        }
         self.start_time = Instant::now();
     }
 
@@ -191,8 +204,12 @@ impl<'a> Search<'a> {
             }
 
             // reset pv
-            self.stats.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
-            self.stats.pv_length = [0; SEARCH_ARRAY_SIZE];
+            for i in 0..SEARCH_ARRAY_SIZE {
+                self.stats.pv_length[i] = 0;
+                for j in 0..SEARCH_ARRAY_SIZE {
+                    self.stats.pv[i][j] = Move::NONE;
+                }
+            }
 
             let depth_score = self.aspiration(depth, score);
 
@@ -278,11 +295,12 @@ impl<'a> Search<'a> {
         if self.done_thinking() {
             return 0;
         }
+
+        self.stats.pv_length[ply] = ply as u8;
+
         if depth >= MAX_DEPTH as i32 || ply >= MAX_PLY {
             return eval::score_nnue(&self.position, &self.accum);
         }
-
-        self.stats.pv_length[ply] = ply as u8;
 
         if depth <= 0 {
             return self.quiescence_search(alpha, beta, is_pv);
@@ -562,7 +580,7 @@ impl<'a> Search<'a> {
                     self.stats.pv[ply][j] = self.stats.pv[ply + 1][j];
                 }
 
-                self.stats.pv_length[ply] = self.stats.pv_length[ply + 1];
+                self.stats.pv_length[ply] = self.stats.pv_length[ply + 1].max(ply as u8 + 1);
 
                 if score > alpha {
                     alpha = score;
