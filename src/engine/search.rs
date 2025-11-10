@@ -48,21 +48,13 @@ pub struct Stats {
 
 impl Default for Stats {
     fn default() -> Self {
-        let mut stats = Self {
+        Self {
             nodes: 0,
             effort: [[0; Square::NUM]; Square::NUM],
             pv: [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE],
             pv_length: [0; SEARCH_ARRAY_SIZE],
             start_time: Instant::now(),
-        };
-        // Explicitly initialize PV to avoid potential uninitialized memory issues
-        for i in 0..SEARCH_ARRAY_SIZE {
-            stats.pv_length[i] = 0;
-            for j in 0..SEARCH_ARRAY_SIZE {
-                stats.pv[i][j] = Move::NONE;
-            }
         }
-        stats
     }
 }
 
@@ -70,13 +62,8 @@ impl Stats {
     fn reset(&mut self) {
         self.nodes = 0;
         self.effort = [[0; Square::NUM]; Square::NUM];
-        // Explicitly reset PV arrays to avoid potential optimization issues
-        for i in 0..SEARCH_ARRAY_SIZE {
-            self.pv_length[i] = 0;
-            for j in 0..SEARCH_ARRAY_SIZE {
-                self.pv[i][j] = Move::NONE;
-            }
-        }
+        self.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
+        self.pv_length = [0; SEARCH_ARRAY_SIZE];
         self.start_time = Instant::now();
     }
 
@@ -87,7 +74,7 @@ impl Stats {
             .map(|i| self.pv[0][i as usize].to_string())
             .collect::<Vec<String>>()
             .join(" ");
-        if score.abs() > eval::MATE_IN_PLY {
+        if score.abs() >= eval::MATE_IN_PLY {
             let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
 
             println!(
@@ -105,7 +92,7 @@ impl Stats {
     pub fn uci_info_done_early(&self, mv: Move, depth: i32, score: i16, hashfull: f64) {
         let elapsed = self.start_time.elapsed().as_millis() + 1;
         let nps = (self.nodes as u128 * 1000) / elapsed;
-        if score.abs() > eval::MATE_IN_PLY {
+        if score.abs() >= eval::MATE_IN_PLY {
             let ply = score.signum() * (1 + eval::MATE - score.abs()) / 2;
 
             println!(
@@ -204,12 +191,8 @@ impl<'a> Search<'a> {
             }
 
             // reset pv
-            for i in 0..SEARCH_ARRAY_SIZE {
-                self.stats.pv_length[i] = 0;
-                for j in 0..SEARCH_ARRAY_SIZE {
-                    self.stats.pv[i][j] = Move::NONE;
-                }
-            }
+            self.stats.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
+            self.stats.pv_length = [0; SEARCH_ARRAY_SIZE];
 
             let depth_score = self.aspiration(depth, score);
 
