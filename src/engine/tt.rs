@@ -161,7 +161,7 @@ impl Table {
     }
 
     pub fn new_mb(size_mb: usize) -> Table {
-        Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<Entry>())
+        Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>())
     }
 
     pub fn clear(&self) {
