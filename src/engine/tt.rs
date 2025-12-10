@@ -62,16 +62,31 @@ impl Entry {
         }
     }
 
+    // New bit layout (matching problematic commit, but without age):
+    // move: bits 0-15
+    // score: bits 16-31
+    // depth: bits 32-39
+    // type: bits 40-41
+    const MOVE_MASK: u64 = 0xFFFF;
+    const SCORE_SHIFT: u32 = 16;
+    const SCORE_MASK: u64 = 0xFFFF;
+    const DEPTH_SHIFT: u32 = 32;
+    const DEPTH_MASK: u64 = 0xFF;
+    const TYPE_SHIFT: u32 = 40;
+    const TYPE_MASK: u64 = 0x3;
+
     fn read_from(mem: &TTMemory) -> Entry {
         let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
         let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
 
         unsafe {
             let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data);
-            let depth = (mem_data >> 48) as u8;
-            let score = ((mem_data >> 32) & 0xffff) as i16;
-            let score_type = std::mem::transmute::<u8, EntryType>(((mem_data >> 24) & 0xff) as u8);
-            let best_move = std::mem::transmute::<u16, Move>(mem_data as u16);
+            let best_move = std::mem::transmute::<u16, Move>((mem_data & Self::MOVE_MASK) as u16);
+            let score = ((mem_data >> Self::SCORE_SHIFT) & Self::SCORE_MASK) as i16;
+            let depth = ((mem_data >> Self::DEPTH_SHIFT) & Self::DEPTH_MASK) as u8;
+            let score_type = std::mem::transmute::<u8, EntryType>(
+                ((mem_data >> Self::TYPE_SHIFT) & Self::TYPE_MASK) as u8,
+            );
 
             Entry {
                 key,
@@ -85,13 +100,15 @@ impl Entry {
 
     fn write_to(&self, mem: &TTMemory) {
         unsafe {
-            let depth = self.depth as u64;
-
-            let score = self.score as u64 & 0xffff;
-            let score_type = self.score_type as u64;
             let best_move = std::mem::transmute::<Move, u16>(self.best_move) as u64;
+            let score = self.score as u64 & Self::SCORE_MASK;
+            let depth = self.depth as u64 & Self::DEPTH_MASK;
+            let score_type = self.score_type as u64 & Self::TYPE_MASK;
 
-            let data = (depth << 48) | (score << 32) | (score_type << 24) | best_move;
+            let data = (best_move & Self::MOVE_MASK)
+                | (score << Self::SCORE_SHIFT)
+                | (depth << Self::DEPTH_SHIFT)
+                | (score_type << Self::TYPE_SHIFT);
             let key = std::mem::transmute::<ZobristHash, u64>(self.key) ^ data;
 
             mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
