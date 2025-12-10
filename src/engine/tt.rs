@@ -26,17 +26,17 @@ impl TTMemory {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum EntryType {
+    #[default]
     None,
     UpperBound,
     LowerBound,
     Exact,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Entry {
     pub key: ZobristHash,
     pub depth: u8,
@@ -122,18 +122,6 @@ impl Entry {
 
             mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
             mem.data.store(data, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-}
-
-impl Default for Entry {
-    fn default() -> Entry {
-        Entry {
-            key: ZobristHash::new(),
-            depth: 0,
-            score: 0,
-            score_type: EntryType::None,
-            best_move: Move::NONE,
         }
     }
 }
