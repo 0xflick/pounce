@@ -190,12 +190,29 @@ impl Table {
         }
     }
 
-    // Still always writes (no replacement logic yet)
-    pub fn set(&self, entry: Entry) {
+    // Now with replacement logic from problematic commit
+    pub fn store(&self, entry: Entry) {
         let idx = self.index(entry.key);
-        let val = &self.entries[idx];
         let current_age = self.age.load(std::sync::atomic::Ordering::Relaxed);
-        entry.write_to(val, current_age);
+
+        let (existing_entry, existing_age) = Entry::read_from(&self.entries[idx], current_age);
+        let age_diff = age_diff(current_age, existing_age) as u16;
+
+        let entry_prio = entry.depth as u16 + entry.score_type as u16 + (age_diff * age_diff) / 4;
+        let existing_prio = existing_entry.depth as u16 + existing_entry.score_type as u16;
+
+        if entry.key != existing_entry.key
+            || (entry.score_type == EntryType::Exact
+                && existing_entry.score_type != EntryType::Exact)
+            || entry_prio * 3 > existing_prio * 2
+        {
+            entry.write_to(&self.entries[idx], current_age);
+        }
+    }
+
+    // Keep old name for compatibility
+    pub fn set(&self, entry: Entry) {
+        self.store(entry);
     }
 
     pub fn hashfull(&self) -> f64 {
@@ -209,6 +226,10 @@ impl Table {
     pub fn size_mb(&self) -> usize {
         self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
     }
+}
+
+fn age_diff(current_age: u8, old_age: u8) -> u8 {
+    current_age.wrapping_sub(old_age) & 0x3F
 }
 
 #[cfg(test)]
