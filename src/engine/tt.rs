@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU8, AtomicU64};
 
 use crate::chess::Move;
 use crate::zobrist::ZobristHash;
@@ -62,11 +62,12 @@ impl Entry {
         }
     }
 
-    // New bit layout (matching problematic commit, but without age):
+    // New bit layout with age:
     // move: bits 0-15
     // score: bits 16-31
     // depth: bits 32-39
     // type: bits 40-41
+    // age: bits 42-47
     const MOVE_MASK: u64 = 0xFFFF;
     const SCORE_SHIFT: u32 = 16;
     const SCORE_MASK: u64 = 0xFFFF;
@@ -74,8 +75,10 @@ impl Entry {
     const DEPTH_MASK: u64 = 0xFF;
     const TYPE_SHIFT: u32 = 40;
     const TYPE_MASK: u64 = 0x3;
+    const AGE_SHIFT: u32 = 42;
+    const AGE_MASK: u64 = 0x3F;
 
-    fn read_from(mem: &TTMemory) -> Entry {
+    fn read_from(mem: &TTMemory, _current_age: u8) -> (Entry, u8) {
         let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
         let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
 
@@ -87,28 +90,34 @@ impl Entry {
             let score_type = std::mem::transmute::<u8, EntryType>(
                 ((mem_data >> Self::TYPE_SHIFT) & Self::TYPE_MASK) as u8,
             );
+            let age = ((mem_data >> Self::AGE_SHIFT) & Self::AGE_MASK) as u8;
 
-            Entry {
-                key,
-                depth,
-                score,
-                score_type,
-                best_move,
-            }
+            (
+                Entry {
+                    key,
+                    depth,
+                    score,
+                    score_type,
+                    best_move,
+                },
+                age,
+            )
         }
     }
 
-    fn write_to(&self, mem: &TTMemory) {
+    fn write_to(&self, mem: &TTMemory, age: u8) {
         unsafe {
             let best_move = std::mem::transmute::<Move, u16>(self.best_move) as u64;
             let score = self.score as u64 & Self::SCORE_MASK;
             let depth = self.depth as u64 & Self::DEPTH_MASK;
             let score_type = self.score_type as u64 & Self::TYPE_MASK;
+            let age = age as u64 & Self::AGE_MASK;
 
             let data = (best_move & Self::MOVE_MASK)
                 | (score << Self::SCORE_SHIFT)
                 | (depth << Self::DEPTH_SHIFT)
-                | (score_type << Self::TYPE_SHIFT);
+                | (score_type << Self::TYPE_SHIFT)
+                | (age << Self::AGE_SHIFT);
             let key = std::mem::transmute::<ZobristHash, u64>(self.key) ^ data;
 
             mem.key.store(key, std::sync::atomic::Ordering::Relaxed);
@@ -132,6 +141,7 @@ impl Default for Entry {
 pub struct Table {
     entries: Vec<TTMemory>,
     max_size: usize,
+    age: AtomicU8,
 }
 
 impl Table {
@@ -146,6 +156,7 @@ impl Table {
         Table {
             entries,
             max_size: size,
+            age: AtomicU8::new(0),
         }
     }
 
@@ -159,6 +170,10 @@ impl Table {
         });
     }
 
+    pub fn increment_age(&self) {
+        self.age.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
     fn index(&self, key: ZobristHash) -> usize {
         let big_key = u128::from(key);
         let len = self.entries.len() as u128;
@@ -167,23 +182,27 @@ impl Table {
 
     pub fn probe(&self, key: ZobristHash) -> Option<Entry> {
         let idx = self.index(key);
-        let entry = Entry::read_from(&self.entries[idx]);
+        let current_age = self.age.load(std::sync::atomic::Ordering::Relaxed);
+        let (entry, _entry_age) = Entry::read_from(&self.entries[idx], current_age);
         match entry.key == key {
             true => Some(entry),
             false => None,
         }
     }
 
+    // Still always writes (no replacement logic yet)
     pub fn set(&self, entry: Entry) {
         let idx = self.index(entry.key);
         let val = &self.entries[idx];
-        entry.write_to(val);
+        let current_age = self.age.load(std::sync::atomic::Ordering::Relaxed);
+        entry.write_to(val, current_age);
     }
 
     pub fn hashfull(&self) -> f64 {
+        let current_age = self.age.load(std::sync::atomic::Ordering::Relaxed);
         self.entries[..1000]
             .iter()
-            .filter(|entry| Entry::read_from(entry).key != ZobristHash::default())
+            .filter(|entry| Entry::read_from(entry, current_age).0.key != ZobristHash::default())
             .count() as f64
     }
 
