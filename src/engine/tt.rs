@@ -30,9 +30,9 @@ impl TTMemory {
 #[repr(u8)]
 pub enum EntryType {
     None,
-    Exact,
-    LowerBound,
     UpperBound,
+    LowerBound,
+    Exact,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
