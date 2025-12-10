@@ -1,303 +1,597 @@
 use crate::chess::bitboard::Bitboard;
-use crate::chess::{Color, File, Square};
+use crate::chess::{Rank, Square};
 
-pub static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-pub static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-pub static mut KNIGHT_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut KING_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut KINGSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-pub static mut QUEENSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-pub static mut BETWEEN: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-pub static mut LINE: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-pub static mut BISHOP_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
+// All tables computed at compile time - no runtime initialization needed
+pub static PAWN_MOVES: [[Bitboard; 64]; 2] = compute_pawn_moves();
+pub static PAWN_ATTACKS: [[Bitboard; 64]; 2] = compute_pawn_attacks();
+pub static KNIGHT_MOVES: [Bitboard; 64] = compute_knight_moves();
+pub static KING_MOVES: [Bitboard; 64] = compute_king_moves();
+pub static KINGSIDE_CASTLE: [Bitboard; 2] = compute_kingside_castle();
+pub static QUEENSIDE_CASTLE: [Bitboard; 2] = compute_queenside_castle();
+#[allow(long_running_const_eval)]
+pub static BETWEEN: [[Bitboard; 64]; 64] = compute_between();
+#[allow(long_running_const_eval)]
+pub static LINE: [[Bitboard; 64]; 64] = compute_line();
+pub static BISHOP_RAYS: [Bitboard; 64] = compute_bishop_rays();
+pub static ROOK_RAYS: [Bitboard; 64] = compute_rook_rays();
 
-pub fn init_tables() {
-    init_pawn_move_table();
-    init_knight_move_table();
-    init_king_move_table();
-    init_castle_table();
-    init_between_table();
-    init_line_table();
-    init_bishop_rays();
-    init_rook_rays();
+// No-op for backwards compatibility - tables are now compile-time constants
+pub fn init_tables() {}
+
+const fn compute_pawn_moves() -> [[Bitboard; 64]; 2] {
+    let mut moves = [[Bitboard::EMPTY; 64]; 2];
+
+    // White pawns
+    let mut sq = 0u8;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let mut bb = Bitboard::EMPTY;
+
+        if let Some(s) = square.north() {
+            bb = bb.with_square(s);
+        }
+
+        // Double push from rank 2
+        if square.rank() as u8 == Rank::R2 as u8 {
+            if let Some(s1) = square.north() {
+                if let Some(s2) = s1.north() {
+                    bb = bb.with_square(s2);
+                }
+            }
+        }
+
+        moves[0][sq as usize] = bb;
+        sq += 1;
+    }
+
+    // Black pawns
+    sq = 0;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let mut bb = Bitboard::EMPTY;
+
+        if let Some(s) = square.south() {
+            bb = bb.with_square(s);
+        }
+
+        // Double push from rank 7
+        if square.rank() as u8 == Rank::R7 as u8 {
+            if let Some(s1) = square.south() {
+                if let Some(s2) = s1.south() {
+                    bb = bb.with_square(s2);
+                }
+            }
+        }
+
+        moves[1][sq as usize] = bb;
+        sq += 1;
+    }
+
+    moves
 }
 
-fn init_pawn_move_table() {
-    let mut moves = [[Bitboard::EMPTY; 64]; 2];
+const fn compute_pawn_attacks() -> [[Bitboard; 64]; 2] {
     let mut attacks = [[Bitboard::EMPTY; 64]; 2];
 
-    for color in [Color::White, Color::Black].into_iter() {
-        for sq in Square::ALL {
-            let move_bb = &mut moves[color][sq];
-            let attack_bb = &mut attacks[color][sq];
-            if let Some(s) = sq.up(color) {
-                move_bb.set(s);
-                if let Some(l) = s.east() {
-                    attack_bb.set(l);
-                }
-                if let Some(r) = s.west() {
-                    attack_bb.set(r);
-                }
-            }
+    // White pawn attacks
+    let mut sq = 0u8;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let mut bb = Bitboard::EMPTY;
 
-            if sq.rank() == color.home_rank()
-                && let Some(s) = sq.up(color).and_then(|s| s.up(color))
-            {
-                move_bb.set(s);
+        if let Some(s) = square.north() {
+            if let Some(l) = s.east() {
+                bb = bb.with_square(l);
+            }
+            if let Some(r) = s.west() {
+                bb = bb.with_square(r);
             }
         }
+
+        attacks[0][sq as usize] = bb;
+        sq += 1;
     }
 
-    unsafe {
-        PAWN_MOVES = moves;
-        PAWN_ATTACKS = attacks;
-    }
-}
-
-#[rustfmt::skip]
-fn init_knight_move_table() {
-    let mut moves = [Bitboard::EMPTY; 64];
-    for sq in Square::ALL {
+    // Black pawn attacks
+    sq = 0;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
         let mut bb = Bitboard::EMPTY;
-        // NNE, NEE
-        sq.north().and_then(|s| s.north().and_then(|s| s.east().map(|s| bb.set(s))));
-        sq.north().and_then(|s| s.east().and_then(|s| s.east().map(|s| bb.set(s))));
 
-        // NNW, NWW
-        sq.north().and_then(|s| s.north().and_then(|s| s.west().map(|s| bb.set(s))));
-        sq.north().and_then(|s| s.west().and_then(|s| s.west().map(|s| bb.set(s))));
+        if let Some(s) = square.south() {
+            if let Some(l) = s.east() {
+                bb = bb.with_square(l);
+            }
+            if let Some(r) = s.west() {
+                bb = bb.with_square(r);
+            }
+        }
 
-        // SSE, SEE
-        sq.south().and_then(|s| s.south().and_then(|s| s.east().map(|s| bb.set(s))));
-        sq.south().and_then(|s| s.east().and_then(|s| s.east().map(|s| bb.set(s))));
-
-        // SSW, SWW
-        sq.south().and_then(|s| s.south().and_then(|s| s.west().map(|s| bb.set(s))));
-        sq.south().and_then(|s| s.west().and_then(|s| s.west().map(|s| bb.set(s))));
-        moves[sq] = bb;
+        attacks[1][sq as usize] = bb;
+        sq += 1;
     }
-    unsafe {
-        KNIGHT_MOVES = moves;
-    }
+
+    attacks
 }
 
-fn init_king_move_table() {
+const fn compute_knight_moves() -> [Bitboard; 64] {
     let mut moves = [Bitboard::EMPTY; 64];
-    for sq in Square::ALL {
+    let mut sq = 0u8;
+
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
         let mut bb = Bitboard::EMPTY;
-        if let Some(s) = sq.north() {
-            bb.set(s)
+
+        // NNE
+        if let Some(n1) = square.north() {
+            if let Some(n2) = n1.north() {
+                if let Some(e) = n2.east() {
+                    bb = bb.with_square(e);
+                }
+            }
         }
-        if let Some(s) = sq.south() {
-            bb.set(s)
+
+        // NEE
+        if let Some(n) = square.north() {
+            if let Some(e1) = n.east() {
+                if let Some(e2) = e1.east() {
+                    bb = bb.with_square(e2);
+                }
+            }
         }
-        if let Some(s) = sq.east() {
-            bb.set(s)
+
+        // NNW
+        if let Some(n1) = square.north() {
+            if let Some(n2) = n1.north() {
+                if let Some(w) = n2.west() {
+                    bb = bb.with_square(w);
+                }
+            }
         }
-        if let Some(s) = sq.west() {
-            bb.set(s)
+
+        // NWW
+        if let Some(n) = square.north() {
+            if let Some(w1) = n.west() {
+                if let Some(w2) = w1.west() {
+                    bb = bb.with_square(w2);
+                }
+            }
         }
-        sq.north().and_then(|s| s.east().map(|s| bb.set(s)));
-        sq.north().and_then(|s| s.west().map(|s| bb.set(s)));
-        sq.south().and_then(|s| s.east().map(|s| bb.set(s)));
-        sq.south().and_then(|s| s.west().map(|s| bb.set(s)));
-        moves[sq] = bb;
+
+        // SSE
+        if let Some(s1) = square.south() {
+            if let Some(s2) = s1.south() {
+                if let Some(e) = s2.east() {
+                    bb = bb.with_square(e);
+                }
+            }
+        }
+
+        // SEE
+        if let Some(s) = square.south() {
+            if let Some(e1) = s.east() {
+                if let Some(e2) = e1.east() {
+                    bb = bb.with_square(e2);
+                }
+            }
+        }
+
+        // SSW
+        if let Some(s1) = square.south() {
+            if let Some(s2) = s1.south() {
+                if let Some(w) = s2.west() {
+                    bb = bb.with_square(w);
+                }
+            }
+        }
+
+        // SWW
+        if let Some(s) = square.south() {
+            if let Some(w1) = s.west() {
+                if let Some(w2) = w1.west() {
+                    bb = bb.with_square(w2);
+                }
+            }
+        }
+
+        moves[sq as usize] = bb;
+        sq += 1;
     }
-    unsafe {
-        KING_MOVES = moves;
-    }
+
+    moves
 }
 
-fn init_castle_table() {
+const fn compute_king_moves() -> [Bitboard; 64] {
+    let mut moves = [Bitboard::EMPTY; 64];
+    let mut sq = 0u8;
+
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let mut bb = Bitboard::EMPTY;
+
+        if let Some(s) = square.north() {
+            bb = bb.with_square(s);
+        }
+        if let Some(s) = square.south() {
+            bb = bb.with_square(s);
+        }
+        if let Some(s) = square.east() {
+            bb = bb.with_square(s);
+        }
+        if let Some(s) = square.west() {
+            bb = bb.with_square(s);
+        }
+
+        // Diagonals
+        if let Some(n) = square.north() {
+            if let Some(e) = n.east() {
+                bb = bb.with_square(e);
+            }
+            if let Some(w) = n.west() {
+                bb = bb.with_square(w);
+            }
+        }
+        if let Some(s) = square.south() {
+            if let Some(e) = s.east() {
+                bb = bb.with_square(e);
+            }
+            if let Some(w) = s.west() {
+                bb = bb.with_square(w);
+            }
+        }
+
+        moves[sq as usize] = bb;
+        sq += 1;
+    }
+
+    moves
+}
+
+const fn compute_kingside_castle() -> [Bitboard; 2] {
     let mut kingside = [Bitboard::EMPTY; 2];
+
+    // White: F1, G1
+    kingside[0] = Bitboard::EMPTY
+        .with_square(Square::F1)
+        .with_square(Square::G1);
+
+    // Black: F8, G8
+    kingside[1] = Bitboard::EMPTY
+        .with_square(Square::F8)
+        .with_square(Square::G8);
+
+    kingside
+}
+
+const fn compute_queenside_castle() -> [Bitboard; 2] {
     let mut queenside = [Bitboard::EMPTY; 2];
-    for color in [Color::White, Color::Black].into_iter() {
-        let back_rank = color.back_rank();
-        kingside[color].set(Square::make(File::F, back_rank));
-        kingside[color].set(Square::make(File::G, back_rank));
 
-        queenside[color].set(Square::make(File::B, back_rank));
-        queenside[color].set(Square::make(File::C, back_rank));
-        queenside[color].set(Square::make(File::D, back_rank));
-    }
-    unsafe {
-        KINGSIDE_CASTLE = kingside;
-        QUEENSIDE_CASTLE = queenside;
-    }
+    // White: B1, C1, D1
+    queenside[0] = Bitboard::EMPTY
+        .with_square(Square::B1)
+        .with_square(Square::C1)
+        .with_square(Square::D1);
+
+    // Black: B8, C8, D8
+    queenside[1] = Bitboard::EMPTY
+        .with_square(Square::B8)
+        .with_square(Square::C8)
+        .with_square(Square::D8);
+
+    queenside
 }
 
-fn init_between_table() {
+const fn compute_between() -> [[Bitboard; 64]; 64] {
     let mut between = [[Bitboard::EMPTY; 64]; 64];
-    for from in Square::ALL {
-        for to in Square::ALL {
-            between[from][to] = gen_between(from, to)
+    let mut from = 0u8;
+
+    while from < 64 {
+        let mut to = 0u8;
+        while to < 64 {
+            between[from as usize][to as usize] =
+                gen_between(Square::new_unchecked(from), Square::new_unchecked(to));
+            to += 1;
         }
+        from += 1;
     }
-    unsafe {
-        BETWEEN = between;
-    }
+
+    between
 }
 
-fn gen_between(from: Square, to: Square) -> Bitboard {
+const fn gen_between(from: Square, to: Square) -> Bitboard {
     let mut bb = Bitboard::EMPTY;
 
-    let min_file = from.file().min(to.file());
-    let max_file = from.file().max(to.file());
+    let from_file = from.file() as u8;
+    let to_file = to.file() as u8;
+    let from_rank = from.rank() as u8;
+    let to_rank = to.rank() as u8;
 
-    let min_rank = from.rank().min(to.rank());
-    let max_rank = from.rank().max(to.rank());
+    let min_file = if from_file < to_file {
+        from_file
+    } else {
+        to_file
+    };
+    let max_file = if from_file > to_file {
+        from_file
+    } else {
+        to_file
+    };
+    let min_rank = if from_rank < to_rank {
+        from_rank
+    } else {
+        to_rank
+    };
+    let max_rank = if from_rank > to_rank {
+        from_rank
+    } else {
+        to_rank
+    };
 
-    for sq in Square::ALL {
+    let mut sq = 0u8;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let sq_file = square.file() as u8;
+        let sq_rank = square.rank() as u8;
+
         // same rank
-        if sq.rank() == from.rank()
-            && from.rank() == to.rank()
-            && sq.file() > min_file
-            && sq.file() < max_file
+        if sq_rank == from_rank && from_rank == to_rank && sq_file > min_file && sq_file < max_file
         {
-            bb |= sq;
+            bb = bb.with_square(square);
         }
 
         // same file
-        if sq.file() == from.file()
-            && from.file() == to.file()
-            && sq.rank() > min_rank
-            && sq.rank() < max_rank
+        if sq_file == from_file && from_file == to_file && sq_rank > min_rank && sq_rank < max_rank
         {
-            bb |= sq;
+            bb = bb.with_square(square);
         }
 
         // same diagonal
-        if sq.rank().distance(from.rank()) == sq.file().distance(from.file())
-            && from.rank().distance(to.rank()) == from.file().distance(to.file())
-            && sq.rank() > min_rank
-            && sq.rank() < max_rank
-            && sq.file() > min_file
-            && sq.file() < max_file
+        let sq_rank_dist_from = if sq_rank > from_rank {
+            sq_rank - from_rank
+        } else {
+            from_rank - sq_rank
+        };
+        let sq_file_dist_from = if sq_file > from_file {
+            sq_file - from_file
+        } else {
+            from_file - sq_file
+        };
+        let from_rank_dist_to = if from_rank > to_rank {
+            from_rank - to_rank
+        } else {
+            to_rank - from_rank
+        };
+        let from_file_dist_to = if from_file > to_file {
+            from_file - to_file
+        } else {
+            to_file - from_file
+        };
+
+        if sq_rank_dist_from == sq_file_dist_from
+            && from_rank_dist_to == from_file_dist_to
+            && sq_rank > min_rank
+            && sq_rank < max_rank
+            && sq_file > min_file
+            && sq_file < max_file
         {
-            bb |= sq;
+            bb = bb.with_square(square);
         }
+
+        sq += 1;
     }
 
     bb
 }
 
-fn init_line_table() {
+const fn compute_line() -> [[Bitboard; 64]; 64] {
     let mut line = [[Bitboard::EMPTY; 64]; 64];
-    for from in Square::ALL {
-        for to in Square::ALL {
-            line[from][to] = if from == to {
+    let mut from = 0u8;
+
+    while from < 64 {
+        let mut to = 0u8;
+        while to < 64 {
+            line[from as usize][to as usize] = if from == to {
                 Bitboard::EMPTY
             } else {
-                gen_line(from, to)
+                gen_line(Square::new_unchecked(from), Square::new_unchecked(to))
             };
+            to += 1;
         }
+        from += 1;
     }
-    unsafe {
-        LINE = line;
-    }
+
+    line
 }
 
-fn gen_line(from: Square, to: Square) -> Bitboard {
+const fn gen_line(from: Square, to: Square) -> Bitboard {
     let mut bb = Bitboard::EMPTY;
 
-    for sq in Square::ALL {
+    let from_file = from.file() as u8;
+    let to_file = to.file() as u8;
+    let from_rank = from.rank() as u8;
+    let to_rank = to.rank() as u8;
+
+    let mut sq = 0u8;
+    while sq < 64 {
+        let square = Square::new_unchecked(sq);
+        let sq_file = square.file() as u8;
+        let sq_rank = square.rank() as u8;
+
         // same rank
-        if sq.rank() == from.rank() && from.rank() == to.rank() {
-            bb |= sq;
+        if sq_rank == from_rank && from_rank == to_rank {
+            bb = bb.with_square(square);
         }
 
         // same file
-        if sq.file() == from.file() && from.file() == to.file() {
-            bb |= sq;
+        if sq_file == from_file && from_file == to_file {
+            bb = bb.with_square(square);
         }
 
         // same diagonal
-        if (sq.rank().distance(from.rank()) == sq.file().distance(from.file()))
-            && (sq.rank().distance(to.rank()) == sq.file().distance(to.file()))
-            && (from.rank().distance(to.rank()) == from.file().distance(to.file()))
+        let sq_rank_dist_from = if sq_rank > from_rank {
+            sq_rank - from_rank
+        } else {
+            from_rank - sq_rank
+        };
+        let sq_file_dist_from = if sq_file > from_file {
+            sq_file - from_file
+        } else {
+            from_file - sq_file
+        };
+        let sq_rank_dist_to = if sq_rank > to_rank {
+            sq_rank - to_rank
+        } else {
+            to_rank - sq_rank
+        };
+        let sq_file_dist_to = if sq_file > to_file {
+            sq_file - to_file
+        } else {
+            to_file - sq_file
+        };
+        let from_rank_dist_to = if from_rank > to_rank {
+            from_rank - to_rank
+        } else {
+            to_rank - from_rank
+        };
+        let from_file_dist_to = if from_file > to_file {
+            from_file - to_file
+        } else {
+            to_file - from_file
+        };
+
+        if sq_rank_dist_from == sq_file_dist_from
+            && sq_rank_dist_to == sq_file_dist_to
+            && from_rank_dist_to == from_file_dist_to
         {
-            bb |= sq;
+            bb = bb.with_square(square);
+        }
+
+        sq += 1;
+    }
+
+    bb
+}
+
+const fn compute_bishop_rays() -> [Bitboard; 64] {
+    let mut rays = [Bitboard::EMPTY; 64];
+    let mut sq = 0u8;
+
+    while sq < 64 {
+        rays[sq as usize] = gen_bishop_ray(Square::new_unchecked(sq));
+        sq += 1;
+    }
+
+    rays
+}
+
+const fn gen_bishop_ray(sq: Square) -> Bitboard {
+    let mut bb = Bitboard::EMPTY;
+
+    // NE
+    let mut s = sq;
+    loop {
+        match s.north() {
+            Some(n) => match n.east() {
+                Some(ne) => {
+                    bb = bb.with_square(ne);
+                    s = ne;
+                }
+                None => break,
+            },
+            None => break,
+        }
+    }
+
+    // NW
+    s = sq;
+    loop {
+        match s.north() {
+            Some(n) => match n.west() {
+                Some(nw) => {
+                    bb = bb.with_square(nw);
+                    s = nw;
+                }
+                None => break,
+            },
+            None => break,
+        }
+    }
+
+    // SE
+    s = sq;
+    loop {
+        match s.south() {
+            Some(south) => match south.east() {
+                Some(se) => {
+                    bb = bb.with_square(se);
+                    s = se;
+                }
+                None => break,
+            },
+            None => break,
+        }
+    }
+
+    // SW
+    s = sq;
+    loop {
+        match s.south() {
+            Some(south) => match south.west() {
+                Some(sw) => {
+                    bb = bb.with_square(sw);
+                    s = sw;
+                }
+                None => break,
+            },
+            None => break,
         }
     }
 
     bb
 }
 
-fn gen_rook_ray(sq: Square) -> Bitboard {
+const fn compute_rook_rays() -> [Bitboard; 64] {
+    let mut rays = [Bitboard::EMPTY; 64];
+    let mut sq = 0u8;
+
+    while sq < 64 {
+        rays[sq as usize] = gen_rook_ray(Square::new_unchecked(sq));
+        sq += 1;
+    }
+
+    rays
+}
+
+const fn gen_rook_ray(sq: Square) -> Bitboard {
     let mut bb = Bitboard::EMPTY;
 
+    // North
     let mut s = sq;
     while let Some(n) = s.north() {
-        bb.set(n);
+        bb = bb.with_square(n);
         s = n;
     }
 
+    // South
     s = sq;
-    while let Some(n) = s.south() {
-        bb.set(n);
-        s = n;
+    while let Some(south) = s.south() {
+        bb = bb.with_square(south);
+        s = south;
     }
 
+    // East
     s = sq;
-    while let Some(n) = s.east() {
-        bb.set(n);
-        s = n;
+    while let Some(e) = s.east() {
+        bb = bb.with_square(e);
+        s = e;
     }
 
+    // West
     s = sq;
-    while let Some(n) = s.west() {
-        bb.set(n);
-        s = n;
+    while let Some(w) = s.west() {
+        bb = bb.with_square(w);
+        s = w;
     }
+
     bb
-}
-
-fn gen_bishop_ray(sq: Square) -> Bitboard {
-    let mut bb = Bitboard::EMPTY;
-
-    let mut s = sq;
-    while let Some(n) = s.north().and_then(|s| s.east()) {
-        bb.set(n);
-        s = n;
-    }
-
-    s = sq;
-    while let Some(n) = s.north().and_then(|s| s.west()) {
-        bb.set(n);
-        s = n;
-    }
-
-    s = sq;
-    while let Some(n) = s.south().and_then(|s| s.east()) {
-        bb.set(n);
-        s = n;
-    }
-
-    s = sq;
-    while let Some(n) = s.south().and_then(|s| s.west()) {
-        bb.set(n);
-        s = n;
-    }
-    bb
-}
-
-fn init_bishop_rays() {
-    let mut rays = [Bitboard::EMPTY; 64];
-    for sq in Square::ALL {
-        rays[sq] = gen_bishop_ray(sq);
-    }
-    unsafe {
-        BISHOP_RAYS = rays;
-    }
-}
-
-fn init_rook_rays() {
-    let mut rays = [Bitboard::EMPTY; 64];
-    for sq in Square::ALL {
-        rays[sq] = gen_rook_ray(sq);
-    }
-    unsafe {
-        ROOK_RAYS = rays;
-    }
 }

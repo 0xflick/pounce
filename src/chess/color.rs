@@ -20,7 +20,7 @@ impl Color {
     }
 
     #[inline]
-    pub fn home_rank(&self) -> Rank {
+    pub const fn home_rank(&self) -> Rank {
         match self {
             Color::White => Rank::R2,
             Color::Black => Rank::R7,
@@ -28,7 +28,7 @@ impl Color {
     }
 
     #[inline]
-    pub fn back_rank(&self) -> Rank {
+    pub const fn back_rank(&self) -> Rank {
         match self {
             Color::White => Rank::R1,
             Color::Black => Rank::R8,
@@ -36,7 +36,7 @@ impl Color {
     }
 
     #[inline]
-    pub fn double_pawn_rank(&self) -> Rank {
+    pub const fn double_pawn_rank(&self) -> Rank {
         match self {
             Color::White => Rank::R4,
             Color::Black => Rank::R5,
@@ -44,7 +44,7 @@ impl Color {
     }
 
     #[inline]
-    pub fn opponent(&self) -> Color {
+    pub const fn opponent(&self) -> Color {
         match self {
             Color::White => Color::Black,
             Color::Black => Color::White,

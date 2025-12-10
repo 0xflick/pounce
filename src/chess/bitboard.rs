@@ -32,6 +32,18 @@ impl Bitboard {
         *self |= sq;
     }
 
+    /// Const-compatible version that returns a new Bitboard with the bit set
+    #[inline]
+    pub const fn with_square(self, sq: Square) -> Bitboard {
+        Bitboard(self.0 | (1u64 << sq as u8))
+    }
+
+    /// Const-compatible bitwise OR
+    #[inline]
+    pub const fn const_or(self, other: Bitboard) -> Bitboard {
+        Bitboard(self.0 | other.0)
+    }
+
     #[inline]
     pub fn clear(&mut self, sq: Square) {
         *self &= !Bitboard::from(sq);

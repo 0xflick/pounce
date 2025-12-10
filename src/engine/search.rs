@@ -17,18 +17,49 @@ pub const MAX_PLY: usize = 128;
 // Add 1 to array sizes to allow safe boundary access when accessing [ply + 1]
 const SEARCH_ARRAY_SIZE: usize = MAX_PLY + 1;
 
-static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
+// Compile-time computed LMR reductions table
+static REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = compute_reductions();
 
-pub fn init_reductions() {
-    unsafe {
-        #[allow(clippy::needless_range_loop)]
-        for m in 1..MAX_MOVES {
-            for depth in 1..MAX_DEPTH as usize {
-                let reduction = 0.4 + ((depth as f32).ln() * (m as f32).ln()) / 1.7;
-                REDUCTIONS[depth][m] = reduction as u8;
-            }
-        }
+// No-op for backwards compatibility - reductions are now compile-time constants
+pub fn init_reductions() {}
+
+/// Const-compatible natural log approximation
+/// Returns ln(x) * 1000 as integer for precision
+const fn ln_approx_x1000(x: usize) -> u32 {
+    if x == 0 {
+        return 0;
     }
+    // ln(x) = log2(x) * ln(2)
+    // log2(x) ≈ bit position of highest set bit
+    // ln(2) * 1000 ≈ 693
+    let log2 = 31 - (x as u32).leading_zeros();
+    // More accurate: interpolate within the power of 2
+    // For simplicity, just use log2 * 693 with minor adjustment
+    let base = log2 * 693;
+    // Add fractional part approximation
+    let frac = (x as u32 - (1 << log2)) * 693 / (1 << log2);
+    base + frac
+}
+
+const fn compute_reductions() -> [[u8; MAX_MOVES]; MAX_DEPTH as usize] {
+    let mut reductions = [[0u8; MAX_MOVES]; MAX_DEPTH as usize];
+
+    let mut depth = 1usize;
+    while depth < MAX_DEPTH as usize {
+        let mut m = 1usize;
+        while m < MAX_MOVES {
+            // Original formula: 0.4 + (ln(depth) * ln(m)) / 1.7
+            // Using integer math: 400 + (ln_d * ln_m) / 1700
+            let ln_d = ln_approx_x1000(depth);
+            let ln_m = ln_approx_x1000(m);
+            let reduction = 400 + (ln_d * ln_m) / 1700;
+            reductions[depth][m] = (reduction / 1000) as u8;
+            m += 1;
+        }
+        depth += 1;
+    }
+
+    reductions
 }
 #[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
@@ -757,7 +788,7 @@ impl<'a> Search<'a> {
     }
 
     fn reduction(&self, depth: i32, move_count: i32) -> i32 {
-        unsafe { REDUCTIONS[depth as usize][move_count as usize] as i32 }
+        REDUCTIONS[depth as usize][move_count as usize] as i32
     }
 
     pub fn done_thinking(&self) -> bool {

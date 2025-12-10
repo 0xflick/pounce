@@ -46,10 +46,10 @@ impl Rank {
         }
     }
 
-    pub fn distance(&self, other: Rank) -> u8 {
+    pub const fn distance(&self, other: Rank) -> u8 {
         let a = *self as u8;
         let b = other as u8;
-        a.abs_diff(b)
+        if a > b { a - b } else { b - a }
     }
 
     pub const fn from_char(c: char) -> Option<Rank> {
@@ -130,7 +130,7 @@ impl File {
         unsafe { std::mem::transmute(file) }
     }
 
-    pub fn east(&self) -> Option<File> {
+    pub const fn east(&self) -> Option<File> {
         if (*self as u8) < 7 {
             Some(File::new_unchecked((*self as u8 + 1) % 8))
         } else {
@@ -138,11 +138,11 @@ impl File {
         }
     }
 
-    pub fn east_wrapped(&self) -> File {
+    pub const fn east_wrapped(&self) -> File {
         File::new_unchecked((*self as u8 + 1) % 8)
     }
 
-    pub fn west(&self) -> Option<File> {
+    pub const fn west(&self) -> Option<File> {
         if (*self as u8) > 0 {
             Some(File::new_unchecked((*self as u8 - 1) % 8))
         } else {
@@ -150,10 +150,10 @@ impl File {
         }
     }
 
-    pub fn distance(&self, other: File) -> u8 {
+    pub const fn distance(&self, other: File) -> u8 {
         let a = *self as u8;
         let b = other as u8;
-        a.abs_diff(b)
+        if a > b { a - b } else { b - a }
     }
 
     pub fn direction(&self, other: File) -> i8 {
@@ -258,20 +258,32 @@ impl Square {
         Square::new_unchecked((rank as u8 * 8) + file as u8)
     }
 
-    pub fn north(&self) -> Option<Square> {
-        self.rank().up().map(|r| Square::make(self.file(), r))
+    pub const fn north(&self) -> Option<Square> {
+        match self.rank().up() {
+            Some(r) => Some(Square::make(self.file(), r)),
+            None => None,
+        }
     }
 
-    pub fn south(&self) -> Option<Square> {
-        self.rank().down().map(|r| Square::make(self.file(), r))
+    pub const fn south(&self) -> Option<Square> {
+        match self.rank().down() {
+            Some(r) => Some(Square::make(self.file(), r)),
+            None => None,
+        }
     }
 
-    pub fn east(&self) -> Option<Square> {
-        self.file().east().map(|f| Square::make(f, self.rank()))
+    pub const fn east(&self) -> Option<Square> {
+        match self.file().east() {
+            Some(f) => Some(Square::make(f, self.rank())),
+            None => None,
+        }
     }
 
-    pub fn west(&self) -> Option<Square> {
-        self.file().west().map(|f| Square::make(f, self.rank()))
+    pub const fn west(&self) -> Option<Square> {
+        match self.file().west() {
+            Some(f) => Some(Square::make(f, self.rank())),
+            None => None,
+        }
     }
 
     pub fn same_color(&self, other: Square) -> bool {
@@ -279,14 +291,14 @@ impl Square {
     }
 
     #[inline]
-    pub fn up(&self, color: Color) -> Option<Square> {
+    pub const fn up(&self, color: Color) -> Option<Square> {
         match color {
             Color::White => self.north(),
             Color::Black => self.south(),
         }
     }
 
-    pub fn down(&self, color: Color) -> Option<Square> {
+    pub const fn down(&self, color: Color) -> Option<Square> {
         match color {
             Color::White => self.south(),
             Color::Black => self.north(),
@@ -306,7 +318,7 @@ impl Square {
     ];
 
     #[inline]
-    pub fn flip(&self) -> Square {
+    pub const fn flip(&self) -> Square {
         Square::new_unchecked(*self as u8 ^ 56)
     }
 

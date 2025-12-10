@@ -9,12 +9,12 @@ use crate::chess::{Color, Square};
 
 #[inline(always)]
 pub fn get_pawn_moves(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_MOVES[color][sq] }
+    PAWN_MOVES[color as usize][sq as usize]
 }
 
 #[inline(always)]
 pub fn get_pawn_attacks(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_ATTACKS[color][sq] }
+    PAWN_ATTACKS[color as usize][sq as usize]
 }
 
 #[inline(always)]
@@ -37,40 +37,40 @@ pub fn get_bishop_moves(sq: Square, occ: Bitboard) -> Bitboard {
 
 #[inline(always)]
 pub fn get_knight_moves(sq: Square) -> Bitboard {
-    unsafe { KNIGHT_MOVES[sq] }
+    KNIGHT_MOVES[sq as usize]
 }
 
 #[inline(always)]
 pub fn get_king_moves(sq: Square) -> Bitboard {
-    unsafe { KING_MOVES[sq] }
+    KING_MOVES[sq as usize]
 }
 
 #[inline(always)]
 pub fn between(from: Square, to: Square) -> Bitboard {
-    unsafe { BETWEEN[from][to] }
+    BETWEEN[from as usize][to as usize]
 }
 
 #[inline(always)]
 pub fn line(from: Square, to: Square) -> Bitboard {
-    unsafe { LINE[from][to] }
+    LINE[from as usize][to as usize]
 }
 
 #[inline(always)]
 pub fn bishop_rays(sq: Square) -> Bitboard {
-    unsafe { BISHOP_RAYS[sq] }
+    BISHOP_RAYS[sq as usize]
 }
 
 #[inline(always)]
 pub fn rook_rays(sq: Square) -> Bitboard {
-    unsafe { ROOK_RAYS[sq] }
+    ROOK_RAYS[sq as usize]
 }
 
 #[inline(always)]
 pub fn get_kingside_castle_through_squares(color: Color) -> Bitboard {
-    unsafe { KINGSIDE_CASTLE[color] }
+    KINGSIDE_CASTLE[color as usize]
 }
 
 #[inline(always)]
 pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
-    unsafe { QUEENSIDE_CASTLE[color] }
+    QUEENSIDE_CASTLE[color as usize]
 }

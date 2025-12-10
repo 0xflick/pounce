@@ -1,6 +1,3 @@
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
-
 use crate::chess::position::CastleRights;
 use crate::chess::{Color, File, Piece, Position, Role, Square};
 
@@ -8,23 +5,38 @@ use crate::chess::{Color, File, Piece, Position, Role, Square};
 // 8 for the en passant file, 16 for castling rights (don't
 // need that many, but it's easier to just index that way).
 const ZOBRIST_LEN: usize = Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + 16;
-static mut ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = [0; ZOBRIST_LEN];
 
-pub fn init_zobrist() {
-    let mut rng = SmallRng::seed_from_u64(0xcafe);
-    unsafe {
-        let ptr = &raw mut ZOBRIST_KEYS;
-        let ptr = ptr as *mut u64;
+// Compile-time computed zobrist keys using xorshift64
+static ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = compute_zobrist_keys();
 
-        for i in 0..ZOBRIST_LEN {
-            *ptr.add(i) = rng.random();
-        }
+// No-op for backwards compatibility - keys are now compile-time constants
+pub fn init_zobrist() {}
+
+/// Const-compatible xorshift64 PRNG
+const fn xorshift64(mut state: u64) -> u64 {
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    state
+}
+
+const fn compute_zobrist_keys() -> [u64; ZOBRIST_LEN] {
+    let mut keys = [0u64; ZOBRIST_LEN];
+    let mut state = 0xcafe_u64; // Same seed as before
+
+    let mut i = 0;
+    while i < ZOBRIST_LEN {
+        state = xorshift64(state);
+        keys[i] = state;
+        i += 1;
     }
+
+    keys
 }
 
 #[inline(always)]
 fn get_zobrist_key(idx: usize) -> u64 {
-    unsafe { ZOBRIST_KEYS[idx] }
+    ZOBRIST_KEYS[idx]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,8 +156,6 @@ fn perft_zobrist(pos: &mut Position, depth: u8) {
 
 #[cfg(test)]
 mod tests {
-    use super::init_zobrist;
-    use crate::chess::movegen::init_tables;
     use crate::chess::position::fen::{Fen, STARTPOS};
     use crate::chess::position::zobrist::perft_zobrist;
 
@@ -159,9 +169,6 @@ mod tests {
 
     #[test]
     fn test_zobrist() {
-        init_tables();
-        init_zobrist();
-
         let Fen(mut position) = STARTPOS.parse().unwrap();
 
         let hash = position.zobrist_hash();
@@ -174,8 +181,6 @@ mod tests {
 
     #[test]
     fn test_zobrist_kiwipete() {
-        init_tables();
-        init_zobrist();
         let Fen(mut position) = KIWIPETE_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -186,8 +191,6 @@ mod tests {
 
     #[test]
     fn test_zobrist_position_3() {
-        init_tables();
-        init_zobrist();
         let Fen(mut position) = POSITTION_3_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -198,8 +201,6 @@ mod tests {
 
     #[test]
     fn test_zobrist_position_4() {
-        init_tables();
-        init_zobrist();
         let Fen(mut position) = POSITION_4_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -210,8 +211,6 @@ mod tests {
 
     #[test]
     fn test_zobrist_position_5() {
-        init_tables();
-        init_zobrist();
         let Fen(mut position) = POSITION_5_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
@@ -222,8 +221,6 @@ mod tests {
 
     #[test]
     fn test_zobrist_position_6() {
-        init_tables();
-        init_zobrist();
         let Fen(mut position) = POSITION_6_FEN.parse().unwrap();
         let hash = position.zobrist_hash();
         assert_eq!(hash, position.key);
