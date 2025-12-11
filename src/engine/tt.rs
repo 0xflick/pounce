@@ -119,15 +119,8 @@ pub struct Table {
 
 impl Table {
     pub fn new(size: usize) -> Table {
-        let mut entries = Vec::with_capacity(size);
-        for _ in 0..size {
-            entries.push(TTMemory {
-                key: AtomicU64::new(0),
-                data: AtomicU64::new(0),
-            });
-        }
         Table {
-            entries,
+            entries: (0..size).map(|_| TTMemory::default()).collect(),
             max_size: size,
         }
     }
