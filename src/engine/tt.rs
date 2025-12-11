@@ -140,8 +140,12 @@ pub struct Table {
 
 impl Table {
     pub fn new(size: usize) -> Self {
+        let mut entries = Vec::with_capacity(size);
+        for _ in 0..size {
+            entries.push(TTMemory::default());
+        }
         Self {
-            entries: (0..size).map(|_| TTMemory::default()).collect(),
+            entries,
             age: AtomicU8::new(0),
         }
     }
