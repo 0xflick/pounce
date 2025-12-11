@@ -293,7 +293,12 @@ impl<'a> Search<'a> {
         let mut tt_eval = None;
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
+            // Validate TT move - if it's corrupt/invalid, ignore it
+            tt_move = if self.position.is_pseudo_legal(entry.best_move) {
+                entry.best_move
+            } else {
+                Move::NONE
+            };
             let score = denormalize_score(entry.score, ply);
             tt_eval = Some(score);
             if entry.depth as i32 >= depth
@@ -513,7 +518,12 @@ impl<'a> Search<'a> {
         // Probe tt
         let mut tt_move = Move::NONE;
         if let Some(entry) = self.tt.probe(self.position.key) {
-            tt_move = entry.best_move;
+            // Validate TT move - if it's corrupt/invalid, ignore it
+            tt_move = if self.position.is_pseudo_legal(entry.best_move) {
+                entry.best_move
+            } else {
+                Move::NONE
+            };
             if !is_pv {
                 let score = denormalize_score(entry.score, MAX_PLY);
                 match entry.score_type {
