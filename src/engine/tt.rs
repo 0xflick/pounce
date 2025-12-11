@@ -79,12 +79,11 @@ unsafe impl Send for Table {}
 
 impl Table {
     pub fn new(size: usize) -> Self {
-        Self {
-            entries: (0..size)
-                .map(|_| UnsafeCell::new(Entry::default()))
-                .collect(),
-            age: 0,
+        let mut entries = Vec::with_capacity(size);
+        for _ in 0..size {
+            entries.push(UnsafeCell::new(Entry::default()));
         }
+        Self { entries, age: 0 }
     }
 
     pub fn new_mb(size_mb: usize) -> Self {
