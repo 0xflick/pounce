@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
@@ -13,18 +14,25 @@ use crate::engine::tt::{Entry, EntryType, Table};
 const MAX_DEPTH: u8 = 64;
 pub const MAX_PLY: u8 = 128;
 
-static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
+static REDUCTIONS: OnceLock<[[u8; MAX_MOVES]; MAX_DEPTH as usize]> = OnceLock::new();
 
-pub fn init_reductions() {
-    unsafe {
+fn get_reductions() -> &'static [[u8; MAX_MOVES]; MAX_DEPTH as usize] {
+    REDUCTIONS.get_or_init(|| {
+        let mut reductions = [[0u8; MAX_MOVES]; MAX_DEPTH as usize];
         #[allow(clippy::needless_range_loop)]
         for m in 1..MAX_MOVES {
             for depth in 1..MAX_DEPTH as usize {
                 let reduction = 1. + ((depth as f32).ln() * (m as f32).ln()) / 2.;
-                REDUCTIONS[depth][m] = reduction as u8;
+                reductions[depth][m] = reduction as u8;
             }
         }
-    }
+        reductions
+    })
+}
+
+pub fn init_reductions() {
+    // Force initialization
+    let _ = get_reductions();
 }
 #[derive(Debug, Clone, Copy)]
 pub struct SearchResult {
@@ -618,7 +626,7 @@ impl<'a> Search<'a> {
     }
 
     fn reduction(&self, depth: i32, move_count: u8) -> i32 {
-        unsafe { REDUCTIONS[depth as usize][move_count as usize] as i32 }
+        get_reductions()[depth as usize][move_count as usize] as i32
     }
 
     pub fn done_thinking(&self) -> bool {

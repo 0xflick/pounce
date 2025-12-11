@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
@@ -8,23 +10,28 @@ use crate::chess::{Color, File, Piece, Position, Role, Square};
 // 8 for the en passant file, 16 for castling rights (don't
 // need that many, but it's easier to just index that way).
 const ZOBRIST_LEN: usize = Square::NUM * Color::NUM * Role::NUM + 1 + File::NUM + 16;
-static mut ZOBRIST_KEYS: [u64; ZOBRIST_LEN] = [0; ZOBRIST_LEN];
+
+static ZOBRIST_KEYS: OnceLock<[u64; ZOBRIST_LEN]> = OnceLock::new();
+
+fn get_keys() -> &'static [u64; ZOBRIST_LEN] {
+    ZOBRIST_KEYS.get_or_init(|| {
+        let mut keys = [0u64; ZOBRIST_LEN];
+        let mut rng = SmallRng::seed_from_u64(0xcafe);
+        for key in keys.iter_mut() {
+            *key = rng.random();
+        }
+        keys
+    })
+}
 
 pub fn init_zobrist() {
-    let mut rng = SmallRng::seed_from_u64(0xcafe);
-    unsafe {
-        let ptr = &raw mut ZOBRIST_KEYS;
-        let ptr = ptr as *mut u64;
-
-        for i in 0..ZOBRIST_LEN {
-            *ptr.add(i) = rng.random();
-        }
-    }
+    // Force initialization
+    let _ = get_keys();
 }
 
 #[inline(always)]
 fn get_zobrist_key(idx: usize) -> u64 {
-    unsafe { ZOBRIST_KEYS[idx] }
+    get_keys()[idx]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1,20 +1,17 @@
 use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::magic::{BISHOP_ATTACKS, ROOK_ATTACKS};
 use crate::chess::movegen::magic_gen::{BISHOP_MAGICS, ROOK_MAGICS};
-use crate::chess::movegen::tables::{
-    BETWEEN, BISHOP_RAYS, KING_MOVES, KINGSIDE_CASTLE, KNIGHT_MOVES, LINE, PAWN_ATTACKS,
-    PAWN_MOVES, QUEENSIDE_CASTLE, ROOK_RAYS,
-};
+use crate::chess::movegen::tables;
 use crate::chess::{Color, Square};
 
 #[inline(always)]
 pub fn get_pawn_moves(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_MOVES[color][sq] }
+    tables::get_pawn_moves(color, sq)
 }
 
 #[inline(always)]
 pub fn get_pawn_attacks(sq: Square, color: Color) -> Bitboard {
-    unsafe { PAWN_ATTACKS[color][sq] }
+    tables::get_pawn_attacks(color, sq)
 }
 
 #[inline(always)]
@@ -37,40 +34,40 @@ pub fn get_bishop_moves(sq: Square, occ: Bitboard) -> Bitboard {
 
 #[inline(always)]
 pub fn get_knight_moves(sq: Square) -> Bitboard {
-    unsafe { KNIGHT_MOVES[sq] }
+    tables::get_knight_moves(sq)
 }
 
 #[inline(always)]
 pub fn get_king_moves(sq: Square) -> Bitboard {
-    unsafe { KING_MOVES[sq] }
+    tables::get_king_moves(sq)
 }
 
 #[inline(always)]
 pub fn between(from: Square, to: Square) -> Bitboard {
-    unsafe { BETWEEN[from][to] }
+    tables::get_between(from, to)
 }
 
 #[inline(always)]
 pub fn line(from: Square, to: Square) -> Bitboard {
-    unsafe { LINE[from][to] }
+    tables::get_line(from, to)
 }
 
 #[inline(always)]
 pub fn bishop_rays(sq: Square) -> Bitboard {
-    unsafe { BISHOP_RAYS[sq] }
+    tables::get_bishop_rays(sq)
 }
 
 #[inline(always)]
 pub fn rook_rays(sq: Square) -> Bitboard {
-    unsafe { ROOK_RAYS[sq] }
+    tables::get_rook_rays(sq)
 }
 
 #[inline(always)]
 pub fn get_kingside_castle_through_squares(color: Color) -> Bitboard {
-    unsafe { KINGSIDE_CASTLE[color] }
+    tables::get_kingside_castle(color)
 }
 
 #[inline(always)]
 pub fn get_queenside_castle_throught_squares(color: Color) -> Bitboard {
-    unsafe { QUEENSIDE_CASTLE[color] }
+    tables::get_queenside_castle(color)
 }

@@ -42,7 +42,17 @@ impl Move {
 
     #[inline]
     pub fn promotion(self) -> Option<Role> {
-        unsafe { std::mem::transmute((self.0 >> 12) as u8) }
+        let promo_bits = (self.0 >> 12) as u8;
+        match promo_bits {
+            0 => Some(Role::Pawn),
+            1 => Some(Role::Knight),
+            2 => Some(Role::Bishop),
+            3 => Some(Role::Rook),
+            4 => Some(Role::Queen),
+            5 => Some(Role::King),
+            6 => None, // Role::NUM sentinel value
+            _ => panic!("Invalid promotion bits in Move: {}", promo_bits),
+        }
     }
 
     // This only works for valid moves

@@ -1,44 +1,91 @@
+use std::sync::OnceLock;
+
 use crate::chess::bitboard::Bitboard;
 use crate::chess::{Color, File, Square};
 
-pub static mut PAWN_MOVES: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-pub static mut PAWN_ATTACKS: [[Bitboard; 64]; 2] = [[Bitboard::EMPTY; 64]; 2];
-pub static mut KNIGHT_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut KING_MOVES: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut KINGSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-pub static mut QUEENSIDE_CASTLE: [Bitboard; 2] = [Bitboard::EMPTY; 2];
-pub static mut BETWEEN: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-pub static mut LINE: [[Bitboard; 64]; 64] = [[Bitboard::EMPTY; 64]; 64];
-pub static mut BISHOP_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-pub static mut ROOK_RAYS: [Bitboard; 64] = [Bitboard::EMPTY; 64];
-
-pub fn init_tables() {
-    init_pawn_move_table();
-    init_knight_move_table();
-    init_king_move_table();
-    init_castle_table();
-    init_between_table();
-    init_line_table();
-    init_bishop_rays();
-    init_rook_rays();
+struct Tables {
+    pawn_moves: [[Bitboard; 64]; 2],
+    pawn_attacks: [[Bitboard; 64]; 2],
+    knight_moves: [Bitboard; 64],
+    king_moves: [Bitboard; 64],
+    kingside_castle: [Bitboard; 2],
+    queenside_castle: [Bitboard; 2],
+    between: [[Bitboard; 64]; 64],
+    line: [[Bitboard; 64]; 64],
+    bishop_rays: [Bitboard; 64],
+    rook_rays: [Bitboard; 64],
 }
 
-fn init_pawn_move_table() {
+static TABLES: OnceLock<Tables> = OnceLock::new();
+
+fn get_tables() -> &'static Tables {
+    TABLES.get_or_init(|| Tables {
+        pawn_moves: init_pawn_moves(),
+        pawn_attacks: init_pawn_attacks(),
+        knight_moves: init_knight_moves(),
+        king_moves: init_king_moves(),
+        kingside_castle: init_kingside_castle(),
+        queenside_castle: init_queenside_castle(),
+        between: init_between(),
+        line: init_line(),
+        bishop_rays: init_bishop_rays(),
+        rook_rays: init_rook_rays(),
+    })
+}
+
+pub fn init_tables() {
+    // Force initialization
+    let _ = get_tables();
+}
+
+pub fn get_pawn_moves(color: Color, sq: Square) -> Bitboard {
+    get_tables().pawn_moves[color as usize][sq as usize]
+}
+
+pub fn get_pawn_attacks(color: Color, sq: Square) -> Bitboard {
+    get_tables().pawn_attacks[color as usize][sq as usize]
+}
+
+pub fn get_knight_moves(sq: Square) -> Bitboard {
+    get_tables().knight_moves[sq as usize]
+}
+
+pub fn get_king_moves(sq: Square) -> Bitboard {
+    get_tables().king_moves[sq as usize]
+}
+
+pub fn get_kingside_castle(color: Color) -> Bitboard {
+    get_tables().kingside_castle[color as usize]
+}
+
+pub fn get_queenside_castle(color: Color) -> Bitboard {
+    get_tables().queenside_castle[color as usize]
+}
+
+pub fn get_between(from: Square, to: Square) -> Bitboard {
+    get_tables().between[from as usize][to as usize]
+}
+
+pub fn get_line(from: Square, to: Square) -> Bitboard {
+    get_tables().line[from as usize][to as usize]
+}
+
+pub fn get_bishop_rays(sq: Square) -> Bitboard {
+    get_tables().bishop_rays[sq as usize]
+}
+
+pub fn get_rook_rays(sq: Square) -> Bitboard {
+    get_tables().rook_rays[sq as usize]
+}
+
+fn init_pawn_moves() -> [[Bitboard; 64]; 2] {
     let mut moves = [[Bitboard::EMPTY; 64]; 2];
-    let mut attacks = [[Bitboard::EMPTY; 64]; 2];
 
     for color in [Color::White, Color::Black].into_iter() {
         for sq in Square::ALL {
-            let move_bb = &mut moves[color][sq];
-            let attack_bb = &mut attacks[color][sq];
+            let move_bb = &mut moves[color as usize][sq as usize];
             if let Some(s) = sq.up(color) {
                 move_bb.set(s);
-                if let Some(l) = s.east() {
-                    attack_bb.set(l);
-                }
-                if let Some(r) = s.west() {
-                    attack_bb.set(r);
-                }
             }
 
             if sq.rank() == color.home_rank()
@@ -49,14 +96,31 @@ fn init_pawn_move_table() {
         }
     }
 
-    unsafe {
-        PAWN_MOVES = moves;
-        PAWN_ATTACKS = attacks;
+    moves
+}
+
+fn init_pawn_attacks() -> [[Bitboard; 64]; 2] {
+    let mut attacks = [[Bitboard::EMPTY; 64]; 2];
+
+    for color in [Color::White, Color::Black].into_iter() {
+        for sq in Square::ALL {
+            let attack_bb = &mut attacks[color as usize][sq as usize];
+            if let Some(s) = sq.up(color) {
+                if let Some(l) = s.east() {
+                    attack_bb.set(l);
+                }
+                if let Some(r) = s.west() {
+                    attack_bb.set(r);
+                }
+            }
+        }
     }
+
+    attacks
 }
 
 #[rustfmt::skip]
-fn init_knight_move_table() {
+fn init_knight_moves() -> [Bitboard; 64] {
     let mut moves = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         let mut bb = Bitboard::EMPTY;
@@ -75,14 +139,12 @@ fn init_knight_move_table() {
         // SSW, SWW
         sq.south().and_then(|s| s.south().and_then(|s| s.west().map(|s| bb.set(s))));
         sq.south().and_then(|s| s.west().and_then(|s| s.west().map(|s| bb.set(s))));
-        moves[sq] = bb;
+        moves[sq as usize] = bb;
     }
-    unsafe {
-        KNIGHT_MOVES = moves;
-    }
+    moves
 }
 
-fn init_king_move_table() {
+fn init_king_moves() -> [Bitboard; 64] {
     let mut moves = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
         let mut bb = Bitboard::EMPTY;
@@ -102,41 +164,40 @@ fn init_king_move_table() {
         sq.north().and_then(|s| s.west().map(|s| bb.set(s)));
         sq.south().and_then(|s| s.east().map(|s| bb.set(s)));
         sq.south().and_then(|s| s.west().map(|s| bb.set(s)));
-        moves[sq] = bb;
+        moves[sq as usize] = bb;
     }
-    unsafe {
-        KING_MOVES = moves;
-    }
+    moves
 }
 
-fn init_castle_table() {
+fn init_kingside_castle() -> [Bitboard; 2] {
     let mut kingside = [Bitboard::EMPTY; 2];
+    for color in [Color::White, Color::Black].into_iter() {
+        let back_rank = color.back_rank();
+        kingside[color as usize].set(Square::make(File::F, back_rank));
+        kingside[color as usize].set(Square::make(File::G, back_rank));
+    }
+    kingside
+}
+
+fn init_queenside_castle() -> [Bitboard; 2] {
     let mut queenside = [Bitboard::EMPTY; 2];
     for color in [Color::White, Color::Black].into_iter() {
         let back_rank = color.back_rank();
-        kingside[color].set(Square::make(File::F, back_rank));
-        kingside[color].set(Square::make(File::G, back_rank));
-
-        queenside[color].set(Square::make(File::B, back_rank));
-        queenside[color].set(Square::make(File::C, back_rank));
-        queenside[color].set(Square::make(File::D, back_rank));
+        queenside[color as usize].set(Square::make(File::B, back_rank));
+        queenside[color as usize].set(Square::make(File::C, back_rank));
+        queenside[color as usize].set(Square::make(File::D, back_rank));
     }
-    unsafe {
-        KINGSIDE_CASTLE = kingside;
-        QUEENSIDE_CASTLE = queenside;
-    }
+    queenside
 }
 
-fn init_between_table() {
+fn init_between() -> [[Bitboard; 64]; 64] {
     let mut between = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
-            between[from][to] = gen_between(from, to)
+            between[from as usize][to as usize] = gen_between(from, to)
         }
     }
-    unsafe {
-        BETWEEN = between;
-    }
+    between
 }
 
 fn gen_between(from: Square, to: Square) -> Bitboard {
@@ -182,20 +243,18 @@ fn gen_between(from: Square, to: Square) -> Bitboard {
     bb
 }
 
-fn init_line_table() {
+fn init_line() -> [[Bitboard; 64]; 64] {
     let mut line = [[Bitboard::EMPTY; 64]; 64];
     for from in Square::ALL {
         for to in Square::ALL {
-            line[from][to] = if from == to {
+            line[from as usize][to as usize] = if from == to {
                 Bitboard::EMPTY
             } else {
                 gen_line(from, to)
             };
         }
     }
-    unsafe {
-        LINE = line;
-    }
+    line
 }
 
 fn gen_line(from: Square, to: Square) -> Bitboard {
@@ -282,22 +341,18 @@ fn gen_bishop_ray(sq: Square) -> Bitboard {
     bb
 }
 
-fn init_bishop_rays() {
+fn init_bishop_rays() -> [Bitboard; 64] {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
-        rays[sq] = gen_bishop_ray(sq);
+        rays[sq as usize] = gen_bishop_ray(sq);
     }
-    unsafe {
-        BISHOP_RAYS = rays;
-    }
+    rays
 }
 
-fn init_rook_rays() {
+fn init_rook_rays() -> [Bitboard; 64] {
     let mut rays = [Bitboard::EMPTY; 64];
     for sq in Square::ALL {
-        rays[sq] = gen_rook_ray(sq);
+        rays[sq as usize] = gen_rook_ray(sq);
     }
-    unsafe {
-        ROOK_RAYS = rays;
-    }
+    rays
 }
