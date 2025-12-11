@@ -75,24 +75,15 @@ struct TTData {
 }
 
 impl TTData {
-    const MOVE_BITS: u32 = 16;
-    const MOVE_MASK: u64 = (1 << Self::MOVE_BITS) - 1;
-
+    const MOVE_MASK: u64 = 0xFFFF;
     const SCORE_SHIFT: u32 = 16;
-    const SCORE_BITS: u32 = 16;
-    const SCORE_MASK: u64 = (1 << Self::SCORE_BITS) - 1;
-
+    const SCORE_MASK: u64 = 0xFFFF;
     const DEPTH_SHIFT: u32 = 32;
-    const DEPTH_BITS: u32 = 8;
-    const DEPTH_MASK: u64 = (1 << Self::DEPTH_BITS) - 1;
-
+    const DEPTH_MASK: u64 = 0xFF;
     const TYPE_SHIFT: u32 = 40;
-    const TYPE_BITS: u32 = 2;
-    const TYPE_MASK: u64 = (1 << Self::TYPE_BITS) - 1;
-
+    const TYPE_MASK: u64 = 0x3;
     const AGE_SHIFT: u32 = 42;
-    const AGE_BITS: u32 = 6;
-    const AGE_MASK: u64 = (1 << Self::AGE_BITS) - 1;
+    const AGE_MASK: u64 = 0x3F;
 
     fn pack(&self) -> u64 {
         unsafe {
@@ -144,28 +135,19 @@ impl From<&TTMemory> for TTData {
 
 pub struct Table {
     entries: Vec<TTMemory>,
-    max_size: usize,
     age: AtomicU8,
 }
 
 impl Table {
-    pub fn new(size: usize) -> Table {
-        let mut entries = Vec::with_capacity(size);
-        for _ in 0..size {
-            entries.push(TTMemory {
-                key: AtomicU64::new(0),
-                data: AtomicU64::new(0),
-            });
-        }
-        Table {
-            entries,
-            max_size: size,
+    pub fn new(size: usize) -> Self {
+        Self {
+            entries: (0..size).map(|_| TTMemory::default()).collect(),
             age: AtomicU8::new(0),
         }
     }
 
-    pub fn new_mb(size_mb: usize) -> Table {
-        Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>())
+    pub fn new_mb(size_mb: usize) -> Self {
+        Self::new(size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>())
     }
 
     pub fn clear(&self) {
@@ -239,10 +221,6 @@ impl Table {
             .filter(|mem| TTData::from(*mem).key != ZobristHash::default())
             .count() as f64
     }
-
-    pub fn size_mb(&self) -> usize {
-        self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
-    }
 }
 
 fn age_diff(current_age: u8, old_age: u8) -> u8 {
@@ -269,7 +247,6 @@ mod tests {
     #[test]
     fn test_insert() {
         let tt = Table::new_mb(1);
-        assert_eq!(tt.size_mb(), 1);
         let key = random_key();
 
         let e = Entry::new(key, 20, -150, EntryType::Exact, Move::NULL);
