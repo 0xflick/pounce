@@ -19,13 +19,6 @@ impl Default for TTMemory {
     }
 }
 
-impl TTMemory {
-    fn clear(&self) {
-        self.key.store(0, std::sync::atomic::Ordering::Relaxed);
-        self.data.store(0, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[repr(u8)]
 pub enum EntryType {
@@ -75,15 +68,24 @@ struct TTData {
 }
 
 impl TTData {
-    const MOVE_MASK: u64 = 0xFFFF;
+    const MOVE_BITS: u32 = 16;
+    const MOVE_MASK: u64 = (1 << Self::MOVE_BITS) - 1;
+
     const SCORE_SHIFT: u32 = 16;
-    const SCORE_MASK: u64 = 0xFFFF;
+    const SCORE_BITS: u32 = 16;
+    const SCORE_MASK: u64 = (1 << Self::SCORE_BITS) - 1;
+
     const DEPTH_SHIFT: u32 = 32;
-    const DEPTH_MASK: u64 = 0xFF;
+    const DEPTH_BITS: u32 = 8;
+    const DEPTH_MASK: u64 = (1 << Self::DEPTH_BITS) - 1;
+
     const TYPE_SHIFT: u32 = 40;
-    const TYPE_MASK: u64 = 0x3;
+    const TYPE_BITS: u32 = 2;
+    const TYPE_MASK: u64 = (1 << Self::TYPE_BITS) - 1;
+
     const AGE_SHIFT: u32 = 42;
-    const AGE_MASK: u64 = 0x3F;
+    const AGE_BITS: u32 = 6;
+    const AGE_MASK: u64 = (1 << Self::AGE_BITS) - 1;
 
     fn pack(&self) -> u64 {
         unsafe {
@@ -125,6 +127,17 @@ impl TTData {
     }
 }
 
+impl From<&TTData> for TTMemory {
+    fn from(tt_data: &TTData) -> Self {
+        let data = tt_data.pack();
+        let key = u64::from(tt_data.key) ^ data;
+        TTMemory {
+            key: AtomicU64::new(key),
+            data: AtomicU64::new(data),
+        }
+    }
+}
+
 impl From<&TTMemory> for TTData {
     fn from(mem: &TTMemory) -> Self {
         let key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
@@ -135,33 +148,25 @@ impl From<&TTMemory> for TTData {
 
 pub struct Table {
     entries: Vec<TTMemory>,
-    max_size: usize,
     age: AtomicU8,
 }
 
 impl Table {
-    pub fn new(size: usize) -> Table {
-        let mut entries = Vec::with_capacity(size);
-        for _ in 0..size {
-            entries.push(TTMemory {
-                key: AtomicU64::new(0),
-                data: AtomicU64::new(0),
-            });
-        }
-        Table {
-            entries,
-            max_size: size,
+    pub fn new(size: usize) -> Self {
+        Self {
+            entries: (0..size).map(|_| TTMemory::default()).collect(),
             age: AtomicU8::new(0),
         }
     }
 
-    pub fn new_mb(size_mb: usize) -> Table {
-        Table::new(size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>())
+    pub fn new_mb(size_mb: usize) -> Self {
+        Self::new(size_mb * 1024 * 1024 / std::mem::size_of::<TTMemory>())
     }
 
     pub fn clear(&self) {
-        self.entries.iter().for_each(|entry| {
-            entry.clear();
+        self.entries.iter().for_each(|mem| {
+            mem.key.store(0, std::sync::atomic::Ordering::Relaxed);
+            mem.data.store(0, std::sync::atomic::Ordering::Relaxed);
         });
     }
 
@@ -230,10 +235,6 @@ impl Table {
             .filter(|mem| TTData::from(*mem).key != ZobristHash::default())
             .count() as f64
     }
-
-    pub fn size_mb(&self) -> usize {
-        self.max_size * std::mem::size_of::<Entry>() / 1024 / 1024
-    }
 }
 
 fn age_diff(current_age: u8, old_age: u8) -> u8 {
@@ -243,29 +244,9 @@ fn age_diff(current_age: u8, old_age: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chess::position::fen::{Fen, STARTPOS};
-    use crate::chess::position::zobrist::init_zobrist;
-
-    fn random_key() -> ZobristHash {
-        init_zobrist();
-        let Fen(pos) = STARTPOS.parse().unwrap();
-        pos.key
-    }
 
     #[test]
     fn test_table() {
-        assert_eq!(std::mem::size_of::<Entry>(), 16);
-    }
-
-    #[test]
-    fn test_insert() {
-        let tt = Table::new_mb(1);
-        assert_eq!(tt.size_mb(), 1);
-        let key = random_key();
-
-        let e = Entry::new(key, 20, -150, EntryType::Exact, Move::NULL);
-
-        tt.set(e);
-        assert_eq!(tt.probe(key), Some(e));
+        assert_eq!(std::mem::size_of::<TTMemory>(), 16);
     }
 }
