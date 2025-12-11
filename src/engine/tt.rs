@@ -66,20 +66,27 @@ impl Entry {
         let mem_key = mem.key.load(std::sync::atomic::Ordering::Relaxed);
         let mem_data = mem.data.load(std::sync::atomic::Ordering::Relaxed);
 
-        unsafe {
-            let key = std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data);
-            let depth = (mem_data >> 48) as u8;
-            let score = ((mem_data >> 32) & 0xffff) as i16;
-            let score_type = std::mem::transmute::<u8, EntryType>(((mem_data >> 24) & 0xff) as u8);
-            let best_move = std::mem::transmute::<u16, Move>(mem_data as u16);
+        // SAFETY: ZobristHash is #[repr(transparent)] over u64
+        let key = unsafe { std::mem::transmute::<u64, ZobristHash>(mem_key ^ mem_data) };
+        let depth = (mem_data >> 48) as u8;
+        let score = ((mem_data >> 32) & 0xffff) as i16;
+        let score_type_raw = ((mem_data >> 24) & 0xff) as u8;
+        let score_type = match score_type_raw {
+            0 => EntryType::None,
+            1 => EntryType::Exact,
+            2 => EntryType::LowerBound,
+            3 => EntryType::UpperBound,
+            _ => panic!("Invalid EntryType discriminant: {}", score_type_raw),
+        };
+        // SAFETY: Move is a newtype over u16 with no invalid values
+        let best_move = unsafe { std::mem::transmute::<u16, Move>(mem_data as u16) };
 
-            Entry {
-                key,
-                depth,
-                score,
-                score_type,
-                best_move,
-            }
+        Entry {
+            key,
+            depth,
+            score,
+            score_type,
+            best_move,
         }
     }
 
