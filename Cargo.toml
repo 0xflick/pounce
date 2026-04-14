@@ -39,7 +39,7 @@ arrayvec = "0.7.4"
 bitflags = "2.6.0"
 clap = { version = "4.5.15", features = ["derive"], optional = true }
 ctrlc = { version = "3.4.5", features = ["termination"], optional = true }
-rand = { version = "0.9.0", default-features = false, features = ["small_rng", "std"] }
+rand = { version = "0.9.3", default-features = false, features = ["small_rng", "std"] }
 serde = { version = "1.0.209", features = ["derive"], optional = true }
 serde_json = { version = "1.0.128", optional = true }
 thiserror = "2.0.11"
