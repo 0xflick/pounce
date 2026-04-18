@@ -42,7 +42,17 @@ impl Move {
 
     #[inline]
     pub fn promotion(self) -> Option<Role> {
-        unsafe { std::mem::transmute((self.0 >> 12) as u8) }
+        let bits = (self.0 >> 12) as u8;
+        // SAFETY: every Move constructor (`new`, `NONE`, `NULL`) leaves the
+        // top 4 bits in 0..=Role::NUM. Telling the optimizer keeps the
+        // zero-cost codegen the previous `transmute` had, without UB.
+        unsafe { core::hint::assert_unchecked(bits <= Role::NUM as u8) };
+        if bits == Role::NUM as u8 {
+            None
+        } else {
+            // SAFETY: bits ∈ 0..=5 is a valid Role discriminant.
+            Some(unsafe { std::mem::transmute::<u8, Role>(bits) })
+        }
     }
 
     // This only works for valid moves
@@ -96,7 +106,10 @@ impl Move {
         })
     }
 
-    pub const NULL: Move = Move(u16::MAX);
+    // Null move sentinel. Top 4 bits = Role::NUM (the no-promotion sentinel),
+    // so `promotion()` is well-defined on NULL. From/to are both A1, which no
+    // legal move has, so NULL stays distinct from every real move and from NONE.
+    pub const NULL: Move = Move((Role::NUM as u16) << 12);
     pub const NONE: Move = Move(0);
 }
 
