@@ -25,6 +25,7 @@ impl Wizard {
 
         for sq in Square::ALL.into_iter() {
             let r_mask = rook_mask(sq);
+            #[allow(clippy::needless_range_loop)]
             for i in 0..1 << r_mask.count() {
                 let occupancy = occupancy_bb(&r_mask, i);
                 r_attacks[sq as usize][i] = rook_attacks(sq, occupancy);
@@ -32,6 +33,7 @@ impl Wizard {
             r_masks[sq] = r_mask;
 
             let b_mask = bishop_mask(sq);
+            #[allow(clippy::needless_range_loop)]
             for i in 0..1 << b_mask.count() {
                 let occupancy = occupancy_bb(&b_mask, i);
                 b_attacks[sq as usize][i] = bishop_attacks(sq, occupancy);
