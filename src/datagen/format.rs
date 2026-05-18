@@ -1,7 +1,7 @@
 use std::fmt::{self, Debug, Display, Formatter};
 use std::num::NonZeroU16;
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 
 use crate::chess::bitboard::Bitboard;
 use crate::chess::position::CastleRights;
@@ -210,7 +210,13 @@ impl TryFrom<CompressedPosition> for Position {
                 Color::Black
             };
 
-            let role = unsafe { std::mem::transmute::<u8, Role>(pc & 0b111) };
+            let role_bits = pc & 0b111;
+            ensure!(
+                role_bits < Role::NUM as u8,
+                "invalid role bits {role_bits} in compressed position",
+            );
+            // SAFETY: role_bits < Role::NUM is a valid Role discriminant.
+            let role = unsafe { std::mem::transmute::<u8, Role>(role_bits) };
 
             pos.set(sq, Piece { color, role });
         }
