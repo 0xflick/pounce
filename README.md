@@ -4,11 +4,19 @@ A UCI compatible chess engine written in Rust.
 
 ## Rating History
 
-| Version | Estimated Elo |
-| ------- | ------------- |
-| 1.2.4   | ~2500[^1]     |
+Approximate CCRL ratings:
 
-[^1]: Based on a 10+0.1 tournament against Loki@v3.0.0, Kimbo@1.0.0, and Shen Yu@2.0.1
+| Version | [Blitz][ccrl-blitz] | [40/15][ccrl-4040] |
+| ------- | ------------------- | ------------------ |
+| 3.0.0   | ~3222               | ~3185              |
+| 2.1.3   | ~3128               | —                  |
+| 2.0.1   | —                   | ~2874              |
+| 1.2.4   | ~2458               | —                  |
+
+Blitz computed 2026-05-16, 40/15 computed 2026-05-15.
+
+[ccrl-blitz]: https://computerchess.org.uk/404/
+[ccrl-4040]: https://computerchess.org.uk/4040/
 
 ## Features
 
