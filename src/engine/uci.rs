@@ -2,7 +2,9 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::ControlFlow;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 use std::{io, thread};
 
 use anyhow::{Context, Result, anyhow};
@@ -13,6 +15,7 @@ use crate::chess::position::Accumulator;
 use crate::chess::position::fen::{Fen, STARTPOS};
 use crate::engine::bench::bench;
 use crate::engine::limits::Limits;
+use crate::engine::search_manager::search_core;
 use crate::engine::utils::engine_name;
 use crate::engine::{SearchManager, eval};
 
@@ -120,9 +123,15 @@ impl Display for UciOptionSet {
 }
 
 pub struct Uci {
-    manager: Arc<Mutex<SearchManager>>,
+    /// Owned directly by the UCI thread — no mutex. The UCI thread mutates
+    /// `position`/config here; a `go` hands a *snapshot* to a search thread.
+    manager: SearchManager,
     options: UciOptionSet,
-    stop: Arc<std::sync::atomic::AtomicBool>,
+    /// Atomic stop flag — the only thing `stop`/`quit` touch on a running
+    /// search. Never contended with `position`/`setoption`.
+    stop: Arc<AtomicBool>,
+    /// The in-flight search thread, owned and joined (never abandoned).
+    search_handle: Option<JoinHandle<()>>,
 }
 
 impl Uci {
@@ -141,12 +150,22 @@ impl Uci {
             max: 16384,
         });
 
-        let manager = Arc::new(Mutex::new(SearchManager::new(1, 16)));
-
         Uci {
-            manager,
+            manager: SearchManager::new(1, 16),
             options,
-            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            stop: Arc::new(AtomicBool::new(false)),
+            search_handle: None,
+        }
+    }
+
+    /// Stop any in-flight search and join it. Cheap when the search already
+    /// finished (just reaps the thread); bounded otherwise because `stop` is
+    /// set first. Called before every state mutation / `go` / `quit`, so the
+    /// UCI thread and a search never race over `position` or the TT.
+    fn wait_search(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(h) = self.search_handle.take() {
+            let _ = h.join();
         }
     }
 }
@@ -226,22 +245,16 @@ impl Uci {
             }
             Some("setoption") => {
                 self.options.parse(rest)?;
-                match self.manager.try_lock() {
-                    Ok(mut manager) => {
-                        if let Some(hash_size) = self.options.get_int("Hash") {
-                            manager.set_tt_size_mb(hash_size as usize);
-                        }
-
-                        if let Some(threads) = self.options.get_int("Threads") {
-                            manager.set_num_threads(threads as usize);
-                        }
-                    }
-                    Err(_) => {
-                        Err(anyhow!("Failed to lock search manager"))?;
-                    }
+                self.wait_search();
+                if let Some(hash_size) = self.options.get_int("Hash") {
+                    self.manager.set_tt_size_mb(hash_size as usize);
+                }
+                if let Some(threads) = self.options.get_int("Threads") {
+                    self.manager.set_num_threads(threads as usize);
                 }
             }
             Some("quit") => {
+                self.wait_search();
                 return Ok(ControlFlow::Break(()));
             }
             Some("position") => {
@@ -253,42 +266,30 @@ impl Uci {
             Some("go") => {
                 self.cmd_go(rest)?;
             }
-            Some("eval") => match self.manager.try_lock() {
-                Ok(manager) => {
-                    let pos = &manager.position;
-                    let net =
-                        eval::nnue::PerspectiveNet::<{ eval::nnue::NNUE_HIDDEN_SIZE }>::load()?;
-                    let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
-                    nnue_accumulator.reset(pos);
-                    let nnue_eval = eval::score_nnue(pos, &nnue_accumulator);
-                    println!("NNUE Eval: {nnue_eval}");
-                }
-                Err(_) => {
-                    Err(anyhow!("Failed to lock search manager"))?;
-                }
-            },
+            Some("eval") => {
+                self.wait_search();
+                let pos = &self.manager.position;
+                let net = eval::nnue::PerspectiveNet::<{ eval::nnue::NNUE_HIDDEN_SIZE }>::load()?;
+                let mut nnue_accumulator = eval::nnue::NNUEAccumulator::new(&net);
+                nnue_accumulator.reset(pos);
+                let nnue_eval = eval::score_nnue(pos, &nnue_accumulator);
+                println!("NNUE Eval: {nnue_eval}");
+            }
             Some("stop") => {
                 self.cmd_stop()?;
             }
-            Some("ucinewgame") => match self.manager.try_lock() {
-                Ok(mut manager) => {
-                    let Fen(position) = STARTPOS.parse().unwrap();
-                    manager.position = position;
-                }
-                Err(_) => {
-                    Err(anyhow!("Failed to lock search manager"))?;
-                }
-            },
-            Some("zobrist") => match self.manager.try_lock() {
-                Ok(manager) => {
-                    let hash = manager.position.zobrist_hash();
-                    println!("Zobrist hash: {:x}", u64::from(hash));
-                    println!("Zobrist hash: {:x}", u64::from(manager.position.key));
-                }
-                Err(_) => {
-                    Err(anyhow!("Failed to lock search manager"))?;
-                }
-            },
+            Some("ucinewgame") => {
+                self.wait_search();
+                let Fen(position) = STARTPOS.parse().unwrap();
+                self.manager.position = position;
+                self.manager.clear_tt();
+            }
+            Some("zobrist") => {
+                self.wait_search();
+                let hash = self.manager.position.zobrist_hash();
+                println!("Zobrist hash: {:x}", u64::from(hash));
+                println!("Zobrist hash: {:x}", u64::from(self.manager.position.key));
+            }
             Some(val) => {
                 eprintln!("Unknown command: {val}");
             }
@@ -334,24 +335,21 @@ impl Uci {
                 },
             }
         }
-        match self.manager.try_lock() {
-            Ok(mut manager) => {
-                if !fen.is_empty() {
-                    let fen_str = fen.join(" ");
-                    let Fen(position) = Fen::parse(fen_str.as_str())?;
-                    manager.position = position;
-                } else {
-                    let Fen(position) = STARTPOS.parse().unwrap();
-                    manager.position = position;
-                }
-
-                for mv in moves {
-                    manager.position.make_move(mv);
-                }
-            }
-            Err(_) => {
-                return Err(anyhow!("Failed to lock search manager"));
-            }
+        // No lock: the UCI thread owns `manager`. We only join any in-flight
+        // search first so a `position` can never be applied while a search
+        // is running (which, with the old `try_lock`, silently dropped the
+        // update and left the next `go` searching the stale board).
+        self.wait_search();
+        if !fen.is_empty() {
+            let fen_str = fen.join(" ");
+            let Fen(position) = Fen::parse(fen_str.as_str())?;
+            self.manager.position = position;
+        } else {
+            let Fen(position) = STARTPOS.parse().unwrap();
+            self.manager.position = position;
+        }
+        for mv in moves {
+            self.manager.position.make_move(mv);
         }
         Ok(())
     }
@@ -369,12 +367,8 @@ impl Uci {
         let mut nodes = 0;
         let now = std::time::Instant::now();
 
-        let manager = match self.manager.try_lock() {
-            Ok(manager) => manager,
-            Err(_) => {
-                return Err(anyhow!("Failed to lock search manager"));
-            }
-        };
+        self.wait_search();
+        let manager = &self.manager;
 
         if depth > 0 {
             let mut pos = manager.position.clone();
@@ -426,23 +420,25 @@ impl Uci {
             limits.infinite = true;
             limits
         };
-        self.stop.store(false, std::sync::atomic::Ordering::Relaxed);
-        let stop = self.stop.clone();
-        let manager = self.manager.clone();
-        thread::spawn(move || match manager.try_lock() {
-            Ok(mut manager) => {
-                manager.think_with_stop(limits, stop);
-            }
-            Err(_) => {
-                eprintln!("Failed to lock search manager");
-            }
-        });
+        // Reap any prior search, then launch this one on a snapshot: a cloned
+        // position + cloned `Arc`s for the shared TT/net. The search touches
+        // nothing the UCI thread owns, so `position`/`stop`/`quit` never
+        // contend with it. We own the JoinHandle (joined on the next mutation
+        // / `quit`) — no abandoned thread, exactly one `bestmove`.
+        self.wait_search();
+        self.stop.store(false, Ordering::Relaxed);
+        let (pos, tt, net, num_threads, silent) = self.manager.search_inputs();
+        let stop = Arc::clone(&self.stop);
+        self.search_handle = Some(thread::spawn(move || {
+            tt.bump_age();
+            search_core(&pos, &tt, &net, num_threads, silent, &stop, limits);
+        }));
 
         Ok(())
     }
 
     fn cmd_stop(&mut self) -> Result<()> {
-        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop.store(true, Ordering::Relaxed);
         Ok(())
     }
 }
