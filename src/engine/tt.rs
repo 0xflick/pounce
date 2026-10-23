@@ -1,4 +1,5 @@
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::chess::Move;
 use crate::zobrist::ZobristHash;
@@ -70,7 +71,9 @@ impl Entry {
 
 pub struct Table {
     entries: Vec<UnsafeCell<Entry>>,
-    pub age: u8, // Only uses bottom 6 bits
+    // Atomic so the TT can be shared lockless via `Arc<Table>` (the UCI
+    // thread bumps it per `go` while the search reads it). Only bottom 6 bits.
+    age: AtomicU8,
 }
 
 // We're naughty
@@ -83,8 +86,13 @@ impl Table {
             entries: (0..size)
                 .map(|_| UnsafeCell::new(Entry::default()))
                 .collect(),
-            age: 0,
+            age: AtomicU8::new(0),
         }
+    }
+
+    #[inline]
+    fn age(&self) -> u8 {
+        self.age.load(Ordering::Relaxed)
     }
 
     pub fn new_mb(size_mb: usize) -> Self {
@@ -97,9 +105,11 @@ impl Table {
         });
     }
 
-    pub fn increment_age(&mut self) {
-        // Wrap at 6 bits (0-63)
-        self.age = (self.age + 1) & 0x3F;
+    /// Bump the generation counter (wraps at 6 bits). `&self` so it works
+    /// through `Arc<Table>`; called once per `go`.
+    pub fn bump_age(&self) {
+        let next = (self.age.load(Ordering::Relaxed).wrapping_add(1)) & 0x3F;
+        self.age.store(next, Ordering::Relaxed);
     }
 
     fn index(&self, key: ZobristHash) -> usize {
@@ -119,10 +129,10 @@ impl Table {
     pub fn store(&self, mut entry: Entry) {
         let idx = self.index(entry.key);
         let score_type = entry.score_type();
-        entry.set_age_and_type(self.age, score_type);
+        entry.set_age_and_type(self.age(), score_type);
 
         let should_write = if let Some(existing_entry) = self.probe(entry.key) {
-            let age_diff = age_diff(self.age, existing_entry.age()) as u16;
+            let age_diff = age_diff(self.age(), existing_entry.age()) as u16;
 
             let entry_prio = entry.depth as u16 + score_type as u16 + (age_diff * age_diff) / 4;
             let existing_prio = existing_entry.depth as u16 + existing_entry.score_type() as u16;
@@ -141,11 +151,13 @@ impl Table {
     }
 
     pub fn hashfull(&self) -> f64 {
-        self.entries[..1000]
+        let cur = self.age();
+        let n = self.entries.len().min(1000);
+        self.entries[..n]
             .iter()
             .filter(|e| unsafe {
                 let ptr = e.get();
-                (*ptr).key != ZobristHash::default() && (*ptr).age() == self.age
+                (*ptr).key != ZobristHash::default() && (*ptr).age() == cur
             })
             .count() as f64
     }
