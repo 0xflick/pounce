@@ -225,8 +225,7 @@ impl Position {
     #[inline]
     pub fn is_draw(&self) -> Option<GameResult> {
         if self.halfmove_clock >= 100 {
-            let num_moves = MoveGen::new(self).len();
-            if num_moves > 0 && self.in_check() {
+            if self.in_check() && MoveGen::new(self).len() == 0 {
                 return Some(GameResult::Loss);
             } else {
                 return Some(GameResult::Draw);
@@ -1010,5 +1009,18 @@ mod test {
         assert_eq!(pos.pinned[Color::White], Bitboard::EMPTY);
         assert_eq!(pos.pinned[Color::Black].count(), 1);
         assert!(pos.pinned[Color::Black].contains(Square::E6));
+    }
+
+    #[test]
+    fn fifty_move_rule_draws_unless_checkmated() {
+        init();
+
+        // in check on the 100th half-move, but with legal moves
+        let Fen(pos) = "7k/8/8/8/8/8/7R/K7 b - - 100 80".parse().unwrap();
+        assert_eq!(pos.is_draw(), Some(GameResult::Draw));
+
+        // checkmate takes precedence over the 50 move rule
+        let Fen(pos) = "7k/6Q1/5K2/8/8/8/8/8 b - - 100 80".parse().unwrap();
+        assert_eq!(pos.is_draw(), Some(GameResult::Loss));
     }
 }

@@ -107,9 +107,20 @@ impl UciOptionSet {
     }
 
     pub fn get_int(&self, name: &str) -> Option<i32> {
-        self.values
-            .get(name)
-            .and_then(|val| val.parse::<i32>().ok())
+        let value = self.values.get(name)?.parse::<i32>().ok()?;
+
+        // values come straight from the GUI, so hold them to the advertised range
+        let range = self.options.iter().find_map(|option| match option {
+            UciOption::Spin {
+                name: opt,
+                min,
+                max,
+                ..
+            } if *opt == name => Some((*min, *max)),
+            _ => None,
+        });
+
+        Some(range.map_or(value, |(min, max)| value.clamp(min, max)))
     }
 }
 
@@ -440,5 +451,30 @@ impl Uci {
     fn cmd_stop(&mut self) -> Result<()> {
         self.stop.store(true, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spin_options_are_clamped_to_their_range() {
+        let mut options = UciOptionSet::new();
+        options.add_option(UciOption::Spin {
+            name: "Threads",
+            default: 1,
+            min: 1,
+            max: 128,
+        });
+
+        options.parse(&["name", "Threads", "value", "0"]).unwrap();
+        assert_eq!(options.get_int("Threads"), Some(1));
+
+        options.parse(&["name", "Threads", "value", "999"]).unwrap();
+        assert_eq!(options.get_int("Threads"), Some(128));
+
+        options.parse(&["name", "Threads", "value", "4"]).unwrap();
+        assert_eq!(options.get_int("Threads"), Some(4));
     }
 }
