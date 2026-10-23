@@ -180,7 +180,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         };
 
         let mut output = 0;
-        let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (30 - 2)).min(BUCKETS - 1);
+        let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (32 - 2)).min(BUCKETS - 1);
 
         for i in 0..HIDDEN_SIZE {
             output += screlu(us[i]) * self.output_weights[bucket][0][i] as i32;
