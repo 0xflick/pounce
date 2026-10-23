@@ -10,6 +10,7 @@ cargo run --release                         # UCI loop on stdin
 cargo build --release --features wiz --bin wiz          # magic bitboard generator
 cargo build --release --features datagen --bin datagen  # WIP self-play data generator
 make pgo-release                            # PGO build (installs cargo-pgo if missing)
+cargo build --release --features tune       # search parameters as UCI options, for tuning
 ```
 
 ## Test, lint, bench

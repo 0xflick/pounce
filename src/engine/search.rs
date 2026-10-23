@@ -11,6 +11,7 @@ use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker, see};
 use crate::engine::time_management::SearchCop;
 use crate::engine::tt::{Entry, EntryType, Table};
+use crate::engine::tune;
 
 const MAX_DEPTH: u8 = 64;
 pub const MAX_PLY: usize = 128;
@@ -235,7 +236,7 @@ impl<'a> Search<'a> {
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
-        let mut delta = 25;
+        let mut delta = tune::aspiration_delta() as i16;
         let (mut alpha, mut beta) = if depth > 5 {
             (prev - delta, prev + delta)
         } else {
@@ -401,7 +402,8 @@ impl<'a> Search<'a> {
             && !self.position.in_check()
             && depth < 7
         {
-            let margin = 80 * depth - (60 * improving as i32);
+            let margin =
+                (tune::rfp_margin() * depth - (tune::rfp_improving() * improving as i32)).max(0);
             if static_eval.saturating_sub(margin as i16) >= beta {
                 return beta;
             }
@@ -422,9 +424,10 @@ impl<'a> Search<'a> {
             self.stack[ply].mv = Move::NULL;
             self.stack[ply].moved = None;
 
-            let mut reduction = 5 + depth / 5;
+            let mut reduction = tune::nmp_base() + depth / tune::nmp_depth_divisor();
             // reduce more based on how far above beta we are
-            reduction += ((static_eval - beta) / 200).min(3) as i32;
+            reduction +=
+                (static_eval.saturating_sub(beta) / tune::nmp_eval_divisor() as i16).min(3) as i32;
 
             let null_score =
                 -self.search(depth - reduction, -beta, -beta + 1, ply + 1, false, false);
@@ -455,7 +458,7 @@ impl<'a> Search<'a> {
                 && !capture
                 && !self.position.in_check()
                 && depth <= 3
-                && move_count > (3 + depth * depth)
+                && move_count > (tune::lmp_base() + depth * depth)
                 && !self.history.is_killer(ply, mv)
             {
                 continue;
@@ -468,8 +471,8 @@ impl<'a> Search<'a> {
                 && depth <= 5
                 && mv.is_quiet(&self.position)
             {
-                let margin = 100 + depth * 100 + 100;
-                if static_eval + margin as i16 <= alpha {
+                let margin = tune::futility_base() + depth * tune::futility_depth();
+                if static_eval.saturating_add(margin as i16) <= alpha {
                     continue;
                 }
             }
@@ -477,9 +480,9 @@ impl<'a> Search<'a> {
             // SEE pruning: skip moves that aren't see positive (with a depth dependent margin)
             if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 5 {
                 let margin = if quiet {
-                    depth * 150
+                    depth * tune::see_quiet_margin()
                 } else {
-                    depth * depth * 200
+                    depth * depth * tune::see_noisy_margin()
                 };
                 if !see::see(&self.position, mv, -margin) {
                     continue;
@@ -569,7 +572,8 @@ impl<'a> Search<'a> {
                     if score >= beta {
                         if !capture {
                             self.history.update_killers(mv, ply);
-                            let bonus = 2000.min(350 * depth - 350);
+                            let bonus = tune::history_bonus_max()
+                                .min(tune::history_bonus_scale() * (depth - 1));
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
 
@@ -711,7 +715,10 @@ impl<'a> Search<'a> {
             }
         };
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        let see_margin = alpha
+            .saturating_sub(stand_pat)
+            .saturating_sub(tune::qsearch_see_margin() as i16)
+            .max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(self) {
             self.position.make_move_with(mv, &mut self.accum);
