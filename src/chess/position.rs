@@ -683,8 +683,11 @@ impl Position {
         // Get both kings' positions
         let our_king_bb = self.our_king();
         let their_king_bb = self.their_king();
-        let our_ksq = Square::new_unchecked(our_king_bb.0.trailing_zeros() as u8);
-        let their_ksq = Square::new_unchecked(their_king_bb.0.trailing_zeros() as u8);
+        // Mask to 6 bits so a king-less bitboard (pathological / corrupted
+        // state) produces Square::A1 instead of an invalid `Square` enum
+        // value, which would be UB when used as an array index.
+        let our_ksq = Square::new_unchecked((our_king_bb.0.trailing_zeros() & 0x3F) as u8);
+        let their_ksq = Square::new_unchecked((their_king_bb.0.trailing_zeros() & 0x3F) as u8);
 
         // Check if we're directly checking the opponent with the piece we just moved
         let dest_bb = Bitboard::from(mv.to());
@@ -741,7 +744,7 @@ impl Position {
         // Update checks and pins for each color
         for color in [Color::White, Color::Black] {
             let king_bb = self.by_color_role(color, Role::King);
-            let ksq = Square::new_unchecked(king_bb.0.trailing_zeros() as u8);
+            let ksq = Square::new_unchecked((king_bb.0.trailing_zeros() & 0x3F) as u8);
             let opponent = color.opponent();
 
             // Direct attacks (knights and pawns)
