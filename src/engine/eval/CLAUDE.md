@@ -17,8 +17,8 @@ When replacing `nets/net.pnn`, these must move in lockstep with the trainer:
 
 - `NNUE_HIDDEN_SIZE` — hidden layer width (e.g. 384).
 - `BUCKETS` — output bucket count. Index is
-  `((occ - 2) * BUCKETS / (30 - 2)).min(BUCKETS - 1)`; the `30` (not the 32
-  max piece count it looks like it should be) is deliberate and training-tied.
+  `((occ - 2) * BUCKETS / (32 - 2)).min(BUCKETS - 1)`; this must match
+  `bucket_width` in pounce-training's `pounce/model.py`.
 - `QA`, `QB`, `SCALE` — quantization; must match training quantization.
 - Feature layout in `index()`: `color_offset` 0 / 384, `piece.role * 64 + sq`;
   black perspective uses `piece.flip()` + `sq.flip()`.
