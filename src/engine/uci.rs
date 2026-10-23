@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::ControlFlow;
 use std::sync::Arc;
@@ -16,6 +15,8 @@ use crate::chess::position::fen::{Fen, STARTPOS};
 use crate::engine::bench::bench;
 use crate::engine::limits::Limits;
 use crate::engine::search_manager::search_core;
+#[cfg(feature = "tune")]
+use crate::engine::tune;
 use crate::engine::utils::engine_name;
 use crate::engine::{SearchManager, eval};
 
@@ -50,7 +51,6 @@ impl Display for UciOption {
 #[derive(Default)]
 struct UciOptionSet {
     options: Vec<UciOption>,
-    values: HashMap<String, String>,
 }
 
 impl UciOptionSet {
@@ -58,16 +58,12 @@ impl UciOptionSet {
         UciOptionSet::default()
     }
     pub fn add_option(&mut self, option: UciOption) {
-        match option {
-            UciOption::Spin { name, default, .. } => {
-                self.values.insert(name.to_string(), default.to_string());
-            }
-        }
-
         self.options.push(option);
     }
 
-    pub fn parse<T>(&mut self, tokens: &[T]) -> Result<()>
+    /// Reads a `setoption` command, returning the option's name and its value clamped to range.
+    /// Names are case insensitive, as UCI requires.
+    pub fn parse<T>(&self, tokens: &[T]) -> Result<(&'static str, i32)>
     where
         T: AsRef<str> + Borrow<str>,
     {
@@ -102,14 +98,22 @@ impl UciOptionSet {
             }
         }
 
-        self.values.insert(name, value);
-        Ok(())
-    }
+        for option in &self.options {
+            let UciOption::Spin {
+                name: known,
+                min,
+                max,
+                ..
+            } = *option;
+            if known.eq_ignore_ascii_case(&name) {
+                let value: i32 = value
+                    .parse()
+                    .with_context(|| format!("Invalid value for {known}: {value}"))?;
+                return Ok((known, value.clamp(min, max)));
+            }
+        }
 
-    pub fn get_int(&self, name: &str) -> Option<i32> {
-        self.values
-            .get(name)
-            .and_then(|val| val.parse::<i32>().ok())
+        Err(anyhow!("Unknown option: {name}"))
     }
 }
 
@@ -150,11 +154,38 @@ impl Uci {
             max: 16384,
         });
 
+        #[cfg(feature = "tune")]
+        for tunable in tune::TUNABLES {
+            options.add_option(UciOption::Spin {
+                name: tunable.name,
+                default: tunable.default,
+                min: tunable.min,
+                max: tunable.max,
+            });
+        }
+
         Uci {
             manager: SearchManager::new(1, 16),
             options,
             stop: Arc::new(AtomicBool::new(false)),
             search_handle: None,
+        }
+    }
+
+    /// Applies an option that was just set. Only that option is applied, because resizing the
+    /// hash table clears it, and a tuning run sets many options.
+    fn apply_option(&mut self, name: &str, value: i32) {
+        match name {
+            "Hash" => self.manager.set_tt_size_mb(value as usize),
+            "Threads" => self.manager.set_num_threads(value as usize),
+            #[cfg(feature = "tune")]
+            _ => {
+                if let Some(tunable) = tune::TUNABLES.iter().find(|t| t.name == name) {
+                    tunable.set(value);
+                }
+            }
+            #[cfg(not(feature = "tune"))]
+            _ => {}
         }
     }
 
@@ -244,14 +275,9 @@ impl Uci {
                 println!("readyok");
             }
             Some("setoption") => {
-                self.options.parse(rest)?;
+                let (name, value) = self.options.parse(rest)?;
                 self.wait_search();
-                if let Some(hash_size) = self.options.get_int("Hash") {
-                    self.manager.set_tt_size_mb(hash_size as usize);
-                }
-                if let Some(threads) = self.options.get_int("Threads") {
-                    self.manager.set_num_threads(threads as usize);
-                }
+                self.apply_option(name, value);
             }
             Some("quit") => {
                 self.wait_search();
@@ -440,5 +466,43 @@ impl Uci {
     fn cmd_stop(&mut self) -> Result<()> {
         self.stop.store(true, Ordering::Relaxed);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn options() -> UciOptionSet {
+        let mut options = UciOptionSet::new();
+        options.add_option(UciOption::Spin {
+            name: "Hash",
+            default: 16,
+            min: 1,
+            max: 64,
+        });
+        options
+    }
+
+    fn parse(command: &str) -> Result<(&'static str, i32)> {
+        let tokens: Vec<&str> = command.split_whitespace().collect();
+        options().parse(&tokens)
+    }
+
+    #[test]
+    fn setoption_is_case_insensitive() {
+        assert_eq!(parse("name hash value 32").unwrap(), ("Hash", 32));
+    }
+
+    #[test]
+    fn setoption_clamps_to_range() {
+        assert_eq!(parse("name Hash value 0").unwrap(), ("Hash", 1));
+        assert_eq!(parse("name Hash value 1000").unwrap(), ("Hash", 64));
+    }
+
+    #[test]
+    fn setoption_rejects_unknown_names_and_bad_values() {
+        assert!(parse("name Hsah value 32").is_err());
+        assert!(parse("name Hash value 3.5").is_err());
     }
 }

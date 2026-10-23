@@ -32,6 +32,8 @@ datagen = [
   "rand/std_rng",
 ]
 wiz = ["clap"]
+# Exposes search parameters as UCI options, for tuning.
+tune = []
 
 [dependencies]
 anyhow = "1.0.86"
