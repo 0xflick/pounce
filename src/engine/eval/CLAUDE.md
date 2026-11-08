@@ -1,7 +1,9 @@
 # CLAUDE.md — NNUE eval
 
 The danger here is silent corruption: nothing validates the net file or the
-constants at runtime, so a mismatch produces garbage eval, not an error.
+constants at runtime, so a mismatch produces garbage eval, not an error. The
+header is checked at compile time, as far as it can catch a mismatch, and only
+if it was exported after those fields were added.
 
 ## `nets/net.pnn` is `transmute`d, not parsed
 
@@ -9,9 +11,17 @@ constants at runtime, so a mismatch produces garbage eval, not an error.
 (nnue.rs). The file's raw bytes must exactly match the `NetworkData<NNUE_HIDDEN_SIZE>`
 layout: `FileHeader` (32 B) → `persp_weights` `[[i16; H]; 768]` (feature-major) →
 `persp_bias` `[i16; H]` → `output_weights` `[[[i16; H]; 2]; BUCKETS]` →
-`output_bias` `[i16; BUCKETS]`. `FileHeader.magic`/`version` are **not** checked.
+`output_bias` `[i16; BUCKETS]`. The `const _` block after `NETWORK` checks the
+header. A net with zeros in `buckets`/`qa`/`qb`/`scale` predates those fields.
 
 ## Swapping a net — checklist
+
+Use the trainer's installer, which copies the net, sets the constants from its
+header, builds the engine and runs bench:
+
+```shell
+uv run tools/export_weights.py install model.pnce --engine ../pounce  # from pounce-training
+```
 
 When replacing `nets/net.pnn`, these must move in lockstep with the trainer:
 
@@ -24,6 +34,8 @@ When replacing `nets/net.pnn`, these must move in lockstep with the trainer:
   black perspective uses `piece.flip()` + `sq.flip()`.
 
 Validate by running `cargo run --release -- bench` and SPRT vs the previous net.
+`tests/test_engine_parity.py` in pounce-training checks that the engine's eval
+matches the trained model, which covers everything in this list.
 
 ## Accumulator symmetry (do not "optimize" the no-ops)
 
