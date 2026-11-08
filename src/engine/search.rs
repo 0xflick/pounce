@@ -551,7 +551,7 @@ impl<'a> Search<'a> {
 
             // store effort at root
             if is_root {
-                self.stats.effort[mv.from()][mv.to()] = self.stats.nodes - before_nodes;
+                self.stats.effort[mv.from()][mv.to()] += self.stats.nodes - before_nodes;
             }
 
             if score > best {
