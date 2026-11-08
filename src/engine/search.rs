@@ -251,14 +251,12 @@ impl<'a> Search<'a> {
 
             let score = self.search(depth, alpha, beta, 0, true, true);
 
-            if score <= alpha {
-                beta = alpha + (beta - alpha) / 2;
-                alpha = (-eval::INFINITY).max(score.saturating_sub(delta));
-            } else if score >= beta {
-                beta = (eval::INFINITY).min(score.saturating_add(delta));
-            } else {
+            let Some((next_alpha, next_beta)) = next_aspiration_window(alpha, beta, score, delta)
+            else {
                 return score;
-            }
+            };
+            alpha = next_alpha;
+            beta = next_beta;
 
             delta += delta / 2;
             if delta > 1000 {
@@ -807,6 +805,28 @@ fn denormalize_score(score: i16, ply: usize) -> i16 {
     }
 }
 
+/// The window to search next after a score from an aspiration window, or `None` if that score is
+/// final. A full window is always final: searching it again can't give a different answer, and a
+/// score at the very edge of it would otherwise repeat the same search until time runs out.
+fn next_aspiration_window(alpha: i16, beta: i16, score: i16, delta: i16) -> Option<(i16, i16)> {
+    if alpha == -eval::INFINITY && beta == eval::INFINITY {
+        return None;
+    }
+
+    if score <= alpha {
+        // i32, since the window can be wider than an i16
+        let midpoint = alpha as i32 + (beta as i32 - alpha as i32) / 2;
+        Some((
+            (-eval::INFINITY).max(score.saturating_sub(delta)),
+            midpoint as i16,
+        ))
+    } else if score >= beta {
+        Some((alpha, (eval::INFINITY).min(score.saturating_add(delta))))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -824,6 +844,27 @@ mod tests {
             ..Default::default()
         };
         manager.think(limits).0
+    }
+
+    #[test]
+    fn aspiration_stops_at_a_full_window_whatever_the_score() {
+        for score in [-eval::INFINITY, -eval::MATE, 0, eval::MATE, eval::INFINITY] {
+            let window = next_aspiration_window(-eval::INFINITY, eval::INFINITY, score, 25);
+            assert_eq!(window, None, "repeated the search for score {score}");
+        }
+    }
+
+    #[test]
+    fn aspiration_widens_towards_the_score() {
+        assert_eq!(next_aspiration_window(-25, 25, 0, 25), None);
+        assert_eq!(next_aspiration_window(-25, 25, -50, 25), Some((-75, 0)));
+        assert_eq!(next_aspiration_window(-25, 25, 50, 25), Some((-25, 75)));
+    }
+
+    #[test]
+    fn aspiration_handles_windows_wider_than_an_i16() {
+        let (_, beta) = next_aspiration_window(-31_000, 31_000, -31_500, 25).unwrap();
+        assert_eq!(beta, 0);
     }
 
     #[test]
