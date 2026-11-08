@@ -53,8 +53,11 @@ impl HistoryTables {
     }
 
     pub fn update_killers(&mut self, mv: Move, ply: usize) {
-        self.killers[ply][1] = self.killers[ply][0];
-        self.killers[ply][0] = mv;
+        // the same killer again mustn't wipe out the other one
+        if self.killers[ply][0] != mv {
+            self.killers[ply][1] = self.killers[ply][0];
+            self.killers[ply][0] = mv;
+        }
     }
 
     pub fn score(&self, position: &Position, stack: &Stack, ply: usize, mv: Move) -> i32 {
