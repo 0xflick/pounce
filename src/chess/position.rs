@@ -9,7 +9,7 @@ use bitflags::bitflags;
 use crate::chess::bitboard::Bitboard;
 use crate::chess::movegen::MoveGen;
 use crate::chess::movegen::utils::{
-    between, bishop_rays, get_knight_moves, get_pawn_attacks, rook_rays,
+    between, bishop_rays, get_knight_moves, get_pawn_attacks, line, rook_rays,
 };
 use crate::chess::position::zobrist::ZobristHash;
 use crate::chess::{Color, File, GameResult, Move, MoveType, Piece, Role, Square};
@@ -402,7 +402,6 @@ impl Position {
                 acc.on_make_move_set(to, piece);
             }
             MoveType::Castle => {
-                self.halfmove_clock = 0;
                 if from.file().direction(to.file()) == 2 {
                     let rook_from = Square::make(File::H, self.side.back_rank());
                     let rook_to = Square::make(File::F, self.side.back_rank());
@@ -447,7 +446,6 @@ impl Position {
         }
 
         // update halfmove clock
-        // castling was handled above
         if state.captured.is_some() || piece.role == Role::Pawn {
             self.halfmove_clock = 0;
         }
@@ -483,15 +481,21 @@ impl Position {
         self.key.toggle_side();
 
         // handle ep square here (after updating checks and pins)
-        // only set ep square if the attacker if the ep move is legal
+        // only set ep square if the attacker if the ep move is legal. A pinned pawn can still capture
+        // if that keeps it on the line between the pinning piece and its king.
         if let Some(ep_sq) = potential_ep_sq
-            && (ep_attackers & !self.pinned[self.side]).any()
+            && (ep_attackers & (!self.pinned[self.side] | line(self.king_square(), ep_sq))).any()
             && (!self.checkers[self.side].any()
                 || self.checkers[self.side] == Bitboard::from(ep_sq.down(self.side).unwrap()))
         {
             self.ep_square = Some(ep_sq);
             self.key.toggle_ep(self.ep_square);
         }
+    }
+
+    #[inline]
+    fn king_square(&self) -> Square {
+        Square::from(self.king_of(self.side))
     }
 
     #[inline]
@@ -1009,6 +1013,59 @@ mod test {
         assert_eq!(pos.pinned[Color::White], Bitboard::EMPTY);
         assert_eq!(pos.pinned[Color::Black].count(), 1);
         assert!(pos.pinned[Color::Black].contains(Square::E6));
+    }
+
+    fn play(pos: &mut Position, mv: &str) {
+        pos.make_move(mv.parse::<Move>().unwrap());
+    }
+
+    #[test]
+    fn en_passant_by_a_pawn_pinned_along_its_capture() {
+        init();
+
+        // the d4 pawn is pinned to the a7 king by the g1 bishop, and d4xe3 stays on that diagonal
+        let Fen(mut pos) = "8/k7/8/8/3p4/8/4P3/6BK w - - 0 1".parse().unwrap();
+        play(&mut pos, "e2e4");
+        assert_eq!(pos.ep_square, Some(Square::E3));
+        assert_eq!(MoveGen::new(&pos).len(), 6);
+
+        // the capture has to remove the e4 pawn, or the board no longer matches the real game
+        play(&mut pos, "d4e3");
+        assert_eq!(pos.piece_at(Square::E4), None);
+        assert_eq!(
+            pos.piece_at(Square::E3),
+            Some(Piece::new(Color::Black, Role::Pawn))
+        );
+
+        // the same for white
+        let Fen(mut pos) = "6bk/4p3/8/3P4/8/8/K7/8 b - - 0 1".parse().unwrap();
+        play(&mut pos, "e7e5");
+        assert_eq!(pos.ep_square, Some(Square::E6));
+    }
+
+    #[test]
+    fn no_en_passant_by_a_pawn_pinned_across_its_capture() {
+        init();
+
+        // pinned along the d file
+        let Fen(mut pos) = "3k4/8/8/8/3p4/8/4P3/3R3K w - - 0 1".parse().unwrap();
+        play(&mut pos, "e2e4");
+        assert_eq!(pos.ep_square, None);
+
+        // pinned along the other diagonal
+        let Fen(mut pos) = "7k/8/8/8/3p4/8/4P3/B6K w - - 0 1".parse().unwrap();
+        play(&mut pos, "e2e4");
+        assert_eq!(pos.ep_square, None);
+    }
+
+    #[test]
+    fn castling_does_not_reset_the_fifty_move_clock() {
+        init();
+
+        let Fen(mut pos) = "4k3/8/8/8/8/8/R7/4K2R w K - 99 80".parse().unwrap();
+        play(&mut pos, "e1g1");
+        assert_eq!(pos.halfmove_clock, 100);
+        assert_eq!(pos.is_draw(), Some(GameResult::Draw));
     }
 
     #[test]
