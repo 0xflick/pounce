@@ -68,7 +68,8 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
         | (stm_pinned & stm_king_between)
         | (nstm_pinned & nstm_king_between);
 
-    let mut attackers = all_attackers(to, pos) & allowed;
+    // use the occupancy after the move, which can open a line through the square it left
+    let mut attackers = all_attackers(to, pos, occ) & occ & allowed;
 
     loop {
         let stm_attackers = attackers & pos.by_color[side];
@@ -109,7 +110,7 @@ pub fn see(pos: &chess::Position, mv: chess::Move, threshold: i32) -> bool {
         // adjust balance
         value = -value - 1 - SEE_VALUES[next_victim as usize];
 
-        if value > 0 {
+        if value >= 0 {
             if next_victim == chess::Role::King && (attackers & pos.by_color[side]).any() {
                 // if we are attacking with the king, and the opponent has a piece that can
                 // attack, we just made an illegal move so we can stop
@@ -131,7 +132,9 @@ fn see_best_case(pos: &chess::Position, mv: chess::Move) -> i32 {
     match mv.move_type(pos.role_at(from).unwrap(), pos.ep_square) {
         chess::MoveType::Promotion => {
             SEE_VALUES[mv.promotion().unwrap() as usize]
-                + SEE_VALUES[pos.role_at(from).unwrap() as usize]
+                + pos
+                    .role_at(to)
+                    .map_or(0, |victim| SEE_VALUES[victim as usize])
                 - SEE_VALUES[chess::Role::Pawn as usize]
         }
         chess::MoveType::EnPassant => {
@@ -145,7 +148,11 @@ fn see_best_case(pos: &chess::Position, mv: chess::Move) -> i32 {
     }
 }
 
-fn all_attackers(to: chess::Square, pos: &chess::Position) -> chess::bitboard::Bitboard {
+fn all_attackers(
+    to: chess::Square,
+    pos: &chess::Position,
+    occ: chess::bitboard::Bitboard,
+) -> chess::bitboard::Bitboard {
     let mut attackers = chess::bitboard::Bitboard::EMPTY;
 
     // Check for pawn attacks
@@ -161,11 +168,11 @@ fn all_attackers(to: chess::Square, pos: &chess::Position) -> chess::bitboard::B
     attackers |= chess::movegen::utils::get_king_moves(to) & pos.by_role[chess::Role::King];
 
     // Check for rook attacks
-    attackers |= chess::movegen::utils::get_rook_moves(to, pos.occupancy)
+    attackers |= chess::movegen::utils::get_rook_moves(to, occ)
         & (pos.by_role[chess::Role::Rook] | pos.by_role[chess::Role::Queen]);
 
     // Check for bishop attacks
-    attackers |= chess::movegen::utils::get_bishop_moves(to, pos.occupancy)
+    attackers |= chess::movegen::utils::get_bishop_moves(to, occ)
         & (pos.by_role[chess::Role::Bishop] | pos.by_role[chess::Role::Queen]);
 
     attackers
@@ -244,5 +251,28 @@ mod test {
 
         // but not if the threshold is above the value of the pawn
         assert!(!see(&pos, "d5c6".parse().unwrap(), 200));
+    }
+
+    #[test]
+    fn sees_the_piece_behind_the_one_that_moved() {
+        init();
+
+        // Qxf8 opens the h6-f8 diagonal through g7, so the bishop recaptures and the queen is lost
+        let Fen(pos) =
+            Fen::parse("5rn1/4r1Q1/p2pp2b/2k1p3/2b1PpnP/2p2B2/1RK3RP/6N1 w - - 12 46").unwrap();
+        let mv = "g7f8".parse::<chess::Move>().unwrap();
+        assert!(!see(&pos, mv, 0));
+        assert!(see(&pos, mv, -1262));
+    }
+
+    #[test]
+    fn promotion_captures_count_the_victim() {
+        init();
+
+        // bxc8=Q wins a rook as well as the promotion, and nothing can recapture
+        let Fen(pos) = Fen::parse("2r4k/1P6/8/8/8/8/8/7K w - - 0 1").unwrap();
+        let mv = "b7c8q".parse::<chess::Move>().unwrap();
+        assert!(see(&pos, mv, 2538 - 126 + 1276));
+        assert!(!see(&pos, mv, 2538 - 126 + 1276 + 1));
     }
 }
