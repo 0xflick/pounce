@@ -49,8 +49,8 @@ impl SearchCop {
                 nodes,
                 soft_nodes,
                 adjust: false,
-                optimal_time: Some(Duration::from_millis(movetime as u64)),
-                max_time: Some(Duration::from_millis(movetime as u64)),
+                optimal_time: Some(Duration::from_millis(movetime.max(0) as u64)),
+                max_time: Some(Duration::from_millis(movetime.max(0) as u64)),
                 scale: 1.0,
             };
         }
@@ -94,7 +94,10 @@ impl SearchCop {
         };
 
         let max = (4 * opt).min((0.8 * time_left as f32) as u64);
-        let max = max.min(time_remaining.unwrap() as u64 - 2 * overhead as u64);
+        // the clock can be nearly out, or negative. These saturate because underflowing here gives a
+        // huge hard limit, which would lose on time.
+        let max =
+            max.min((time_remaining.unwrap().max(0) as u64).saturating_sub(2 * overhead as u64));
 
         SearchCop {
             depth,
@@ -102,7 +105,9 @@ impl SearchCop {
             soft_nodes,
             adjust: true,
             optimal_time: Some(Duration::from_millis(opt)),
-            max_time: Some(Duration::from_millis(max - overhead as u64)),
+            max_time: Some(Duration::from_millis(
+                max.saturating_sub(overhead as u64).max(1),
+            )),
             scale: 1.0,
         }
     }
@@ -165,5 +170,50 @@ impl SearchCop {
 
             self.scale = (0.4 + 1.7 * (1. - bm_frac)).max(0.5);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hard_limit_ms(wtime: i32, winc: u32) -> u128 {
+        let limits = Limits {
+            wtime: Some(wtime),
+            winc: Some(winc),
+            ..Limits::new()
+        };
+        let cop = SearchCop::new(limits, Color::White);
+        cop.max_time.unwrap().as_millis()
+    }
+
+    #[test]
+    fn hard_limit_never_exceeds_a_nearly_empty_clock() {
+        for wtime in [-5, 0, 1, 5, 19, 20, 21, 29, 30, 31, 50] {
+            for winc in [0, 100, 1000] {
+                let limit = hard_limit_ms(wtime, winc);
+                assert!(
+                    limit <= wtime.max(1) as u128,
+                    "{limit} ms limit with {wtime} ms left and {winc} ms increment"
+                );
+                assert!(limit >= 1);
+            }
+        }
+    }
+
+    #[test]
+    fn hard_limit_is_unchanged_with_a_normal_clock() {
+        // opt = 1.5% of (60000 + 50 * 100 - 50 * 10) = 967, and max = 4 * opt - overhead
+        assert_eq!(hard_limit_ms(60_000, 100), 4 * 967 - 10);
+    }
+
+    #[test]
+    fn negative_movetime_is_not_a_huge_limit() {
+        let limits = Limits {
+            movetime: Some(-1),
+            ..Limits::new()
+        };
+        let cop = SearchCop::new(limits, Color::White);
+        assert_eq!(cop.max_time, Some(Duration::ZERO));
     }
 }
