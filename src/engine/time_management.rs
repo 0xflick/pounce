@@ -89,7 +89,7 @@ impl SearchCop {
             (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
         } else {
             // one time control for the whole game
-            let scale = 0.015;
+            let scale = 0.024;
             (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
         };
 
@@ -203,8 +203,8 @@ mod tests {
 
     #[test]
     fn hard_limit_is_unchanged_with_a_normal_clock() {
-        // opt = 1.5% of (60000 + 50 * 100 - 50 * 10) = 967, and max = 4 * opt - overhead
-        assert_eq!(hard_limit_ms(60_000, 100), 4 * 967 - 10);
+        // opt = 2.4% of (60000 + 50 * 100 - 50 * 10) = 1548, and max = 4 * opt - overhead
+        assert_eq!(hard_limit_ms(60_000, 100), 4 * 1548 - 10);
     }
 
     #[test]
