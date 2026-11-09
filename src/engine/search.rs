@@ -217,6 +217,12 @@ impl<'a> Search<'a> {
             }
         }
 
+        // The main thread decides when to stop. Without this, helpers carry on to the hard time limit,
+        // since the soft limit only ends the main thread's own deepening.
+        if self.thread_idx == 0 {
+            self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+
         if bestmove == Move::NONE {
             bestmove = self.stats.pv[0][0];
         }

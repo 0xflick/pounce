@@ -134,7 +134,8 @@ pub(crate) fn search_core(
         let nodes: u64 = moves_and_stats.iter().map(|(_, stats)| stats.nodes).sum();
         let best = moves_and_stats
             .iter()
-            .max_by_key(|(result, _)| result.score)
+            // a deeper search beats a higher score from a shallower one
+            .max_by_key(|(result, _)| (result.depth, result.score))
             .expect("should have at least one result");
 
         if !silent {
