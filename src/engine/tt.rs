@@ -131,7 +131,11 @@ impl Table {
         let score_type = entry.score_type();
         entry.set_age_and_type(self.age(), score_type);
 
-        let should_write = if let Some(existing_entry) = self.probe(entry.key) {
+        // Any other position used to overwrite this slot, however deep the result in it.
+        let slot = unsafe { *self.entries[idx].get() };
+        let should_write = if slot.key != entry.key {
+            slot.age() != self.age() || entry.depth as u16 + 2 >= slot.depth as u16
+        } else if let Some(existing_entry) = self.probe(entry.key) {
             let age_diff = age_diff(self.age(), existing_entry.age()) as u16;
 
             let entry_prio = entry.depth as u16 + score_type as u16 + (age_diff * age_diff) / 4;
@@ -195,5 +199,28 @@ mod tests {
         entry.set_age_and_type(64, EntryType::UpperBound);
         assert_eq!(entry.age(), 0); // 64 & 0x3F = 0
         assert_eq!(entry.score_type(), EntryType::UpperBound);
+    }
+
+    #[test]
+    fn a_shallow_entry_for_another_position_keeps_a_deep_one_from_this_search() {
+        crate::init();
+
+        let table = Table::new(1);
+        let key = |fen: &str| {
+            fen.parse::<crate::chess::position::fen::Fen>()
+                .unwrap()
+                .0
+                .key
+        };
+        let deep = key("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
+        let shallow = key("4k3/8/8/8/8/8/8/4K2Q w - - 0 1");
+        table.store(Entry::new(deep, 40, 0, 0, EntryType::Exact, Move::NONE));
+        table.store(Entry::new(shallow, 0, 0, 0, EntryType::Exact, Move::NONE));
+        assert_eq!(table.probe(deep).map(|entry| entry.depth), Some(40));
+
+        // but not from an earlier search
+        table.bump_age();
+        table.store(Entry::new(shallow, 0, 0, 0, EntryType::Exact, Move::NONE));
+        assert_eq!(table.probe(deep).map(|entry| entry.depth), None);
     }
 }
