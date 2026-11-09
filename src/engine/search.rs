@@ -732,7 +732,7 @@ impl<'a> Search<'a> {
         let see_margin = alpha
             .saturating_sub(stand_pat)
             .saturating_sub(tune::qsearch_see_margin() as i16)
-            .max(1) as i32;
+            .max(0) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(self) {
             self.position.make_move_with(mv, &mut self.accum);
