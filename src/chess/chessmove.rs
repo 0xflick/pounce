@@ -121,6 +121,9 @@ impl Default for Move {
 
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if *self == Move::NONE || *self == Move::NULL {
+            return write!(f, "0000");
+        }
         write!(f, "{}{}", self.from(), self.to())?;
         if let Some(promotion) = self.promotion() {
             let promotion = promotion.to_string().to_ascii_lowercase();

@@ -26,13 +26,19 @@ impl<T> std::ops::DerefMut for Align16<T> {
     }
 }
 
+/// The net's header. The trainer records what the net needs here, and nets from before it did have
+/// zeros in those fields.
 #[repr(C)]
 struct FileHeader {
     magic: [u8; 4],
     version: u16,
     model_type: u16,
     hidden_size: u32,
-    extra: [u8; 20],
+    buckets: u32,
+    qa: u16,
+    qb: u16,
+    scale: u32,
+    reserved: [u8; 8],
 }
 
 #[repr(C)]
@@ -47,6 +53,38 @@ struct NetworkData<const HIDDEN_SIZE: usize> {
 // Static network loaded at compile time via transmute
 static NETWORK: NetworkData<NNUE_HIDDEN_SIZE> =
     unsafe { std::mem::transmute(*include_bytes!("../../../nets/net.pnn")) };
+
+/// Nothing checks the net at runtime, and a mismatch only shows up as bad evals, so the build fails
+/// instead. A size mismatch already fails at the transmute above, but two different nets can be the
+/// same size. Fix these with the trainer's `tools/export_weights.py install`.
+const _: () = {
+    let header = &NETWORK.header;
+    let magic = &header.magic;
+    assert!(
+        magic[0] == b'P' && magic[1] == b'N' && magic[2] == b'C' && magic[3] == b'E',
+        "nets/net.pnn is not a net"
+    );
+    assert!(
+        header.hidden_size as usize == NNUE_HIDDEN_SIZE,
+        "NNUE_HIDDEN_SIZE doesn't match nets/net.pnn"
+    );
+    assert!(
+        header.buckets == 0 || header.buckets as usize == BUCKETS,
+        "BUCKETS doesn't match nets/net.pnn"
+    );
+    assert!(
+        header.qa == 0 || header.qa as i32 == QA,
+        "QA doesn't match nets/net.pnn"
+    );
+    assert!(
+        header.qb == 0 || header.qb as i32 == QB,
+        "QB doesn't match nets/net.pnn"
+    );
+    assert!(
+        header.scale == 0 || header.scale as i32 == SCALE,
+        "SCALE doesn't match nets/net.pnn"
+    );
+};
 
 pub struct NNUEAccumulator<'a, const HIDDEN_SIZE: usize> {
     white_persp: [i16; HIDDEN_SIZE],
@@ -180,7 +218,7 @@ impl<const HIDDEN_SIZE: usize> PerspectiveNet<HIDDEN_SIZE> {
         };
 
         let mut output = 0;
-        let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (30 - 2)).min(BUCKETS - 1);
+        let bucket = ((pos.occupancy.count() as usize - 2) * BUCKETS / (32 - 2)).min(BUCKETS - 1);
 
         for i in 0..HIDDEN_SIZE {
             output += screlu(us[i]) * self.output_weights[bucket][0][i] as i32;

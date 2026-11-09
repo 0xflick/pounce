@@ -78,7 +78,11 @@ impl SearchManager {
 
     /// Synchronous search — used by `bench` / `datagen`, and as the core for
     /// the async UCI path (`search_core`). Returns the result + node count.
-    pub fn think_with_stop(&mut self, limits: Limits, stop: Arc<AtomicBool>) -> (SearchResult, u64) {
+    pub fn think_with_stop(
+        &mut self,
+        limits: Limits,
+        stop: Arc<AtomicBool>,
+    ) -> (SearchResult, u64) {
         stop.store(false, Ordering::Relaxed);
         self.tt.bump_age();
         search_core(

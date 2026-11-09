@@ -11,6 +11,7 @@ use crate::engine::limits::Limits;
 use crate::engine::movepicker::{MAX_MOVES, MovePicker, see};
 use crate::engine::time_management::SearchCop;
 use crate::engine::tt::{Entry, EntryType, Table};
+use crate::engine::tune;
 
 const MAX_DEPTH: u8 = 64;
 pub const MAX_PLY: usize = 128;
@@ -83,7 +84,7 @@ impl Stats {
             );
         } else {
             println!(
-                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
+                "info depth {} score cp {} time {} nodes {} nps {} hashfull {} pv {}",
                 depth, score, elapsed, self.nodes, nps, hashfull, pv
             );
         }
@@ -101,7 +102,7 @@ impl Stats {
             );
         } else {
             println!(
-                "info depth {} score cp {} time {} nodes {} nps {}, hashfull {} pv {}",
+                "info depth {} score cp {} time {} nodes {} nps {} hashfull {} pv {}",
                 depth, score, elapsed, self.nodes, nps, hashfull, mv
             );
         }
@@ -179,7 +180,8 @@ impl<'a> Search<'a> {
     }
 
     fn iterative_deepening(&mut self) -> SearchResult {
-        let max_depth = self.tm.depth.unwrap_or(MAX_DEPTH) as i32;
+        // search() bails out at MAX_DEPTH without a pv, so the last usable iteration is one less
+        let max_depth = self.tm.depth.unwrap_or(MAX_DEPTH).min(MAX_DEPTH - 1) as i32;
         let mut bestmove = Move::NONE;
         let mut score = 0;
         let mut depth_reached = 0;
@@ -235,7 +237,7 @@ impl<'a> Search<'a> {
     }
 
     fn aspiration(&mut self, depth: i32, prev: i16) -> i16 {
-        let mut delta = 25;
+        let mut delta = tune::aspiration_delta() as i16;
         let (mut alpha, mut beta) = if depth > 5 {
             (prev - delta, prev + delta)
         } else {
@@ -249,14 +251,12 @@ impl<'a> Search<'a> {
 
             let score = self.search(depth, alpha, beta, 0, true, true);
 
-            if score <= alpha {
-                beta = alpha + (beta - alpha) / 2;
-                alpha = (-eval::INFINITY).max(score.saturating_sub(delta));
-            } else if score >= beta {
-                beta = (eval::INFINITY).min(score.saturating_add(delta));
-            } else {
+            let Some((next_alpha, next_beta)) = next_aspiration_window(alpha, beta, score, delta)
+            else {
                 return score;
-            }
+            };
+            alpha = next_alpha;
+            beta = next_beta;
 
             delta += delta / 2;
             if delta > 1000 {
@@ -285,7 +285,7 @@ impl<'a> Search<'a> {
         self.stats.pv_length[ply] = ply as u8;
 
         if depth <= 0 {
-            return self.quiescence_search(alpha, beta, is_pv);
+            return self.quiescence_search(alpha, beta, ply, is_pv);
         }
 
         // Go to quiescence search if depth is 0
@@ -401,7 +401,8 @@ impl<'a> Search<'a> {
             && !self.position.in_check()
             && depth < 7
         {
-            let margin = 80 * depth - (60 * improving as i32);
+            let margin =
+                (tune::rfp_margin() * depth - (tune::rfp_improving() * improving as i32)).max(0);
             if static_eval.saturating_sub(margin as i16) >= beta {
                 return beta;
             }
@@ -422,9 +423,9 @@ impl<'a> Search<'a> {
             self.stack[ply].mv = Move::NULL;
             self.stack[ply].moved = None;
 
-            let mut reduction = 5 + depth / 5;
+            let mut reduction = tune::nmp_base() + depth / tune::nmp_depth_divisor();
             // reduce more based on how far above beta we are
-            reduction += ((static_eval - beta) / 200).min(3) as i32;
+            reduction += ((static_eval as i32 - beta as i32) / tune::nmp_eval_divisor()).min(3);
 
             let null_score =
                 -self.search(depth - reduction, -beta, -beta + 1, ply + 1, false, false);
@@ -455,7 +456,7 @@ impl<'a> Search<'a> {
                 && !capture
                 && !self.position.in_check()
                 && depth <= 3
-                && move_count > (3 + depth * depth)
+                && move_count > (tune::lmp_base() + depth * depth)
                 && !self.history.is_killer(ply, mv)
             {
                 continue;
@@ -468,8 +469,8 @@ impl<'a> Search<'a> {
                 && depth <= 5
                 && mv.is_quiet(&self.position)
             {
-                let margin = 100 + depth * 100 + 100;
-                if static_eval + margin as i16 <= alpha {
+                let margin = tune::futility_base() + depth * tune::futility_depth();
+                if static_eval.saturating_add(margin as i16) <= alpha {
                     continue;
                 }
             }
@@ -477,9 +478,9 @@ impl<'a> Search<'a> {
             // SEE pruning: skip moves that aren't see positive (with a depth dependent margin)
             if !is_pv && best > -eval::MATE_IN_PLY && !self.position.in_check() && depth <= 5 {
                 let margin = if quiet {
-                    depth * 150
+                    depth * tune::see_quiet_margin()
                 } else {
-                    depth * depth * 200
+                    depth * depth * tune::see_noisy_margin()
                 };
                 if !see::see(&self.position, mv, -margin) {
                     continue;
@@ -569,7 +570,8 @@ impl<'a> Search<'a> {
                     if score >= beta {
                         if !capture {
                             self.history.update_killers(mv, ply);
-                            let bonus = 2000.min(350 * depth - 350);
+                            let bonus = tune::history_bonus_max()
+                                .min(tune::history_bonus_scale() * (depth - 1));
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
 
@@ -623,17 +625,19 @@ impl<'a> Search<'a> {
         best
     }
 
-    fn quiescence_search(&mut self, mut alpha: i16, beta: i16, is_pv: bool) -> i16 {
+    fn quiescence_search(&mut self, mut alpha: i16, beta: i16, ply: usize, is_pv: bool) -> i16 {
         self.stats.nodes += 1;
 
         if self.done_thinking() {
             return 0;
         }
+        if ply >= MAX_PLY {
+            return eval::score_nnue(&self.position, &self.accum);
+        }
 
         match self.position.is_draw() {
             Some(GameResult::Draw) => return eval::DRAW,
-            // don't have ply here so this is a guess
-            Some(GameResult::Loss) => return -eval::MATE + MAX_PLY as i16,
+            Some(GameResult::Loss) => return -eval::MATE + ply as i16,
             _ => {}
         }
 
@@ -647,11 +651,11 @@ impl<'a> Search<'a> {
                 && self.position.halfmove_clock < 80
                 && (hit.score_type() == EntryType::Exact
                     || (hit.score_type() == EntryType::LowerBound
-                        && denormalize_score(hit.score, MAX_PLY) >= beta)
+                        && denormalize_score(hit.score, ply) >= beta)
                     || (hit.score_type() == EntryType::UpperBound
-                        && denormalize_score(hit.score, MAX_PLY) <= alpha))
+                        && denormalize_score(hit.score, ply) <= alpha))
             {
-                return denormalize_score(hit.score, MAX_PLY);
+                return denormalize_score(hit.score, ply);
             }
             Some(hit)
         } else {
@@ -665,12 +669,12 @@ impl<'a> Search<'a> {
             stand_pat = -eval::INFINITY;
         } else if let Some(entry) = tt_hit {
             let eval = if entry.static_eval != eval::NO_VALUE {
-                denormalize_score(entry.static_eval, MAX_PLY)
+                entry.static_eval
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
-            let denormalized_score = denormalize_score(entry.score, MAX_PLY);
+            let denormalized_score = denormalize_score(entry.score, ply);
 
             stand_pat = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
@@ -711,11 +715,14 @@ impl<'a> Search<'a> {
             }
         };
 
-        let see_margin = alpha.saturating_sub(stand_pat).saturating_sub(500).max(1) as i32;
+        let see_margin = alpha
+            .saturating_sub(stand_pat)
+            .saturating_sub(tune::qsearch_see_margin() as i16)
+            .max(1) as i32;
         let mut move_picker = MovePicker::new_quiescence(&self.position, tt_move, see_margin);
         while let Some(mv) = move_picker.next(self) {
             self.position.make_move_with(mv, &mut self.accum);
-            let score = -self.quiescence_search(-beta, -alpha, is_pv);
+            let score = -self.quiescence_search(-beta, -alpha, ply + 1, is_pv);
             self.position.unmake_move_with(mv, &mut self.accum);
 
             if score > best {
@@ -731,7 +738,7 @@ impl<'a> Search<'a> {
         }
 
         if best == -eval::INFINITY && self.position.in_check() {
-            return -eval::MATE + MAX_PLY as i16;
+            return -eval::MATE + ply as i16;
         }
 
         let entry_type = if best >= beta {
@@ -747,7 +754,7 @@ impl<'a> Search<'a> {
                 self.position.key,
                 0,
                 stand_pat,
-                normalize_score(best, MAX_PLY),
+                normalize_score(best, ply),
                 entry_type,
                 best_move,
             ));
@@ -795,5 +802,89 @@ fn denormalize_score(score: i16, ply: usize) -> i16 {
         score + ply as i16
     } else {
         score
+    }
+}
+
+/// The window to search next after a score from an aspiration window, or `None` if that score is
+/// final. A full window is always final: searching it again can't give a different answer, and a
+/// score at the very edge of it would otherwise repeat the same search until time runs out.
+fn next_aspiration_window(alpha: i16, beta: i16, score: i16, delta: i16) -> Option<(i16, i16)> {
+    if alpha == -eval::INFINITY && beta == eval::INFINITY {
+        return None;
+    }
+
+    if score <= alpha {
+        // i32, since the window can be wider than an i16
+        let midpoint = alpha as i32 + (beta as i32 - alpha as i32) / 2;
+        Some((
+            (-eval::INFINITY).max(score.saturating_sub(delta)),
+            midpoint as i16,
+        ))
+    } else if score >= beta {
+        Some((alpha, (eval::INFINITY).min(score.saturating_add(delta))))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chess::position::fen::Fen;
+    use crate::engine::SearchManager;
+    use crate::init;
+
+    fn think(fen: &str, depth: u8) -> SearchResult {
+        init();
+        let Fen(position) = fen.parse().unwrap();
+        let mut manager = SearchManager::new_from_position(1, 16, position);
+        manager.set_silent(true);
+        let limits = Limits {
+            depth: Some(depth),
+            ..Default::default()
+        };
+        manager.think(limits).0
+    }
+
+    #[test]
+    fn aspiration_stops_at_a_full_window_whatever_the_score() {
+        for score in [-eval::INFINITY, -eval::MATE, 0, eval::MATE, eval::INFINITY] {
+            let window = next_aspiration_window(-eval::INFINITY, eval::INFINITY, score, 25);
+            assert_eq!(window, None, "repeated the search for score {score}");
+        }
+    }
+
+    #[test]
+    fn aspiration_widens_towards_the_score() {
+        assert_eq!(next_aspiration_window(-25, 25, 0, 25), None);
+        assert_eq!(next_aspiration_window(-25, 25, -50, 25), Some((-75, 0)));
+        assert_eq!(next_aspiration_window(-25, 25, 50, 25), Some((-25, 75)));
+    }
+
+    #[test]
+    fn aspiration_handles_windows_wider_than_an_i16() {
+        let (_, beta) = next_aspiration_window(-31_000, 31_000, -31_500, 25).unwrap();
+        assert_eq!(beta, 0);
+    }
+
+    #[test]
+    fn depth_limit_stops_short_of_max_depth() {
+        // every move is an immediate draw by insufficient material, so depth is reached instantly
+        let result = think("8/8/8/8/8/8/k7/7K b - - 0 1", u8::MAX);
+        assert_eq!(result.depth, MAX_DEPTH as i32 - 1);
+        assert_ne!(result.bestmove, Move::NONE);
+        assert_eq!(result.score, eval::DRAW);
+    }
+
+    #[test]
+    fn mate_found_in_quiescence_has_true_distance() {
+        let result = think("7k/5K2/6Q1/8/8/8/8/8 w - - 0 1", 1);
+        assert_eq!(result.score, eval::MATE - 1);
+    }
+
+    #[test]
+    fn no_legal_moves_at_root_gives_null_bestmove() {
+        let result = think("7k/6Q1/5K2/8/8/8/8/8 b - - 0 1", 3);
+        assert_eq!(result.bestmove.to_string(), "0000");
     }
 }

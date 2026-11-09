@@ -22,7 +22,7 @@ impl Debug for U4Array32 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut dbg_list = f.debug_list();
         for i in 0..32 {
-            dbg_list.entry(&format!("{:#02x}", self.get(i)));
+            dbg_list.entry(&format!("{:#04x}", self.get(i)));
         }
         dbg_list.finish()
     }
