@@ -325,12 +325,16 @@ impl<'a> Search<'a> {
             None
         };
 
+        // The net's eval is what gets stored. static_eval is that, sharpened by the TT score if it can
+        // be, which makes it specific to this search and possibly a mate score relative to this ply.
+        let raw_eval;
         let static_eval;
         if self.position.in_check() {
+            raw_eval = eval::NO_VALUE;
             static_eval = eval::NO_VALUE;
         } else if let Some(entry) = tt_hit {
-            let eval = if entry.static_eval != eval::NO_VALUE {
-                denormalize_score(entry.score, ply)
+            raw_eval = if entry.static_eval != eval::NO_VALUE {
+                entry.static_eval
             } else {
                 eval::score_nnue(&self.position, &self.accum)
             };
@@ -339,18 +343,19 @@ impl<'a> Search<'a> {
 
             static_eval = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
-                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
-                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
-                _ => eval,
+                EntryType::LowerBound if denormalized_score > raw_eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < raw_eval => denormalized_score,
+                _ => raw_eval,
             };
         } else {
-            static_eval = eval::score_nnue(&self.position, &self.accum);
+            raw_eval = eval::score_nnue(&self.position, &self.accum);
+            static_eval = raw_eval;
 
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
-                static_eval,
-                static_eval,
+                raw_eval,
+                raw_eval,
                 EntryType::None,
                 Move::NONE,
             ));
@@ -616,7 +621,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
-                static_eval,
+                raw_eval,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
@@ -662,13 +667,15 @@ impl<'a> Search<'a> {
             None
         };
 
-        // Probe tt
+        // Probe tt. As in the main search, only the net's eval gets stored.
+        let raw_eval;
         let stand_pat;
 
         if self.position.in_check() {
+            raw_eval = eval::NO_VALUE;
             stand_pat = -eval::INFINITY;
         } else if let Some(entry) = tt_hit {
-            let eval = if entry.static_eval != eval::NO_VALUE {
+            raw_eval = if entry.static_eval != eval::NO_VALUE {
                 entry.static_eval
             } else {
                 eval::score_nnue(&self.position, &self.accum)
@@ -678,18 +685,19 @@ impl<'a> Search<'a> {
 
             stand_pat = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
-                EntryType::LowerBound if denormalized_score > eval => denormalized_score,
-                EntryType::UpperBound if denormalized_score < eval => denormalized_score,
-                _ => eval,
+                EntryType::LowerBound if denormalized_score > raw_eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < raw_eval => denormalized_score,
+                _ => raw_eval,
             };
         } else {
-            stand_pat = eval::score_nnue(&self.position, &self.accum);
+            raw_eval = eval::score_nnue(&self.position, &self.accum);
+            stand_pat = raw_eval;
 
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                stand_pat,
-                stand_pat,
+                raw_eval,
+                raw_eval,
                 EntryType::None,
                 Move::NONE,
             ));
@@ -753,7 +761,7 @@ impl<'a> Search<'a> {
             self.tt.store(Entry::new(
                 self.position.key,
                 0,
-                stand_pat,
+                raw_eval,
                 normalize_score(best, ply),
                 entry_type,
                 best_move,
