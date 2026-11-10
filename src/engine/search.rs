@@ -581,8 +581,8 @@ impl<'a> Search<'a> {
                     if score >= beta {
                         if !capture {
                             self.history.update_killers(mv, ply);
-                            let bonus = tune::history_bonus_max()
-                                .min(tune::history_bonus_scale() * (depth - 1));
+                            let bonus =
+                                tune::history_bonus_max().min(tune::history_bonus_scale() * depth);
                             self.history
                                 .update(&self.position, &self.stack, ply, mv, bonus);
 
