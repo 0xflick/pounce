@@ -334,9 +334,11 @@ impl<'a> Search<'a> {
         // The net's eval is what gets stored. static_eval is that, sharpened by the TT score if it can
         // be, which makes it specific to this search and possibly a mate score relative to this ply.
         let raw_eval;
+        let corrected_eval;
         let static_eval;
         if self.position.in_check() {
             raw_eval = eval::NO_VALUE;
+            corrected_eval = eval::NO_VALUE;
             static_eval = eval::NO_VALUE;
         } else if let Some(entry) = tt_hit {
             raw_eval = if entry.static_eval != eval::NO_VALUE {
@@ -345,17 +347,20 @@ impl<'a> Search<'a> {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
+            corrected_eval = self.history.corrected_eval(&self.position, raw_eval);
+
             let denormalized_score = denormalize_score(entry.score, ply);
 
             static_eval = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
-                EntryType::LowerBound if denormalized_score > raw_eval => denormalized_score,
-                EntryType::UpperBound if denormalized_score < raw_eval => denormalized_score,
-                _ => raw_eval,
+                EntryType::LowerBound if denormalized_score > corrected_eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < corrected_eval => denormalized_score,
+                _ => corrected_eval,
             };
         } else {
             raw_eval = eval::score_nnue(&self.position, &self.accum);
-            static_eval = raw_eval;
+            corrected_eval = self.history.corrected_eval(&self.position, raw_eval);
+            static_eval = corrected_eval;
 
             self.tt.store(Entry::new(
                 self.position.key,
@@ -624,6 +629,18 @@ impl<'a> Search<'a> {
         };
 
         if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+            // Captures are explained by the capture rather than the pawn structure, and a bound
+            // on the wrong side of the eval says nothing about how far off it was.
+            if !self.position.in_check()
+                && !best_move.is_capture(&self.position)
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&best)
+                && (entry_type != EntryType::LowerBound || best > corrected_eval)
+                && (entry_type != EntryType::UpperBound || best < corrected_eval)
+            {
+                self.history
+                    .update_correction(&self.position, raw_eval, best, depth);
+            }
+
             self.tt.store(Entry::new(
                 self.position.key,
                 depth as u8,
@@ -687,17 +704,18 @@ impl<'a> Search<'a> {
                 eval::score_nnue(&self.position, &self.accum)
             };
 
+            let corrected_eval = self.history.corrected_eval(&self.position, raw_eval);
             let denormalized_score = denormalize_score(entry.score, ply);
 
             stand_pat = match entry.score_type() {
                 EntryType::Exact => denormalized_score,
-                EntryType::LowerBound if denormalized_score > raw_eval => denormalized_score,
-                EntryType::UpperBound if denormalized_score < raw_eval => denormalized_score,
-                _ => raw_eval,
+                EntryType::LowerBound if denormalized_score > corrected_eval => denormalized_score,
+                EntryType::UpperBound if denormalized_score < corrected_eval => denormalized_score,
+                _ => corrected_eval,
             };
         } else {
             raw_eval = eval::score_nnue(&self.position, &self.accum);
-            stand_pat = raw_eval;
+            stand_pat = self.history.corrected_eval(&self.position, raw_eval);
 
             self.tt.store(Entry::new(
                 self.position.key,

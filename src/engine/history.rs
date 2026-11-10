@@ -1,10 +1,16 @@
 use std::ops::ShlAssign;
 
 use crate::chess::{Color, Move, Position, Role, Square};
+use crate::engine::eval;
 use crate::engine::movepicker::{KILLER_1_SCORE, KILLER_2_SCORE};
 use crate::engine::search::{Frame, MAX_PLY, Stack};
 
 pub const HISTORY_MAX: i32 = 16384;
+
+const CORRECTION_BITS: u32 = 14;
+const CORRECTION_GRAIN: i32 = 256;
+const CORRECTION_MAX: i32 = 32 * CORRECTION_GRAIN;
+const CORRECTION_MAX_WEIGHT: i32 = 16;
 
 type Sided<T> = [T; Color::NUM];
 type Butterfly<T> = [[T; Square::NUM]; Square::NUM];
@@ -16,6 +22,8 @@ pub struct HistoryTables {
     killers: [[Move; 2]; MAX_PLY],
     history: HistoryTable<i16, HISTORY_MAX>,
     continuation: Box<[ContinuationTable<i16, HISTORY_MAX>; 1]>,
+    /// How far searches have found the net's eval to be off, by side and pawn structure.
+    correction: Box<Sided<[i16; 1 << CORRECTION_BITS]>>,
 }
 
 impl Default for HistoryTables {
@@ -33,6 +41,7 @@ impl Default for HistoryTables {
             history: [[[HistScore::<i16, HISTORY_MAX>::default(); Square::NUM]; Square::NUM];
                 Color::NUM],
             continuation,
+            correction: Box::new([[0; 1 << CORRECTION_BITS]; Color::NUM]),
         }
     }
 }
@@ -82,6 +91,29 @@ impl HistoryTables {
         value / 2
     }
 
+    /// The net's eval, adjusted by how far off it has been in this pawn structure.
+    pub fn corrected_eval(&self, position: &Position, raw_eval: i16) -> i16 {
+        let correction =
+            self.correction[position.side][correction_index(position)] as i32 / CORRECTION_GRAIN;
+        let limit = eval::MATE_IN_PLY as i32 - 1;
+        (raw_eval as i32 + correction).clamp(-limit, limit) as i16
+    }
+
+    /// Moves the correction towards what a search of this depth found.
+    pub fn update_correction(
+        &mut self,
+        position: &Position,
+        raw_eval: i16,
+        score: i16,
+        depth: i32,
+    ) {
+        let target = (score as i32 - raw_eval as i32) * CORRECTION_GRAIN;
+        let weight = (depth + 1).min(CORRECTION_MAX_WEIGHT);
+        let entry = &mut self.correction[position.side][correction_index(position)];
+        let updated = (*entry as i32 * (256 - weight) + target * weight) / 256;
+        *entry = updated.clamp(-CORRECTION_MAX, CORRECTION_MAX) as i16;
+    }
+
     pub fn is_killer(&self, ply: usize, mv: Move) -> bool {
         mv == self.killers[ply][0] || mv == self.killers[ply][1]
     }
@@ -108,6 +140,15 @@ impl HistoryTables {
             None => None,
         }
     }
+}
+
+fn correction_index(position: &Position) -> usize {
+    let pawns = position.by_role[Role::Pawn];
+    let white = (pawns & position.by_color[Color::White]).0;
+    let black = (pawns & position.by_color[Color::Black]).0;
+    let hash = white.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ black.wrapping_mul(0xC2B2_AE3D_27D4_EB4F).rotate_left(23);
+    (hash.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> (64 - CORRECTION_BITS)) as usize
 }
 
 #[derive(Default, Clone, Copy)]
