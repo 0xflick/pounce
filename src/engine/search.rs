@@ -588,6 +588,11 @@ impl<'a> Search<'a> {
                     reduction += 1;
                 }
 
+                // Reduce more if our position isn't getting better
+                if !improving {
+                    reduction += 1;
+                }
+
                 // reduce less if the move gave check
                 if self.position.in_check() {
                     reduction -= 1;
