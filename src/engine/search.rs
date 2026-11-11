@@ -114,6 +114,8 @@ pub struct Frame {
     pub mv: Move,
     pub moved: Option<Role>,
     pub eval: i16,
+    /// A move that the search at this ply has to leave out.
+    pub excluded: Move,
 }
 
 pub type Stack = [Frame; MAX_PLY];
@@ -124,6 +126,7 @@ impl Default for Frame {
             mv: Move::NONE,
             moved: None,
             eval: eval::NO_VALUE,
+            excluded: Move::NONE,
         }
     }
 }
@@ -145,6 +148,9 @@ pub struct Search<'a> {
 
     silent: bool,
     thread_idx: usize,
+
+    /// The depth of the current iteration of iterative deepening.
+    root_depth: i32,
 }
 
 impl<'a> Search<'a> {
@@ -171,6 +177,7 @@ impl<'a> Search<'a> {
             stop,
             thread_idx,
             tt,
+            root_depth: 0,
         }
     }
 
@@ -191,6 +198,8 @@ impl<'a> Search<'a> {
             if self.done_thinking() {
                 break;
             }
+
+            self.root_depth = depth;
 
             // reset pv
             self.stats.pv = [[Move::NONE; SEARCH_ARRAY_SIZE]; SEARCH_ARRAY_SIZE];
@@ -300,6 +309,10 @@ impl<'a> Search<'a> {
         debug_assert!(alpha < beta);
         debug_assert_eq!(self.position.key, self.position.zobrist_hash());
 
+        // Set while finding out whether this node's TT move is the only good one
+        let excluded = self.stack[ply].excluded;
+        let is_singular_search = excluded != Move::NONE;
+
         if !is_root {
             match self.position.is_draw() {
                 Some(GameResult::Draw) => return eval::DRAW,
@@ -316,6 +329,7 @@ impl<'a> Search<'a> {
 
         let tt_hit = if let Some(hit) = self.tt.probe(self.position.key) {
             if !is_pv
+                && !is_singular_search
                 && self.position.halfmove_clock < 80
                 && hit.depth as i32 >= depth
                 && (hit.score_type() == EntryType::Exact
@@ -402,7 +416,12 @@ impl<'a> Search<'a> {
             }
         }
 
-        if !is_root && depth >= 3 && !self.position.in_check() && tt_move == Move::NONE {
+        if !is_root
+            && !is_singular_search
+            && depth >= 3
+            && !self.position.in_check()
+            && tt_move == Move::NONE
+        {
             depth -= 1;
 
             if is_pv {
@@ -412,6 +431,7 @@ impl<'a> Search<'a> {
 
         // Reverse futility pruning
         if !is_pv
+            && !is_singular_search
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&beta)
             && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&static_eval)
             && !self.position.in_check()
@@ -426,6 +446,7 @@ impl<'a> Search<'a> {
 
         // Null move pruning
         if !is_pv
+            && !is_singular_search
             && depth >= 3
             && self.position.non_pawn_material(self.position.side)
             && !self.position.in_check()
@@ -463,6 +484,10 @@ impl<'a> Search<'a> {
 
         let mut move_picker = MovePicker::new_ab_search(&self.position, ply, tt_move);
         while let Some(mv) = move_picker.next(self) {
+            if mv == excluded {
+                continue;
+            }
+
             move_count += 1;
             let quiet = mv.is_quiet(&self.position);
             let capture = mv.is_capture(&self.position);
@@ -506,6 +531,43 @@ impl<'a> Search<'a> {
             let mut extension = 0;
             if self.position.in_check() {
                 extension += 1
+            }
+
+            // Singular extension: if every other move falls well short of the TT score, this is
+            // the only good move here, so it's worth looking at more closely.
+            if let Some(entry) = tt_hit
+                && !is_root
+                && !is_singular_search
+                && mv == tt_move
+                && (ply as i32) < 2 * self.root_depth
+                && depth >= tune::singular_depth()
+                && entry.depth as i32 >= depth - 3
+                && matches!(entry.score_type(), EntryType::LowerBound | EntryType::Exact)
+                && (-eval::MATE_IN_PLY..eval::MATE_IN_PLY).contains(&entry.score)
+            {
+                let tt_score = denormalize_score(entry.score, ply);
+                let singular_beta =
+                    tt_score.saturating_sub((tune::singular_margin() * depth) as i16);
+
+                self.stack[ply].excluded = mv;
+                let score = self.search(
+                    (depth - 1) / 2,
+                    singular_beta - 1,
+                    singular_beta,
+                    ply,
+                    false,
+                    false,
+                );
+                self.stack[ply].excluded = Move::NONE;
+
+                if score < singular_beta {
+                    extension = 1;
+                } else if singular_beta >= beta {
+                    // Other moves beat beta too, so this node is very likely to cut off
+                    return singular_beta;
+                } else if tt_score >= beta {
+                    extension = -1;
+                }
             }
 
             // store node count for effort calculation
@@ -613,6 +675,10 @@ impl<'a> Search<'a> {
         }
 
         if move_count == 0 {
+            if is_singular_search {
+                return alpha;
+            }
+
             if self.position.in_check() {
                 return -eval::MATE + ply as i16;
             } else {
@@ -628,7 +694,7 @@ impl<'a> Search<'a> {
             EntryType::UpperBound
         };
 
-        if !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
+        if !is_singular_search && !self.stop.load(std::sync::atomic::Ordering::Relaxed) {
             // Captures are explained by the capture rather than the pawn structure, and a bound
             // on the wrong side of the eval says nothing about how far off it was.
             if !self.position.in_check()
