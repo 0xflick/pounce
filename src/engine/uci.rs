@@ -182,6 +182,12 @@ impl Uci {
             _ => {
                 if let Some(tunable) = tune::TUNABLES.iter().find(|t| t.name == name) {
                     tunable.set(value);
+
+                    // The reduction table is built from these. No search is running here,
+                    // because setoption waits for it first.
+                    if matches!(name, "LmrBase" | "LmrDivisor") {
+                        crate::engine::search::init_reductions();
+                    }
                 }
             }
             #[cfg(not(feature = "tune"))]

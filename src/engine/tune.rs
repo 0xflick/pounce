@@ -77,6 +77,16 @@ tunables! {
     (qsearch_see_margin, "QsearchSeeMargin", 500, 100, 1000),
     (singular_depth, "SingularDepth", 10, 4, 12),
     (singular_margin, "SingularMargin", 4, 1, 6),
+    // Hundredths, for the late move reduction table
+    (lmr_base, "LmrBase", 40, 0, 120),
+    (lmr_divisor, "LmrDivisor", 170, 100, 300),
+    // Ten-thousandths of the time left, for a game with one time control
+    (time_base, "TimeBase", 240, 100, 500),
+    // Tenths: the hard limit as a multiple of the optimal time
+    (time_max_factor, "TimeMaxFactor", 40, 15, 80),
+    // Hundredths, for scaling the optimal time by how settled the best move is
+    (time_scale_base, "TimeScaleBase", 40, 10, 100),
+    (time_scale_range, "TimeScaleRange", 170, 50, 300),
 }
 
 #[cfg(all(test, feature = "tune"))]

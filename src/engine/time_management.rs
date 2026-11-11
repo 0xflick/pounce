@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::chess::Color;
 use crate::engine::limits::Limits;
 use crate::engine::search::Stats;
+use crate::engine::tune;
 
 pub struct SearchCop {
     pub depth: Option<u8>,
@@ -89,11 +90,11 @@ impl SearchCop {
             (time_left as f32 * scale).min(0.8 * time_left as f32) as u64
         } else {
             // one time control for the whole game
-            let scale = 0.024;
+            let scale = tune::time_base() as f32 / 10_000.0;
             (time_left as f32 * scale).min(0.2 * time_left as f32) as u64
         };
 
-        let max = (4 * opt).min((0.8 * time_left as f32) as u64);
+        let max = (opt * tune::time_max_factor() as u64 / 10).min((0.8 * time_left as f32) as u64);
         // the clock can be nearly out, or negative. These saturate because underflowing here gives a
         // huge hard limit, which would lose on time.
         let max =
@@ -168,7 +169,9 @@ impl SearchCop {
             let bm_nodes = stats.effort[best_move.from()][best_move.to()];
             let bm_frac = bm_nodes as f32 / stats.nodes as f32;
 
-            self.scale = (0.4 + 1.7 * (1. - bm_frac)).max(0.5);
+            let base = tune::time_scale_base() as f32 / 100.0;
+            let range = tune::time_scale_range() as f32 / 100.0;
+            self.scale = (base + range * (1. - bm_frac)).max(0.5);
         }
     }
 }
