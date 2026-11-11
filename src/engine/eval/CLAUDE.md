@@ -44,3 +44,16 @@ matches the trained model, which covers everything in this list.
 pop in `on_unmake_move`, which is why `on_unmake_move_set` / `_discard` are
 intentionally empty — giving them a body would double-apply and silently
 corrupt the accumulator.
+
+## SIMD (`nnue/simd.rs`)
+
+The accumulator updates and the output layer have scalar, AVX2 (x86_64, picked at runtime) and
+NEON (aarch64) versions, and every one must give bit-identical results, wrapping on overflow like
+release builds of the scalar loops. The tests in `nnue.rs` compare them on real games and on
+extreme weights. `HIDDEN_SIZE` must be a multiple of 32.
+
+The SIMD output layer multiplies `clamp(v, 0, QA) * w` in 16 bits, which is exact only for
+`|w| <= i16::MAX / QA` (128 with QA 255). The trainer doesn't clip output weights, so
+`PerspectiveNet::new` clamps them for the SIMD paths and keeps what the clamp took off as a short
+list of remainders per bucket, which `screlu_dot` adds back. Don't drop the remainders: the
+current net has 14 weights beyond 128.
