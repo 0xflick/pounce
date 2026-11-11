@@ -92,7 +92,7 @@ impl MovePicker {
     }
 
     pub fn new_ab_search(pos: &Position, ply: usize, tt_move: Move) -> MovePicker {
-        MovePicker::new(pos, MovePickerMode::Normal { ply }, tt_move, 1)
+        MovePicker::new(pos, MovePickerMode::Normal { ply }, tt_move, 0)
     }
 
     fn mvv_lva(&self, m: Move, position: &Position) -> i32 {
