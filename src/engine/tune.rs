@@ -61,32 +61,32 @@ macro_rules! tunables {
 }
 
 tunables! {
-    (aspiration_delta, "AspirationDelta", 25, 5, 100),
-    (rfp_margin, "RfpMargin", 80, 20, 200),
-    (rfp_improving, "RfpImproving", 60, 0, 150),
-    (nmp_base, "NmpBase", 5, 2, 8),
-    (nmp_depth_divisor, "NmpDepthDivisor", 5, 2, 10),
-    (nmp_eval_divisor, "NmpEvalDivisor", 200, 50, 500),
-    (lmp_base, "LmpBase", 3, 1, 10),
-    (futility_base, "FutilityBase", 200, 50, 400),
-    (futility_depth, "FutilityDepth", 100, 25, 250),
-    (see_quiet_margin, "SeeQuietMargin", 150, 25, 300),
-    (see_noisy_margin, "SeeNoisyMargin", 200, 50, 400),
-    (history_bonus_scale, "HistoryBonusScale", 350, 100, 800),
-    (history_bonus_max, "HistoryBonusMax", 2000, 500, 4000),
-    (qsearch_see_margin, "QsearchSeeMargin", 500, 100, 1000),
+    (aspiration_delta, "AspirationDelta", 12, 5, 100),
+    (rfp_margin, "RfpMargin", 74, 20, 200),
+    (rfp_improving, "RfpImproving", 65, 0, 150),
+    (nmp_base, "NmpBase", 4, 2, 8),
+    (nmp_depth_divisor, "NmpDepthDivisor", 4, 2, 10),
+    (nmp_eval_divisor, "NmpEvalDivisor", 203, 50, 500),
+    (lmp_base, "LmpBase", 6, 1, 10),
+    (futility_base, "FutilityBase", 204, 50, 400),
+    (futility_depth, "FutilityDepth", 101, 25, 250),
+    (see_quiet_margin, "SeeQuietMargin", 142, 25, 300),
+    (see_noisy_margin, "SeeNoisyMargin", 224, 50, 400),
+    (history_bonus_scale, "HistoryBonusScale", 335, 100, 800),
+    (history_bonus_max, "HistoryBonusMax", 2201, 500, 4000),
+    (qsearch_see_margin, "QsearchSeeMargin", 455, 100, 1000),
     (singular_depth, "SingularDepth", 10, 4, 12),
-    (singular_margin, "SingularMargin", 4, 1, 6),
+    (singular_margin, "SingularMargin", 3, 1, 6),
     // Hundredths, for the late move reduction table
-    (lmr_base, "LmrBase", 40, 0, 120),
-    (lmr_divisor, "LmrDivisor", 170, 100, 300),
+    (lmr_base, "LmrBase", 32, 0, 120),
+    (lmr_divisor, "LmrDivisor", 180, 100, 300),
     // Ten-thousandths of the time left, for a game with one time control
-    (time_base, "TimeBase", 240, 100, 500),
+    (time_base, "TimeBase", 260, 100, 500),
     // Tenths: the hard limit as a multiple of the optimal time
-    (time_max_factor, "TimeMaxFactor", 40, 15, 80),
+    (time_max_factor, "TimeMaxFactor", 43, 15, 80),
     // Hundredths, for scaling the optimal time by how settled the best move is
-    (time_scale_base, "TimeScaleBase", 40, 10, 100),
-    (time_scale_range, "TimeScaleRange", 170, 50, 300),
+    (time_scale_base, "TimeScaleBase", 37, 10, 100),
+    (time_scale_range, "TimeScaleRange", 168, 50, 300),
 }
 
 #[cfg(all(test, feature = "tune"))]
