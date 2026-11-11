@@ -206,8 +206,11 @@ mod tests {
 
     #[test]
     fn hard_limit_is_unchanged_with_a_normal_clock() {
-        // opt = 2.4% of (60000 + 50 * 100 - 50 * 10) = 1548, and max = 4 * opt - overhead
-        assert_eq!(hard_limit_ms(60_000, 100), 4 * 1548 - 10);
+        // Neither cap applies: opt is TimeBase ten-thousandths of (60000 + 50 * 100 - 50 * 10), and
+        // max is TimeMaxFactor tenths of opt, less the overhead
+        let opt = (64_500.0 * (tune::time_base() as f32 / 10_000.0)) as u128;
+        let max = opt * tune::time_max_factor() as u128 / 10 - 10;
+        assert_eq!(hard_limit_ms(60_000, 100), max);
     }
 
     #[test]
