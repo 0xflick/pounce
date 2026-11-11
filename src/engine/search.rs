@@ -21,11 +21,14 @@ const SEARCH_ARRAY_SIZE: usize = MAX_PLY + 1;
 static mut REDUCTIONS: [[u8; MAX_MOVES]; MAX_DEPTH as usize] = [[0; MAX_MOVES]; MAX_DEPTH as usize];
 
 pub fn init_reductions() {
+    let base = tune::lmr_base() as f32 / 100.0;
+    let divisor = tune::lmr_divisor() as f32 / 100.0;
+
     unsafe {
         #[allow(clippy::needless_range_loop)]
         for m in 1..MAX_MOVES {
             for depth in 1..MAX_DEPTH as usize {
-                let reduction = 0.4 + ((depth as f32).ln() * (m as f32).ln()) / 1.7;
+                let reduction = base + ((depth as f32).ln() * (m as f32).ln()) / divisor;
                 REDUCTIONS[depth][m] = reduction as u8;
             }
         }
