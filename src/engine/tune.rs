@@ -75,6 +75,8 @@ tunables! {
     (history_bonus_scale, "HistoryBonusScale", 350, 100, 800),
     (history_bonus_max, "HistoryBonusMax", 2000, 500, 4000),
     (qsearch_see_margin, "QsearchSeeMargin", 500, 100, 1000),
+    (singular_depth, "SingularDepth", 10, 4, 12),
+    (singular_margin, "SingularMargin", 4, 1, 6),
 }
 
 #[cfg(all(test, feature = "tune"))]
